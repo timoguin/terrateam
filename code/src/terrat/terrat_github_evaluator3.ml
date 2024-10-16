@@ -498,7 +498,8 @@ module Sql = struct
       sql
       /^ "insert into github_workflow_step_outputs (idx, ignore_errors, payload, scope, step, \
           success, work_manifest) select * from unnest($idx, $ignore_errors, $payload, $scope, \
-          $step, $success, $work_manifest) on conflict (work_manifest, scope, step) do nothing"
+          $step, $success, $work_manifest) on conflict (work_manifest, scope, step, idx) do \
+          nothing"
       /% Var.(array (smallint "idx"))
       /% Var.(array (boolean "ignore_errors"))
       /% Var.(str_array (json "payload"))
@@ -1490,7 +1491,7 @@ struct
         [@@deriving eq, ord]
 
         let of_terrat_api_scope =
-          let module S = Terrat_api_components.Workflow_step_output.Scope in
+          let module S = Terrat_api_components.Workflow_step_output_scope in
           let module Ds = Terrat_api_components.Workflow_step_output_scope_dirspace in
           let module R = Terrat_api_components.Workflow_step_output_scope_run in
           function
@@ -4489,6 +4490,7 @@ struct
               m "GITHUB_EVALUATOR : %s : DIRSPACE_RESULT_STORE : time=%f" request_id time))
         (fun () ->
           let module O = Terrat_api_components.Workflow_step_output in
+          let module Scope = Terrat_api_components.Workflow_step_output_scope in
           let open Abbs_future_combinators.Infix_result_monad in
           let steps = CCList.mapi (fun idx step -> (idx, step)) result.R2.steps in
           Abbs_future_combinators.List_result.iter
@@ -4504,7 +4506,7 @@ struct
               in
               let scope =
                 CCList.map
-                  (fun (_, { O.scope; _ }) -> Yojson.Safe.to_string (O.Scope.to_yojson scope))
+                  (fun (_, { O.scope; _ }) -> Yojson.Safe.to_string (Scope.to_yojson scope))
                   chunk
               in
               let step = CCList.map (fun (_, { O.step; _ }) -> step) chunk in
