@@ -1226,6 +1226,7 @@ module View = struct
     hooks : Hooks.t; [@default Hooks.make ()]
     indexer : Indexer.t; [@default Indexer.make ()]
     integrations : Integrations.t; [@default Integrations.make ()]
+    lock_policy : Workflows.Entry.Lock_policy.t; [@default Workflows.Entry.Lock_policy.Strict]
     notifications : Notifications.t; [@default Notifications.make ()]
     parallel_runs : int; [@default 3]
     stacks : Stacks.t; [@default Stacks.make ()]
@@ -2543,7 +2544,7 @@ let of_version_1_workflows_lock_policy = function
   | `None -> Workflows.Entry.Lock_policy.None
   | `Strict -> Workflows.Entry.Lock_policy.Strict
 
-let of_version_1_workflows default_engine default_integrations workflows =
+let of_version_1_workflows default_engine default_integrations default_lock_policy workflows =
   let open CCResult.Infix in
   let module E = Terrat_repo_config_workflow_entry in
   CCResult.map_l
@@ -2567,7 +2568,9 @@ let of_version_1_workflows default_engine default_integrations workflows =
       >>= fun engine ->
       of_version_1_workflow_integrations default_integrations integrations
       >>= fun integrations ->
-      let lock_policy = of_version_1_workflows_lock_policy lock_policy in
+      let lock_policy =
+        CCOption.map_or ~default:default_lock_policy of_version_1_workflows_lock_policy lock_policy
+      in
       map_opt of_version_1_workflow_op_list plan
       >>= fun plan ->
       CCResult.map_err
@@ -2609,6 +2612,7 @@ let of_version_1 v1 =
     hooks;
     indexer;
     integrations;
+    lock_policy;
     notifications;
     parallel_runs;
     stacks;
@@ -2621,6 +2625,7 @@ let of_version_1 v1 =
   } =
     v1
   in
+  let lock_policy = of_version_1_workflows_lock_policy lock_policy in
   let open CCResult.Infix in
   map_opt of_version_1_access_control access_control
   >>= fun access_control ->
@@ -2660,7 +2665,7 @@ let of_version_1 v1 =
   >>= fun tags ->
   map_opt of_version_1_tree_builder tree_builder
   >>= fun tree_builder ->
-  map_opt (of_version_1_workflows engine integrations) workflows
+  map_opt (of_version_1_workflows engine integrations lock_policy) workflows
   >>= fun workflows ->
   Ok
     (View.make
@@ -2680,6 +2685,7 @@ let of_version_1 v1 =
        ?hooks
        ?indexer
        ?integrations
+       ~lock_policy
        ?notifications
        ~parallel_runs
        ?stacks
@@ -3503,7 +3509,7 @@ let to_version_1_workflows =
             CCFun.(Integrations.equal (Integrations.make ()) %> not)
             to_version_1_integrations
             integrations;
-        lock_policy = to_version_1_lock_policy lock_policy;
+        lock_policy = Some (to_version_1_lock_policy lock_policy);
         plan = Some (to_version_1_workflows_op plan);
         runs_on;
         tag_query = Terrat_tag_query.to_string tag_query;
@@ -3529,6 +3535,7 @@ let to_version_1 t =
     hooks;
     indexer;
     integrations;
+    lock_policy;
     notifications;
     parallel_runs;
     stacks;
@@ -3594,6 +3601,7 @@ let to_version_1 t =
         CCFun.(Integrations.equal (Integrations.make ()) %> not)
         to_version_1_integrations
         integrations;
+    lock_policy = to_version_1_lock_policy lock_policy;
     notifications =
       map_opt_if_true
         CCFun.(Notifications.equal (Notifications.make ()) %> not)
@@ -3960,6 +3968,7 @@ let engine t = t.View.engine
 let hooks t = t.View.hooks
 let indexer t = t.View.indexer
 let integrations t = t.View.integrations
+let lock_policy t = t.View.lock_policy
 let notifications t = t.View.notifications
 let parallel_runs t = t.View.parallel_runs
 let stacks t = t.View.stacks
