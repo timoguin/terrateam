@@ -465,7 +465,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           pull_request
           dirspaces)
 
-  let store_dirspaceflows ~base_ref ~branch_ref request_id db repo dirspaceflows =
+  let store_dirspaceflows ~base_ref ~branch_ref ~lock_policy request_id db repo dirspaceflows =
     Abbs_time_it.run
       (fun time ->
         Logs.info (fun m ->
@@ -476,7 +476,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Ref.to_string base_ref)
               (S.Api.Ref.to_string branch_ref)
               time))
-      (fun () -> S.Db.store_dirspaceflows ~request_id ~base_ref ~branch_ref db repo dirspaceflows)
+      (fun () ->
+        S.Db.store_dirspaceflows
+          ~request_id
+          ~base_ref
+          ~branch_ref
+          ~lock_policy
+          db
+          repo
+          dirspaceflows)
 
   let query_plan request_id db work_manifest_id dirspace =
     Abbs_time_it.run
@@ -3603,6 +3611,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       store_dirspaceflows
         ~base_ref
         ~branch_ref
+        ~lock_policy:(Terrat_base_repo_config_v1.lock_policy repo_config)
         state.State.request_id
         (Ctx.storage ctx)
         (Event.repo state.State.event)
@@ -3705,6 +3714,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       store_dirspaceflows
         ~base_ref
         ~branch_ref
+        ~lock_policy:(Terrat_base_repo_config_v1.lock_policy repo_config)
         state.State.request_id
         (Ctx.storage ctx)
         (Event.repo state.State.event)
@@ -3866,6 +3876,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       store_dirspaceflows
         ~base_ref
         ~branch_ref
+        ~lock_policy:(Terrat_base_repo_config_v1.lock_policy repo_config)
         state.State.request_id
         (Ctx.storage ctx)
         (Event.repo state.State.event)
@@ -3989,6 +4000,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       store_dirspaceflows
         ~base_ref
         ~branch_ref
+        ~lock_policy:(Terrat_base_repo_config_v1.lock_policy repo_config)
         state.State.request_id
         (Ctx.storage ctx)
         (Event.repo state.State.event)
@@ -5318,6 +5330,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           store_dirspaceflows
             ~base_ref
             ~branch_ref
+            ~lock_policy:(Terrat_base_repo_config_v1.lock_policy repo_config)
             state.State.request_id
             (Ctx.storage ctx)
             (Event.repo state.State.event)
