@@ -912,6 +912,8 @@ type of_version_1_err =
   | `Pattern_parse_err of string
   | `Stack_config_tag_query_err of string * string
   | `Window_parse_timezone_err of string
+  | `Workflows_missing_apply_step_err of int * string
+  | `Workflows_missing_plan_step_err of int * string
   | `Workflows_tag_query_parse_err of string * string
   ]
 [@@deriving show]

@@ -137,6 +137,106 @@ let test_lock_policy_to_version_1_round_trip =
       | `None -> ()
       | _ -> failwith "Round-trip to Version_1 did not preserve lock_policy")
 
+(* Tests for the requirement that an explicit [plan] step list contains a [plan]
+   step and an explicit [apply] step list contains an [apply] step. *)
+
+let workflows_json entries = `Assoc [ ("workflows", `List entries) ]
+let step type_ = `Assoc [ ("type", `String type_) ]
+
+let workflow_entry ?apply ?plan tag_query =
+  `Assoc
+    (("tag_query", `String tag_query)
+    :: CCList.filter_map
+         CCFun.id
+         [
+           CCOption.map (fun steps -> ("apply", `List steps)) apply;
+           CCOption.map (fun steps -> ("plan", `List steps)) plan;
+         ])
+
+let test_workflow_plan_requires_plan_step =
+  Oth.test ~name:"workflows: plan steps without a plan step are rejected" (fun _ ->
+      let json = workflows_json [ workflow_entry ~plan:[ step "init"; step "checkov" ] "" ] in
+      match Oth.Assert.error (V1.of_version_1_json json) with
+      | `Workflows_missing_plan_step_err (0, "") -> ()
+      | err ->
+          Oth.Assert.false_
+            (Printf.sprintf
+               "Expected Workflows_missing_plan_step_err (0, \"\"), got %s"
+               (V1.show_of_version_1_json_err err)))
+
+let test_workflow_apply_requires_apply_step =
+  Oth.test ~name:"workflows: apply steps without an apply step are rejected" (fun _ ->
+      let json = workflows_json [ workflow_entry ~apply:[ step "init"; step "plan" ] "" ] in
+      match Oth.Assert.error (V1.of_version_1_json json) with
+      | `Workflows_missing_apply_step_err (0, "") -> ()
+      | err ->
+          Oth.Assert.false_
+            (Printf.sprintf
+               "Expected Workflows_missing_apply_step_err (0, \"\"), got %s"
+               (V1.show_of_version_1_json_err err)))
+
+let test_workflow_empty_plan_rejected =
+  Oth.test ~name:"workflows: an explicitly empty plan step list is rejected" (fun _ ->
+      let json = workflows_json [ workflow_entry ~plan:[] "" ] in
+      match Oth.Assert.error (V1.of_version_1_json json) with
+      | `Workflows_missing_plan_step_err (0, "") -> ()
+      | err ->
+          Oth.Assert.false_
+            (Printf.sprintf
+               "Expected Workflows_missing_plan_step_err (0, \"\"), got %s"
+               (V1.show_of_version_1_json_err err)))
+
+let test_workflow_omitted_steps_use_defaults =
+  Oth.test ~name:"workflows: omitting plan and apply uses the defaults" (fun _ ->
+      let json = workflows_json [ workflow_entry "" ] in
+      let cfg = Oth.Assert.ok_pp ~pp:V1.pp_of_version_1_json_err (V1.of_version_1_json json) in
+      let { V1.Workflows.Entry.apply; plan; _ } = Oth.Assert.List.length_one (V1.workflows cfg) in
+      let module Op = V1.Workflows.Entry.Op in
+      let module Op_list = V1.Workflows.Entry.Op_list in
+      Oth.Assert.eq
+        ~eq:Op_list.equal
+        ~pp:Op_list.pp
+        [ Op.Init (V1.Workflow_step.Init.make ()); Op.Plan (V1.Workflow_step.Plan.make ()) ]
+        plan;
+      Oth.Assert.eq
+        ~eq:Op_list.equal
+        ~pp:Op_list.pp
+        [ Op.Init (V1.Workflow_step.Init.make ()); Op.Apply (V1.Workflow_step.Apply.make ()) ]
+        apply;
+      ())
+
+let test_workflow_extra_steps_allowed =
+  Oth.test ~name:"workflows: extra steps around plan and apply are allowed" (fun _ ->
+      let json =
+        workflows_json
+          [
+            workflow_entry
+              ~plan:[ step "init"; step "plan"; step "checkov" ]
+              ~apply:[ step "checkov"; step "init"; step "apply" ]
+              "";
+          ]
+      in
+      let cfg = Oth.Assert.ok_pp ~pp:V1.pp_of_version_1_json_err (V1.of_version_1_json json) in
+      Oth.Assert.List.length ~expected:1 (V1.workflows cfg);
+      ())
+
+let test_workflow_missing_step_reports_index =
+  Oth.test ~name:"workflows: the reported index identifies the offending entry" (fun _ ->
+      let json =
+        workflows_json
+          [
+            workflow_entry ~plan:[ step "init"; step "plan" ] "dir:foo";
+            workflow_entry ~plan:[ step "init" ] "dir:bar";
+          ]
+      in
+      match Oth.Assert.error (V1.of_version_1_json json) with
+      | `Workflows_missing_plan_step_err (1, "dir:bar") -> ()
+      | err ->
+          Oth.Assert.false_
+            (Printf.sprintf
+               "Expected Workflows_missing_plan_step_err (1, \"dir:bar\"), got %s"
+               (V1.show_of_version_1_json_err err)))
+
 let test =
   Oth.parallel
     [
@@ -148,6 +248,12 @@ let test =
       test_lock_policy_workflow_inherits;
       test_lock_policy_workflow_overrides;
       test_lock_policy_to_version_1_round_trip;
+      test_workflow_plan_requires_plan_step;
+      test_workflow_apply_requires_apply_step;
+      test_workflow_empty_plan_rejected;
+      test_workflow_omitted_steps_use_defaults;
+      test_workflow_extra_steps_allowed;
+      test_workflow_missing_step_reports_index;
     ]
 
 let () =

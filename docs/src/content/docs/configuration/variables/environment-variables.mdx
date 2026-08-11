@@ -84,6 +84,8 @@ workflows:
         cmd: ['echo', 'Hello, World!']
       - type: run
         cmd: ['echo', 'The value of MY_CUSTOM_VAR is: $MY_CUSTOM_VAR']
+      - type: init
+      - type: plan
 ```
 In this example, the `env` step sets a custom environment variable named `MY_CUSTOM_VAR` with the value "Hello, World!". The subsequent `run` step can then access the value of `MY_CUSTOM_VAR` using the `$` prefix.
 
@@ -110,6 +112,8 @@ workflows:
     plan:
       - type: run
         cmd: ['echo', 'The value of MY_CUSTOM_VAR is: $MY_CUSTOM_VAR']
+      - type: init
+      - type: plan
 ```
 In this example, the `$MY_CUSTOM_VAR` variable will be expanded to the actual value of the `MY_CUSTOM_VAR` environment variable during execution.
 

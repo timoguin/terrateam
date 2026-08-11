@@ -206,6 +206,12 @@ module Tmpl = struct
 
   let notification_policy_tag_query_err =
     jinja [%blob "tmpl/notification_policy_tag_query_err.tmpl"]
+
+  let repo_config_err_workflows_missing_apply_step_err =
+    jinja [%blob "tmpl/repo_config_err_workflows_missing_apply_step_err.tmpl"]
+
+  let repo_config_err_workflows_missing_plan_step_err =
+    jinja [%blob "tmpl/repo_config_err_workflows_missing_plan_step_err.tmpl"]
 end
 
 module Ui = struct

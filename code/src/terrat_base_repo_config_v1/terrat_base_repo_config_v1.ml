@@ -1289,6 +1289,8 @@ type of_version_1_err =
   | `Pattern_parse_err of string
   | `Stack_config_tag_query_err of string * string
   | `Window_parse_timezone_err of string
+  | `Workflows_missing_apply_step_err of int * string
+  | `Workflows_missing_plan_step_err of int * string
   | `Workflows_tag_query_parse_err of string * string
   ]
 [@@deriving show]
@@ -1905,6 +1907,32 @@ let of_version_1_workflow_op_list ops =
                   ?visible_on
                   ())))
     ops
+
+let workflow_op_list_has_plan =
+  CCList.exists (function
+    | Workflows.Entry.Op.Plan _ -> true
+    | Workflows.Entry.Op.Apply _
+    | Workflows.Entry.Op.Checkov _
+    | Workflows.Entry.Op.Conftest _
+    | Workflows.Entry.Op.Env _
+    | Workflows.Entry.Op.Gates _
+    | Workflows.Entry.Op.Init _
+    | Workflows.Entry.Op.Oidc _
+    | Workflows.Entry.Op.Opa _
+    | Workflows.Entry.Op.Run _ -> false)
+
+let workflow_op_list_has_apply =
+  CCList.exists (function
+    | Workflows.Entry.Op.Apply _ -> true
+    | Workflows.Entry.Op.Checkov _
+    | Workflows.Entry.Op.Conftest _
+    | Workflows.Entry.Op.Env _
+    | Workflows.Entry.Op.Gates _
+    | Workflows.Entry.Op.Init _
+    | Workflows.Entry.Op.Oidc _
+    | Workflows.Entry.Op.Opa _
+    | Workflows.Entry.Op.Plan _
+    | Workflows.Entry.Op.Run _ -> false)
 
 let of_version_1_engine_tf_outputs outputs =
   let module O = Terrat_repo_config.Engine_tf_outputs in
@@ -2548,22 +2576,28 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
   let open CCResult.Infix in
   let module E = Terrat_repo_config_workflow_entry in
   CCResult.map_l
-    (fun {
-           E.apply;
-           cdktf;
-           engine;
-           environment;
-           integrations;
-           lock_policy;
-           plan;
-           runs_on;
-           tag_query;
-           terraform_version;
-           terragrunt;
-         }
+    (fun ( idx,
+           {
+             E.apply;
+             cdktf;
+             engine;
+             environment;
+             integrations;
+             lock_policy;
+             plan;
+             runs_on;
+             tag_query;
+             terraform_version;
+             terragrunt;
+           } )
        ->
       map_opt of_version_1_workflow_op_list apply
       >>= fun apply ->
+      (match apply with
+        | Some ops when not (workflow_op_list_has_apply ops) ->
+            Error (`Workflows_missing_apply_step_err (idx, tag_query))
+        | Some _ | None -> Ok ())
+      >>= fun () ->
       of_version_1_workflow_engine cdktf terraform_version terragrunt default_engine engine
       >>= fun engine ->
       of_version_1_workflow_integrations default_integrations integrations
@@ -2573,6 +2607,11 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
       in
       map_opt of_version_1_workflow_op_list plan
       >>= fun plan ->
+      (match plan with
+        | Some ops when not (workflow_op_list_has_plan ops) ->
+            Error (`Workflows_missing_plan_step_err (idx, tag_query))
+        | Some _ | None -> Ok ())
+      >>= fun () ->
       CCResult.map_err
         (function
           | `Tag_query_error err -> `Workflows_tag_query_parse_err err)
@@ -2589,7 +2628,7 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
            ~lock_policy
            ~tag_query
            ()))
-    workflows
+    (CCList.mapi (fun idx entry -> (idx, entry)) workflows)
 
 let of_version_1 v1 =
   let {
