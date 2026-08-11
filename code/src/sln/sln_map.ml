@@ -24,6 +24,7 @@ module String = struct
   let pp f formatter t = Assoc_string_list.pp f formatter (to_list t)
   let show f t = Assoc_string_list.show f (to_list t)
   let keys_set m = keys m |> Iter.to_list |> Sln_set.String.of_list
+  let override ~by m = union (fun _key _m by -> Some by) m by
 end
 
 module Uuidm = struct
