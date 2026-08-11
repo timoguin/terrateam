@@ -388,6 +388,32 @@ let with_poll s ~fd ~events ~retry =
   Op_queue.submit el { Op.state; body; unpinned_ctx = unpinned_of_state s };
   (s, El.Future.Promise.future p)
 
+(* Helper: close [fd], resolving only once it is actually closed.  Returns a
+   [(s, fut)] pair shaped for [Future.with_state].
+
+   The [Unix.close] is deferred through the op queue so it lands after any
+   teardown already queued for a [Luv.Poll] armed on this fd, and the trailing
+   [Op.Run] -- pushed from this same domain onto a FIFO queue, so dequeued after
+   the close -- is what resolves the promise.  Callers await this future to
+   release the descriptor, so resolving it up front would let a burst of opens
+   and closes that never otherwise yields to the event loop hold one live
+   descriptor per iteration until the process hits [EMFILE].
+
+   The promise takes no [~abort]: an aborted caller still wants the fd closed,
+   and [Promise.set] on an aborted future is a no-op. *)
+let with_close_fd s ~fd =
+  let el = el_of s in
+  let unpinned_ctx = unpinned_of_state s in
+  let op body =
+    { Op.state = { Op.aborted = Atomic.make false; handle = Handle.None }; body; unpinned_ctx }
+  in
+  let p = El.Future.Promise.create () in
+  Op_queue.submit el (op (Op.Close_fd fd));
+  Op_queue.submit
+    el
+    (op (Op.Run (fun () -> ignore (El.Future.run_with_state (El.Future.Promise.set p (Ok ())) s))));
+  (s, El.Future.Promise.future p)
+
 module Future = El.Future
 
 module Scheduler = struct
@@ -1317,12 +1343,7 @@ module File = struct
           | _ -> `Unexpected exn)
     | exn -> Error (`Unexpected exn)
 
-  let close t =
-    Future.with_state (fun s ->
-        let el = el_of s in
-        let state = { Op.aborted = Atomic.make false; handle = Handle.None } in
-        Op_queue.submit el { Op.state; body = Op.Close_fd t; unpinned_ctx = unpinned_of_state s };
-        (s, Future.return (Ok ())))
+  let close t = Future.with_state (fun s -> with_close_fd s ~fd:t)
 
   let unlink path =
     try Future.return (Ok (Unix.unlink path)) with
@@ -1815,18 +1836,10 @@ module Socket = struct
   let close t =
     Future.with_state (fun s ->
         (* Idempotent: only the first close submits the deferred [Unix.close], so
-           a reused fd number is never double-closed. *)
-        (if Abb_fd_socket.close_once t then
-           let el = el_of s in
-           let state = { Op.aborted = Atomic.make false; handle = Handle.None } in
-           Op_queue.submit
-             el
-             {
-               Op.state;
-               body = Op.Close_fd (Abb_fd_socket.fd t);
-               unpinned_ctx = unpinned_of_state s;
-             });
-        (s, Future.return (Ok ())))
+           a reused fd number is never double-closed.  A later close has nothing
+           to wait for. *)
+        if Abb_fd_socket.close_once t then with_close_fd s ~fd:(Abb_fd_socket.fd t)
+        else (s, Future.return (Ok ())))
 
   let listen t ~backlog =
     guarded t (fun fd ->
