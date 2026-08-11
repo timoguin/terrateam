@@ -3,6 +3,7 @@ module Make (Abb : Abb_intf.S) = struct
   module Thread = Abb_test_thread.Make (Abb)
   module Sleep = Abb_test_sleep.Make (Abb)
   module Simple = Abb_test_simple.Make (Abb)
+  module File_close = Abb_test_file_close.Make (Abb)
   module Getaddrinfo = Abb_test_getaddrinfo.Make (Abb)
   module Socket = Abb_test_socket.Make (Abb)
   module Socket_closed = Abb_test_socket_closed.Make (Abb)
@@ -24,6 +25,7 @@ module Make (Abb : Abb_intf.S) = struct
         Thread.test;
         Sleep.test;
         Simple.test;
+        File_close.test;
         Getaddrinfo.test;
         Socket.test;
         Socket_closed.test;
