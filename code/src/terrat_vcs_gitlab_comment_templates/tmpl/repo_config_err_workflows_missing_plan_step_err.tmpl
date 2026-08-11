@@ -1,0 +1,13 @@
+# Repository Configuration Error
+
+## What is the error?
+
+The workflow at index `{{ idx }}` (tag query `{{ tag_query }}`) specifies `plan` steps but none of them is a `plan` step.
+
+A workflow's `plan` steps must contain at least one step of `type: plan`.  A custom `run` step that executes a plan does not satisfy this because it does not produce the plan file that Terrateam stores and that later steps use.
+
+## What to do?
+
+Add `- type: plan` to the workflow's `plan` steps, or remove the `plan` key to use the default steps.
+
+See the [documentation](https://terrateam.io/docs/reference/configuration/workflows) describing workflows.

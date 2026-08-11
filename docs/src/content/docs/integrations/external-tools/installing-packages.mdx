@@ -39,11 +39,15 @@ workflows:
         cmd: ['apt-get', 'update']
       - type: run
         cmd: ['apt-get', '-y', 'install', 'golang-go']
+      - type: init
+      - type: plan
     apply:
       - type: run
         cmd: ['apt-get', 'update']
       - type: run
         cmd: ['apt-get', '-y', 'install', 'golang-go']
+      - type: init
+      - type: apply
 ```
 
 In this example, the `golang-go` package is installed as part of the plan and apply steps for a workflow that matches the tag query `dir:iac/dir`. This means that the package will only be installed when running Terrateam operations on the `iac/dir` directory.

@@ -52,15 +52,23 @@ Workflows consist of a series of steps that are executed in order. The available
 - `checkov`: Runs Checkov security scanning on the Terraform plan.
 - `conftest`: Runs Conftest policy validation on the Terraform plan.
 
+:::caution
+If a workflow specifies `plan` steps, at least one of them must be a `plan` step.  If it specifies `apply` steps, at least one of them must be an `apply` step.  A configuration that violates this is rejected with a repository configuration error.
+
+A custom `run` step that shells out to `terraform plan` or `terraform apply` does not satisfy this requirement: the `plan` step is what stores the plan file, and the `apply` step is what consumes it.
+
+Omitting the `plan` or `apply` key uses the default steps, which already satisfy this.
+:::
+
 ### Plan
-Plan steps are defined under the `plan` key in a workflow.
+Plan steps are defined under the `plan` key in a workflow.  The list must contain at least one step of `type: plan`.
 | Key | Type | Description |
 |-----|------|-------------|
 | type | String | Terrateam step type: `init`, `plan`, `env`, `run`, `oidc`, `checkov`, `conftest`. |
 | extra_args | List | Extra command line arguments passed to the `terraform` command. |
 
 ### Apply
-Apply steps are defined under the `apply` key in a workflow.
+Apply steps are defined under the `apply` key in a workflow.  The list must contain at least one step of `type: apply`.
 | Key | Type | Description |
 |-----|------|-------------|
 | type | String | Terrateam step type: `init`, `apply`, `env`, `run`, `oidc`. |
@@ -193,6 +201,8 @@ workflows:
         cmd: ['echo', 'Hello, World!']
       - type: run
         cmd: ['echo', 'The value of MY_CUSTOM_VAR is: $MY_CUSTOM_VAR']
+      - type: init
+      - type: plan
 ```
 ### Setting Environment Variables Using the Source Method
 ```yaml
@@ -241,6 +251,30 @@ This workflow matches any directories tagged with `dir:production` and:
 3. Runs `terraform plan` with the `-input=false` flag.
 4. Runs `terraform apply` with the `-auto-approve` flag.
 5. Runs a custom script after applying changes.
+
+### Blocking the Apply Path
+Some teams plan with Terrateam but apply somewhere else.  A common way to enforce that is an `apply` workflow whose `run` step exits non-zero, which fails the apply before Terraform is ever invoked.  The `apply` steps must still contain an `apply` step, so put it after the `run` step that fails.
+```yaml
+workflows:
+  - tag_query: ""
+    plan:
+      - type: init
+      - type: plan
+    apply:
+      - type: run
+        cmd: ['sh', '-c', 'echo "Applies for this repository are performed outside of Terrateam."; exit 1']
+      # Don't remove: the run step above always fails, so we never get here, but
+      # Terrateam requires an apply step in the apply steps.
+      - type: apply
+```
+This workflow:
+1. Plans normally.
+2. On apply, runs the `run` step, which prints a message and exits non-zero.  A failed step [aborts the workflow](/workflows/advanced/custom-commands), so the `apply` step is never reached and `terraform apply` is never run.  The message is reported on the pull request because a `run` step's output is visible on failure by default.
+3. Satisfies the requirement that the `apply` steps contain an `apply` step.
+
+:::caution
+The `apply` step must come after the `run` step that fails.  If it comes first, `terraform apply` runs before the `run` step has a chance to block it.
+:::
 
 ### AWS OIDC Authentication
 ```yaml

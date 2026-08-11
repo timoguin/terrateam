@@ -2971,6 +2971,26 @@ module Comment = struct
           "WINDOW_PARSE_TIMEZONE_ERR"
           Tmpl.repo_config_err_window_parse_timezone_err
           kv
+    | `Workflows_missing_apply_step_err (idx, tag_query) ->
+        let kv = `Assoc [ ("idx", `Int idx); ("tag_query", `String tag_query) ] in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "WORKFLOWS_MISSING_APPLY_STEP_ERR"
+             Tmpl.repo_config_err_workflows_missing_apply_step_err
+             kv
+    | `Workflows_missing_plan_step_err (idx, tag_query) ->
+        let kv = `Assoc [ ("idx", `Int idx); ("tag_query", `String tag_query) ] in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "WORKFLOWS_MISSING_PLAN_STEP_ERR"
+             Tmpl.repo_config_err_workflows_missing_plan_step_err
+             kv
     | `Workflows_tag_query_parse_err (q, err) ->
         let kv = Snabela.Kv.(Map.of_list [ ("query", string q); ("error", string err) ]) in
         Gcm_api.apply_template_and_publish
