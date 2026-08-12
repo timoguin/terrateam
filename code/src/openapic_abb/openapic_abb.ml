@@ -151,13 +151,13 @@ let call ?log t req =
       >>= function
       | Ok resp ->
           CCOption.iter (fun f -> f (`Resp resp)) log;
-          Abb.Future.return (Ok resp)
+          Abbs_future_combinators.return_ok resp
       | Error (#call_err as call_err) ->
           CCOption.iter (fun f -> f (`Err call_err)) log;
-          Abb.Future.return (Error call_err))
+          Abbs_future_combinators.return_err call_err)
   | Some timeout -> (
       Abbs_future_combinators.first
-        (Abb.Sys.sleep timeout >>= fun () -> Abb.Future.return (Error `Timeout))
+        (Abb.Sys.sleep timeout >>= fun () -> Abbs_future_combinators.return_err `Timeout)
         (Api.call Openapi.Request.(req |> with_base_url t.base_url |> add_headers t.headers))
       >>= fun (r, fut) ->
       Abb.Future.abort fut
@@ -165,10 +165,10 @@ let call ?log t req =
       match r with
       | Ok resp ->
           CCOption.iter (fun f -> f (`Resp resp)) log;
-          Abb.Future.return (Ok resp)
+          Abbs_future_combinators.return_ok resp
       | Error (#call_err as call_err) ->
           CCOption.iter (fun f -> f (`Err call_err)) log;
-          Abb.Future.return (Error call_err))
+          Abbs_future_combinators.return_err call_err)
 
 let rec fold' page t ~init ~f req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -178,7 +178,7 @@ let rec fold' page t ~init ~f req =
   >>= fun init ->
   match page req resp with
   | Some req -> fold' page t ~init ~f req
-  | None -> Abb.Future.return (Ok init)
+  | None -> Abbs_future_combinators.return_ok init
 
 let fold ~page t ~init ~f req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -191,7 +191,7 @@ let fold ~page t ~init ~f req =
   >>= fun init ->
   match page req resp with
   | Some req -> fold' page t ~init ~f req
-  | None -> Abb.Future.return (Ok init)
+  | None -> Abbs_future_combinators.return_ok init
 
 let collect_all ~page t req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -200,8 +200,8 @@ let collect_all ~page t req =
     ~init:[]
     ~f:(fun acc resp ->
       match Openapi.Response.value resp with
-      | `OK vs -> Abb.Future.return (Ok (vs @ acc))
-      | _ -> Abb.Future.return (Error `Error))
+      | `OK vs -> Abbs_future_combinators.return_ok (vs @ acc)
+      | _ -> Abbs_future_combinators.return_err `Error)
     t
     req
-  >>= fun res -> Abb.Future.return (Ok (CCList.rev res))
+  >>= fun res -> Abbs_future_combinators.return_ok (CCList.rev res)

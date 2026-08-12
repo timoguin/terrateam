@@ -158,13 +158,12 @@ module S = struct
       workspace
     >>= function
     | Ok r ->
-        Abb.Future.return
-          (Ok
-             (CCOption.of_list r
-             |> CCOption.flat_map CCFun.(Int64.to_string %> Api.Comment.Id.of_string)))
+        Abbs_future_combinators.return_ok
+          (CCOption.of_list r
+          |> CCOption.flat_map CCFun.(Int64.to_string %> Api.Comment.Id.of_string))
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_els_for_comment_id t comment_id =
     let open Abb.Future.Infix_monad in
@@ -208,10 +207,10 @@ module S = struct
               create_el t ~applied ~work_manifest_id dirspace steps)
             split
         in
-        Abb.Future.return (Ok els)
+        Abbs_future_combinators.return_ok els
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let upsert_comment_id t els comment_id =
     let open Abb.Future.Infix_monad in
@@ -229,10 +228,10 @@ module S = struct
           workspace)
       els
     >>= function
-    | Ok _ -> Abb.Future.return (Ok ())
+    | Ok _ -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let delete_comment t comment_id =
     let request_id = t.request_id in
@@ -316,7 +315,7 @@ module S = struct
     let request_id = t.request_id in
     Api.comment_on_pull_request ~request_id t.client t.pull_request body
     >>= function
-    | Ok comment_id -> Abb.Future.return (Ok comment_id)
+    | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
@@ -341,7 +340,7 @@ module S = struct
             m "%s : RENDERED_LENGTH %i : COMPACTED %b" t.request_id content_length compact);
         Api.comment_on_pull_request ~request_id t.client t.pull_request body
         >>= function
-        | Ok comment_id -> Abb.Future.return (Ok comment_id)
+        | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
         | Error `Error ->
             let by_scope = [] in
             let body =

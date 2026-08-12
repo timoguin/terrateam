@@ -49,8 +49,8 @@ module Cookie = struct
                   Terrat_user.make ~access_token_id:uuid ~capabilities:default_caps ~id ())
                 uuid
               >>= function
-              | [] -> Abb.Future.return (Ok None)
-              | user :: _ -> Abb.Future.return (Ok (Some user)))
+              | [] -> Abbs_future_combinators.return_ok None
+              | user :: _ -> Abbs_future_combinators.return_ok (Some user))
         in
         let open Abb.Future.Infix_monad in
         load
@@ -201,13 +201,13 @@ let rem_session storage ctx =
         let token = CCOption.get_exn_or ("token: " ^ token) (Uuidm.of_string token) in
         Pgsql_pool.with_conn storage ~f:(fun db ->
             Pgsql_io.Prepared_stmt.execute db Cookie.Sql.delete token)
-        >>= fun () -> Abb.Future.return (Ok (Brtl_mw_session.rem_session_value key ctx))
-    | None -> Abb.Future.return (Ok ctx)
+        >>= fun () -> Abbs_future_combinators.return_ok (Brtl_mw_session.rem_session_value key ctx)
+    | None -> Abbs_future_combinators.return_ok ctx
   in
   let open Abb.Future.Infix_monad in
   f
   >>= function
-  | Ok ctx -> Abb.Future.return (Ok ctx)
+  | Ok ctx -> Abbs_future_combinators.return_ok ctx
   | Error (#Pgsql_pool.err | #Pgsql_io.err) as err -> Abb.Future.return err
 
 let create_user_session user ctx = set_session user ctx
@@ -218,7 +218,7 @@ let with_session ?caps ctx =
       match caps with
       | Some caps ->
           if CCList.for_all CCFun.(flip Terrat_user.has_capability session) caps then
-            Abb.Future.return (Ok session)
-          else Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
-      | None -> Abb.Future.return (Ok session))
-  | None -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+            Abbs_future_combinators.return_ok session
+          else Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+      | None -> Abbs_future_combinators.return_ok session)
+  | None -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)

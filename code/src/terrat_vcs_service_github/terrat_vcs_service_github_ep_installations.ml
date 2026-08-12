@@ -41,11 +41,11 @@ module Make (S : S with type Account_id.t = int) = struct
     Pgsql_pool.with_conn storage ~f:(fun db ->
         S.enforce_installation_access ~request_id:(Brtl_ctx.token ctx) user installation_id db)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Forbidden -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
 
   module Work_manifests = struct
     module Outputs = struct
@@ -238,13 +238,13 @@ module Make (S : S with type Account_id.t = int) = struct
                       }
                     in
                     Paginate.run ?page ~page_param:"page" query ctx
-                    >>= fun ctx -> Abb.Future.return (Ok ctx)
+                    >>= fun ctx -> Abbs_future_combinators.return_ok ctx
                 | Error (`Error msg) ->
                     let body =
                       Bad_request.({ id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                     in
-                    Abb.Future.return
-                      (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                    Abbs_future_combinators.return_ok
+                      (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                 | Error `In_dir_not_supported ->
                     let body =
                       Bad_request.(
@@ -252,8 +252,8 @@ module Make (S : S with type Account_id.t = int) = struct
                         |> to_yojson
                         |> Yojson.Safe.to_string)
                     in
-                    Abb.Future.return
-                      (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                    Abbs_future_combinators.return_ok
+                      (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                 | Error (`Bad_date_format date) ->
                     let body =
                       Bad_request.(
@@ -261,8 +261,8 @@ module Make (S : S with type Account_id.t = int) = struct
                         |> to_yojson
                         |> Yojson.Safe.to_string)
                     in
-                    Abb.Future.return
-                      (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                    Abbs_future_combinators.return_ok
+                      (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                 | Error (`Unknown_tag tag) ->
                     let body =
                       Bad_request.(
@@ -270,9 +270,8 @@ module Make (S : S with type Account_id.t = int) = struct
                         |> to_yojson
                         |> Yojson.Safe.to_string)
                     in
-                    Abb.Future.return
-                      (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
-                )
+                    Abbs_future_combinators.return_ok
+                      (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
             | Some (Ok None) | None ->
                 let query =
                   {
@@ -287,14 +286,14 @@ module Make (S : S with type Account_id.t = int) = struct
                   }
                 in
                 Paginate.run ?page ~page_param:"page" query ctx
-                >>= fun ctx -> Abb.Future.return (Ok ctx)
+                >>= fun ctx -> Abbs_future_combinators.return_ok ctx
             | Some (Error (`Tag_query_error (_, err))) ->
                 let body =
                   Bad_request.(
                     { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
                 in
-                Abb.Future.return
-                  (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
+                Abbs_future_combinators.return_ok
+                  (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
     end
 
     module Sql = struct
@@ -582,13 +581,13 @@ module Make (S : S with type Account_id.t = int) = struct
                       { user = Terrat_user.id user; query; config; storage; installation_id; limit }
                   in
                   Paginate.run ?page ~page_param:"page" query ctx
-                  >>= fun ctx -> Abb.Future.return (Ok ctx)
+                  >>= fun ctx -> Abbs_future_combinators.return_ok ctx
               | Error (`Error msg) ->
                   let body =
                     Bad_request.({ id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error `In_dir_not_supported ->
                   let body =
                     Bad_request.(
@@ -596,8 +595,8 @@ module Make (S : S with type Account_id.t = int) = struct
                       |> to_yojson
                       |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error (`Bad_date_format date) ->
                   let body =
                     Bad_request.(
@@ -605,15 +604,15 @@ module Make (S : S with type Account_id.t = int) = struct
                       |> to_yojson
                       |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error (`Unknown_tag tag) ->
                   let body =
                     Bad_request.(
                       { id = "UNKNOWN_TAG"; data = Some tag } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
           | Some (Ok None) | None ->
               let query =
                 Page.
@@ -627,14 +626,14 @@ module Make (S : S with type Account_id.t = int) = struct
                   }
               in
               Paginate.run ?page ~page_param:"page" query ctx
-              >>= fun ctx -> Abb.Future.return (Ok ctx)
+              >>= fun ctx -> Abbs_future_combinators.return_ok ctx
           | Some (Error (`Tag_query_error (_, err))) ->
               let body =
                 Bad_request.(
                   { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
   end
 
   module Dirspaces = struct
@@ -932,13 +931,13 @@ module Make (S : S with type Account_id.t = int) = struct
                       { user = Terrat_user.id user; query; config; storage; installation_id; limit }
                   in
                   Paginate.run ?page ~page_param:"page" query ctx
-                  >>= fun ctx -> Abb.Future.return (Ok ctx)
+                  >>= fun ctx -> Abbs_future_combinators.return_ok ctx
               | Error (`Error msg) ->
                   let body =
                     Bad_request.({ id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error `In_dir_not_supported ->
                   let body =
                     Bad_request.(
@@ -946,8 +945,8 @@ module Make (S : S with type Account_id.t = int) = struct
                       |> to_yojson
                       |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error (`Bad_date_format date) ->
                   let body =
                     Bad_request.(
@@ -955,15 +954,15 @@ module Make (S : S with type Account_id.t = int) = struct
                       |> to_yojson
                       |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
               | Error (`Unknown_tag tag) ->
                   let body =
                     Bad_request.(
                       { id = "UNKNOWN_TAG"; data = Some tag } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
           | Some (Ok None) | None ->
               let query =
                 Page.
@@ -977,14 +976,14 @@ module Make (S : S with type Account_id.t = int) = struct
                   }
               in
               Paginate.run ?page ~page_param:"page" query ctx
-              >>= fun ctx -> Abb.Future.return (Ok ctx)
+              >>= fun ctx -> Abbs_future_combinators.return_ok ctx
           | Some (Error (`Tag_query_error (_, err))) ->
               let body =
                 Bad_request.(
                   { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
   end
 
   module Pull_requests = struct
@@ -1165,7 +1164,8 @@ module Make (S : S with type Account_id.t = int) = struct
             Page.
               { user = Terrat_user.id user; pull_request = pr_opt; storage; installation_id; limit }
           in
-          Paginate.run ?page ~page_param:"page" query ctx >>= fun ctx -> Abb.Future.return (Ok ctx))
+          Paginate.run ?page ~page_param:"page" query ctx
+          >>= fun ctx -> Abbs_future_combinators.return_ok ctx)
   end
 
   module Repos = struct
@@ -1281,7 +1281,8 @@ module Make (S : S with type Account_id.t = int) = struct
           let query =
             Page.{ user = Terrat_user.id user; storage; installation_id; limit; dir = `Asc }
           in
-          Paginate.run ?page ~page_param:"page" query ctx >>= fun ctx -> Abb.Future.return (Ok ctx))
+          Paginate.run ?page ~page_param:"page" query ctx
+          >>= fun ctx -> Abbs_future_combinators.return_ok ctx)
 
     module Refresh = struct
       let post config storage installation_id =
@@ -1305,8 +1306,8 @@ module Make (S : S with type Account_id.t = int) = struct
                   Terrat_api_installations.Repo_refresh.Responses.OK.(
                     { id } |> to_yojson |> Yojson.Safe.to_string)
                 in
-                Abb.Future.return
-                  (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+                Abbs_future_combinators.return_ok
+                  (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
             | Error (#Pgsql_pool.err as err) ->
                 Logs.err (fun m ->
                     m
@@ -1314,11 +1315,8 @@ module Make (S : S with type Account_id.t = int) = struct
                       (Brtl_ctx.token ctx)
                       Pgsql_pool.pp_err
                       err);
-                Abb.Future.return
-                  (Ok
-                     (Brtl_ctx.set_response
-                        (Brtl_rspnc.create ~status:`Internal_server_error "")
-                        ctx))
+                Abbs_future_combinators.return_ok
+                  (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
             | Error (#Pgsql_io.err as err) ->
                 Logs.err (fun m ->
                     m
@@ -1326,11 +1324,8 @@ module Make (S : S with type Account_id.t = int) = struct
                       (Brtl_ctx.token ctx)
                       Pgsql_io.pp_err
                       err);
-                Abb.Future.return
-                  (Ok
-                     (Brtl_ctx.set_response
-                        (Brtl_rspnc.create ~status:`Internal_server_error "")
-                        ctx)))
+                Abbs_future_combinators.return_ok
+                  (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
     end
   end
 end

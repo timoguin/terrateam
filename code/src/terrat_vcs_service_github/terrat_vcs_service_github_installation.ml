@@ -146,4 +146,4 @@ let refresh_repos' ~request_id ~config ~storage ?user_id installation_id =
   let open Abb.Future.Infix_monad in
   Abbs_future_combinators.ignore
     (Abb.Future.fork (refresh_repos_task request_id config storage installation_id task))
-  >>= fun () -> Abb.Future.return (Ok task)
+  >>= fun () -> Abbs_future_combinators.return_ok task

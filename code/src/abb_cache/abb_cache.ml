@@ -303,13 +303,13 @@ module Make (Abb : Abb_intf.S) = struct
                       Abb.Future.return r
                   | Error (#Abb_io_file.with_file_err as err) ->
                       Hashtbl.remove t.cache k;
-                      Abb.Future.return (Error (`Cache_err err))
+                      Fut_comb.return_err (`Cache_err err)
                   | Error (#Abb_intf.Errors.write as err) ->
                       Hashtbl.remove t.cache k;
-                      Abb.Future.return (Error (`Cache_err err)))
+                      Fut_comb.return_err (`Cache_err err))
               | Error err ->
                   Hashtbl.remove t.cache k;
-                  Abb.Future.return (Error (`Fetch_err err)))
+                  Fut_comb.return_err (`Fetch_err err))
         in
         Hashtbl.replace t.cache k run;
         Abb.Future.fork run >>= fun _ -> run
@@ -323,7 +323,7 @@ module Make (Abb : Abb_intf.S) = struct
             Abb_io_file.read_file filename
             >>= fun contents ->
             match t.opts.of_string contents with
-            | Some v -> Abb.Future.return (Ok v)
+            | Some v -> Fut_comb.return_ok v
             | None ->
                 t.opts.on_miss ();
                 fetch' t k filename args
@@ -332,9 +332,9 @@ module Make (Abb : Abb_intf.S) = struct
           >>= function
           | Ok contents ->
               t.opts.on_hit ();
-              Abb.Future.return (Ok contents)
-          | Error (#Abb_intf.Errors.read as err) -> Abb.Future.return (Error (`Cache_err err))
-          | Error (#Abb_io_file.with_file_err as err) -> Abb.Future.return (Error (`Cache_err err))
+              Fut_comb.return_ok contents
+          | Error (#Abb_intf.Errors.read as err) -> Fut_comb.return_err (`Cache_err err)
+          | Error (#Abb_io_file.with_file_err as err) -> Fut_comb.return_err (`Cache_err err)
           | Error (`Fetch_err _ | `Cache_err _) as err -> Abb.Future.return err
         else (
           t.opts.on_miss ();

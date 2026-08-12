@@ -40,7 +40,7 @@ module Whoami = struct
                 (Sql.select_gitlab_user ())
                 ~f:(fun username _ _ avatar_url _ -> (username, avatar_url))
                 (Terrat_user.id user))
-          >>= fun res -> Abb.Future.return (Ok (CCOption.of_list res))
+          >>= fun res -> Abbs_future_combinators.return_ok (CCOption.of_list res)
         in
         let open Abb.Future.Infix_monad in
         run
@@ -52,20 +52,21 @@ module Whoami = struct
                   (Brtl_ctx.token ctx)
                   Uuidm.pp
                   (Terrat_user.id user));
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
         | Ok (Some (username, avatar_url)) ->
             let body =
               Terrat_api_components.Gitlab_user.(
                 { avatar_url; username } |> to_yojson |> Yojson.Safe.to_string)
             in
-            Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m -> m "%s : WHOAMI : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_io.err as err) ->
             Logs.err (fun m -> m "%s : WHOAMI : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
 end

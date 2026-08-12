@@ -49,7 +49,7 @@ module S = struct
 
   let query_comment_id _t _el = raise (Failure "nyi")
   let query_els_for_comment_id _t _cid = raise (Failure "nyi")
-  let upsert_comment_id _t _els _cid = Abb.Future.return (Ok ())
+  let upsert_comment_id _t _els _cid = Abbs_future_combinators.return_ok ()
   let delete_comment _t _comment_id = raise (Failure "nyi")
   let minimize_comment _t _comment_id = raise (Failure "nyi")
   let pull_number t = Some (Api.Pull_request.id t.pull_request)
@@ -107,7 +107,7 @@ module S = struct
     let request_id = t.request_id in
     Api.comment_on_pull_request ~request_id t.client t.pull_request body
     >>= function
-    | Ok comment_id -> Abb.Future.return (Ok comment_id)
+    | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
@@ -131,7 +131,7 @@ module S = struct
             m "%s : RENDERED_LENGTH %i : COMPACTED %b" t.request_id content_length compact);
         Api.comment_on_pull_request ~request_id t.client t.pull_request body
         >>= function
-        | Ok comment_id -> Abb.Future.return (Ok comment_id)
+        | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
         | Error `Error ->
             let by_scope = [] in
             let body =

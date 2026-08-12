@@ -144,7 +144,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                   (Terrat_config.default_tier @@ P.Api.Config.config config)
                   sender
             | [] -> assert false)
-        | _ :: _ -> Abb.Future.return (Ok ()))
+        | _ :: _ -> Abbs_future_combinators.return_ok ())
 
   let with_installation_recovery config storage ~installation_id ~login ~target_type ~sender f =
     let open Abb.Future.Infix_monad in
@@ -195,7 +195,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                       (Terrat_config.default_tier @@ P.Api.Config.config config)
                       created.Gw.Installation_created.sender.Gw.User.login
                 | [] -> assert false)
-            | _ :: _ -> Abb.Future.return (Ok ()))
+            | _ :: _ -> Abbs_future_combinators.return_ok ())
     | Gw.Installation_event.Installation_deleted deleted ->
         let installation = deleted.Gw.Installation_deleted.installation in
         Logs.info (fun m ->
@@ -222,7 +222,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               installation.Gw.Installation.id
               installation.Gw.Installation.account.Gw.User.login
               installation_event.Gw.Installation_new_permissions_accepted.sender.Gw.User.login);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Installation_event.Installation_suspend suspended ->
         let installation = suspended.Gw.Installation_suspend.installation in
         let module I = Gw.Installation_suspend.Installation_ in
@@ -501,49 +501,49 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | Gw.Pull_request_event.Pull_request_closed _ -> failwith "Invalid pull_request_closed event"
     | Gw.Pull_request_event.Pull_request_assigned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_ASSIGNED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_auto_merge_disabled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_AUTO_MERGE_DISABLED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_auto_merge_enabled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_AUTO_MERGE_ENABLED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_converted_to_draft _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_CONVERTED_TO_DRAFT" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_edited _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_EDITED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_labeled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_LABELED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_locked _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_LOCKED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_milestoned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_MILESTONED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_ready_for_review _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_READY_FOR_REVIEW" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_request_removed _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_REQUEST_REMOVED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_requested _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_REQUESTED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_unassigned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNASSIGNED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_unlabeled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNLABELED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_unlocked _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNLOCKED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_submitted _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_SUBMITTED" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
 
   let process_issue_comment request_id config storage exec = function
     | Gw.Issue_comment_event.Issue_comment_created
@@ -599,7 +599,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                   (Evaluator2.Pull_request_event.Comment { comment_id; comment }))
         | Error `Not_terrateam ->
             Prmths.Counter.inc_one (Metrics.comment_events_total "not_terrateam");
-            Abb.Future.return (Ok ())
+            Abbs_future_combinators.return_ok ()
         | Error (`Tag_query_error (_, err)) -> (
             Prmths.Counter.inc_one (Metrics.comment_events_total "tag_query");
             let kv = Snabela.Kv.(Map.of_list [ ("err", string err) ]) in
@@ -623,7 +623,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
             | Error (#Snabela.err as err) ->
                 Logs.err (fun m ->
                     m "%s : TMPL_ERROR : TAG_QUERY_ERROR : %s" request_id (Snabela.show_err err));
-                Abb.Future.return (Ok ()))
+                Abbs_future_combinators.return_ok ())
         | Error (`Unknown_action action) ->
             Prmths.Counter.inc_one (Metrics.comment_events_total "unknown_action");
             let open Abbs_future_combinators.Infix_result_monad in
@@ -644,19 +644,19 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | Gw.Issue_comment_event.Issue_comment_created _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_CREATED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Issue_comment_event.Issue_comment_deleted _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_DELETED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Issue_comment_event.Issue_comment_edited _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_EDITED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Gw.Issue_comment_event.Issue_any _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
 
   let process_workflow_job request_id config storage exec event =
     match event with
@@ -699,7 +699,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               ~repo
               ~run_id:(CCInt.to_string run_id)
               ())
-    | _ -> Abb.Future.return (Ok ())
+    | _ -> Abbs_future_combinators.return_ok ()
 
   let process_push_event request_id config storage exec event =
     let repository = event.Gw.Push_event.repository in
@@ -745,7 +745,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               ())
     | Some _ | None ->
         Logs.debug (fun m -> m "%s : PUSH_EVENT : NOOP" request_id);
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
 
   let handle_error ctx = function
     | #Pgsql_pool.err as err ->

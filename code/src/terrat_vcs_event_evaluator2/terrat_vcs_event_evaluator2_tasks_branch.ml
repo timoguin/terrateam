@@ -27,7 +27,7 @@ struct
           fetch Keys.context
           >>= function
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (branch_name, _); _ } ->
-              Abb.Future.return (Ok branch_name)
+              Abbs_future_combinators.return_ok branch_name
           | _ -> assert false)
 
     let branch_ref =
@@ -51,8 +51,8 @@ struct
             (fun () ->
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo branch_name)
           >>= function
-          | Some ref_ -> Abb.Future.return (Ok ref_)
-          | None -> Abb.Future.return (Error `Error))
+          | Some ref_ -> Abbs_future_combinators.return_ok ref_
+          | None -> Abbs_future_combinators.return_err `Error)
 
     (* Is this the right choice?  Returning the branch anme if the dest branch
        name doesn't exist?  For now, yes.  We eventually want to have better
@@ -66,9 +66,9 @@ struct
           fetch Keys.context
           >>= function
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (_, Some dest_branch_name); _ } ->
-              Abb.Future.return (Ok dest_branch_name)
+              Abbs_future_combinators.return_ok dest_branch_name
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (branch_name, None); _ } ->
-              Abb.Future.return (Ok branch_name)
+              Abbs_future_combinators.return_ok branch_name
           | _ -> assert false)
 
     let dest_branch_ref =
@@ -92,8 +92,8 @@ struct
             (fun () ->
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo dest_branch_name)
           >>= function
-          | Some ref_ -> Abb.Future.return (Ok ref_)
-          | None -> Abb.Future.return (Error `Error))
+          | Some ref_ -> Abbs_future_combinators.return_ok ref_
+          | None -> Abbs_future_combinators.return_err `Error)
 
     let working_dest_branch_ref =
       run ~name:"working_dest_branch_ref" (fun _ { Bs.Fetcher.fetch } -> fetch Keys.dest_branch_ref)
@@ -105,7 +105,7 @@ struct
       run ~name:"working_branch_name" (fun _s { Bs.Fetcher.fetch } -> fetch Keys.branch_name)
 
     let out_of_change_applies =
-      run ~name:"out_of_change_applies" (fun _ _ -> Abb.Future.return (Ok []))
+      run ~name:"out_of_change_applies" (fun _ _ -> Abbs_future_combinators.return_ok [])
 
     let changes =
       run ~name:"changes" (fun s { Bs.Fetcher.fetch } ->
@@ -116,8 +116,8 @@ struct
             | dest_branch_name, branch_name when S.Api.Ref.equal dest_branch_name branch_name ->
                 fetch Keys.repo_tree_branch
                 >>= fun tree ->
-                Abb.Future.return
-                  (Ok (CCList.map (fun filename -> Terrat_change.Diff.Change { filename }) tree))
+                Abbs_future_combinators.return_ok
+                  (CCList.map (fun filename -> Terrat_change.Diff.Change { filename }) tree)
             | dest_branch_name, branch_name ->
                 fetch Keys.client
                 >>= fun client ->
@@ -144,14 +144,16 @@ struct
           go ()
           >>= fun diff ->
           Logs.info (fun m -> m "%s : CHANGES : %d" (Builder.log_id s) (CCList.length diff));
-          Abb.Future.return (Ok diff))
+          Abbs_future_combinators.return_ok diff)
 
     let missing_autoplan_matches =
       run ~name:"missing_autoplan_matches" (fun _ _ ->
-          Abb.Future.return (Ok (fun matches -> Abb.Future.return (Ok matches))))
+          Abbs_future_combinators.return_ok (fun matches ->
+              Abbs_future_combinators.return_ok matches))
 
     let is_draft_pr =
-      run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } -> Abb.Future.return (Ok false))
+      run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } ->
+          Abbs_future_combinators.return_ok false)
 
     let check_conflicting_apply_work_manifests =
       run ~name:"check_conflicting_apply_work_manifests" (fun s { Bs.Fetcher.fetch } ->
@@ -183,15 +185,17 @@ struct
                     dirspaces
                     `Apply))
           >>= function
-          | None -> Abb.Future.return (Ok ())
-          | Some (P2.Conflicting_work_manifests.Conflicting _) -> Abb.Future.return (Error `Noop)
-          | Some (P2.Conflicting_work_manifests.Maybe_stale _) -> Abb.Future.return (Error `Noop))
+          | None -> Abbs_future_combinators.return_ok ()
+          | Some (P2.Conflicting_work_manifests.Conflicting _) ->
+              Abbs_future_combinators.return_err `Noop
+          | Some (P2.Conflicting_work_manifests.Maybe_stale _) ->
+              Abbs_future_combinators.return_err `Noop)
 
     let can_run_plan =
       run ~name:"can_run_plan" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
           Fc.Result.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
-          >>= fun (_, _) -> Abb.Future.return (Ok ()))
+          >>= fun (_, _) -> Abbs_future_combinators.return_ok ())
 
     let can_run_apply =
       run ~name:"can_run_apply" (fun _s { Bs.Fetcher.fetch } ->
@@ -201,15 +205,15 @@ struct
                (fetch Keys.check_conflicting_apply_work_manifests)
                (fetch Keys.branch_dirspaces)
                (fetch Keys.dest_branch_dirspaces)
-          >>= fun () -> Abb.Future.return (Ok ()))
+          >>= fun () -> Abbs_future_combinators.return_ok ())
 
     let publish_comment =
       run ~name:"publish_comment" (fun _ _ ->
-          Abb.Future.return (Ok (fun _ -> Abb.Future.return (Ok ()))))
+          Abbs_future_combinators.return_ok (fun _ -> Abbs_future_combinators.return_ok ()))
 
     let create_commit_checks =
       run ~name:"create_commit_checks" (fun _ _ ->
-          Abb.Future.return (Ok (fun _ _ -> Abb.Future.return (Ok ()))))
+          Abbs_future_combinators.return_ok (fun _ _ -> Abbs_future_combinators.return_ok ()))
 
     let access_control_eval_apply =
       run ~name:"access_control_eval_apply" (fun _ { Bs.Fetcher.fetch } ->
@@ -217,7 +221,7 @@ struct
           fetch Keys.working_set_matches
           >>= fun working_set_matches ->
           let r = Terrat_access_control2.{ R.deny = []; pass = working_set_matches } in
-          Abb.Future.return (Ok (Ok r)))
+          Abbs_future_combinators.return_ok (Ok r))
 
     let access_control_eval_plan =
       run ~name:"access_control_eval_plan" (fun _ { Bs.Fetcher.fetch } ->
@@ -225,9 +229,10 @@ struct
           fetch Keys.working_set_matches
           >>= fun working_set_matches ->
           let r = Terrat_access_control2.{ R.deny = []; pass = working_set_matches } in
-          Abb.Future.return (Ok (Ok r)))
+          Abbs_future_combinators.return_ok (Ok r))
 
-    let maybe_automerge = run ~name:"maybe_automerge" (fun _s _fetcher -> Abb.Future.return (Ok ()))
+    let maybe_automerge =
+      run ~name:"maybe_automerge" (fun _s _fetcher -> Abbs_future_combinators.return_ok ())
   end
 
   let tasks tasks =

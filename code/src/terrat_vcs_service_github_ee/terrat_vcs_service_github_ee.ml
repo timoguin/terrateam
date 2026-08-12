@@ -28,13 +28,13 @@ module Provider :
   let match_user ~request_id client repo user =
     let module M = Terrat_base_repo_config_v1.Access_control.Match in
     function
-    | M.User value -> Abb.Future.return (Ok (CCString.equal value user))
+    | M.User value -> Abbs_future_combinators.return_ok (CCString.equal value user)
     | M.Team value -> (
         let open Abb.Future.Infix_monad in
         Api.is_member_of_team ~request_id ~team:value ~user:(Api.User.make user) repo client
         >>= function
-        | Ok res -> Abb.Future.return (Ok res)
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok res -> Abbs_future_combinators.return_ok res
+        | Error _ -> Abbs_future_combinators.return_err `Error)
     | M.Role value -> (
         let open Abb.Future.Infix_monad in
         match CCList.find_idx CCFun.(fst %> CCString.equal value) repo_permission_levels with
@@ -46,13 +46,13 @@ module Provider :
                 | Some (idx_role, _) ->
                     (* Test if their actual role has an index less than or
                            equal to the index of the role in the query. *)
-                    Abb.Future.return (Ok (idx_role <= idx))
-                | None -> Abb.Future.return (Ok false))
-            | Ok None -> Abb.Future.return (Ok false)
-            | Error _ -> Abb.Future.return (Error `Error))
+                    Abbs_future_combinators.return_ok (idx_role <= idx)
+                | None -> Abbs_future_combinators.return_ok false)
+            | Ok None -> Abbs_future_combinators.return_ok false
+            | Error _ -> Abbs_future_combinators.return_err `Error)
         | None -> raise (Failure "nyi")
         (* Abb.Future.return (Error (`Invalid_query query)) *))
-    | M.Any -> Abb.Future.return (Ok true)
+    | M.Any -> Abbs_future_combinators.return_ok true
 
   module Gate = struct
     module Sql = struct
@@ -126,10 +126,10 @@ module Provider :
         pull_number
         sha
       >>= function
-      | Ok () -> Abb.Future.return (Ok ())
+      | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let eval ~request_id client dirspaces pull_request db =
       let module Match_set = CCSet.Make (Terrat_base_repo_config_v1.Access_control.Match) in
@@ -217,171 +217,168 @@ module Provider :
               ~f:(fun approver ->
                 match_user ~request_id client repo approver q
                 >>= function
-                | true -> Abb.Future.return (Ok (Some approver))
-                | false -> Abb.Future.return (Ok None))
+                | true -> Abbs_future_combinators.return_ok (Some approver)
+                | false -> Abbs_future_combinators.return_ok None)
               all_approvers
             >>= fun res ->
             let res = CCList.filter_map CCFun.id res in
-            Abb.Future.return (Ok (q, res)))
+            Abbs_future_combinators.return_ok (q, res))
           all_queries
         >>= fun query_results ->
         let query_to_users = Match_map.of_list query_results in
-        Abb.Future.return
-          (Ok
-             (CCList.flat_map
-                (fun (dirspace, gates) ->
-                  CCList.filter_map
-                    (fun (token, name, { Terrat_gate.all_of; any_of; any_of_count }) ->
-                      let { Terrat_dirspace.dir; workspace } = dirspace in
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : all_of=%s"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string all_of));
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : any_of=%s"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string any_of));
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : \
-                             any_of_count=%d"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            any_of_count);
-                      (* Given a gate, we want to know if it has been approved
+        Abbs_future_combinators.return_ok
+          (CCList.flat_map
+             (fun (dirspace, gates) ->
+               CCList.filter_map
+                 (fun (token, name, { Terrat_gate.all_of; any_of; any_of_count }) ->
+                   let { Terrat_dirspace.dir; workspace } = dirspace in
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : all_of=%s"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string all_of));
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : any_of=%s"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string any_of));
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : dir=%s : workspace=%s : token=%s : name=%s : any_of_count=%d"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         any_of_count);
+                   (* Given a gate, we want to know if it has been approved
                          by everyone that must be.  If [token] is [Some string]
                          then that means we need to match it to the specific
                          token approvers, if it is not then it means we need to
                          match it against the VCS approvers. *)
-                      let gate_approvers =
-                        match token with
-                        | Some token ->
-                            Sln_set.String.of_list
-                            @@ CCOption.get_or ~default:[]
-                            @@ Sln_map.String.find_opt token approvers_map
-                        | None -> approved_reviewers
-                      in
-                      (* A map of query to users who have approved that token.
+                   let gate_approvers =
+                     match token with
+                     | Some token ->
+                         Sln_set.String.of_list
+                         @@ CCOption.get_or ~default:[]
+                         @@ Sln_map.String.find_opt token approvers_map
+                     | None -> approved_reviewers
+                   in
+                   (* A map of query to users who have approved that token.
                          An empty list for the query means that it has not been
                          approved by anyone. *)
-                      let all_of =
-                        CCList.map
-                          (fun m ->
-                            ( m,
-                              CCList.filter CCFun.(flip Sln_set.String.mem gate_approvers)
-                              @@ CCOption.get_or ~default:[]
-                              @@ Match_map.find_opt m query_to_users ))
-                          all_of
-                      in
-                      (* Set of users that have approved the token for the any_of matches. *)
-                      let any_of_set =
-                        Sln_set.String.of_list
-                        @@ CCList.filter CCFun.(flip Sln_set.String.mem gate_approvers)
-                        @@ CCList.flat_map
-                             CCFun.(
-                               flip Match_map.find_opt query_to_users %> CCOption.get_or ~default:[])
-                             any_of
-                      in
-                      let passed =
-                        CCList.for_all CCFun.(snd %> CCList.is_empty %> not) all_of
-                        && any_of_count <= Sln_set.String.cardinal any_of_set
-                      in
-                      let all_of =
-                        CCList.filter_map
-                          (function
-                            | q, [] -> Some q
-                            | _q, _ -> None)
-                          all_of
-                      in
-                      let result =
-                        {
-                          Terrat_gate.all_of;
-                          any_of;
-                          any_of_count =
-                            CCInt.max 0 (any_of_count - Sln_set.String.cardinal any_of_set);
-                        }
-                      in
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
-                             all_of=%s"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string all_of));
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
-                             any_of=%s"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string any_of));
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
-                             any_of_count=%d"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            any_of_count);
-                      Logs.info (fun m ->
-                          m
-                            "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
-                             passed=%s"
-                            request_id
-                            dir
-                            workspace
-                            (CCOption.get_or ~default:"" token)
-                            (CCOption.get_or ~default:"" name)
-                            (Bool.to_string passed));
-                      if passed then None
-                      else
-                        Some
-                          {
-                            Terrat_vcs_provider2.Gate_eval.dirspace =
-                              (if
-                                 Terrat_dirspace.equal
-                                   dirspace
-                                   { Terrat_dirspace.dir = ""; workspace = "" }
-                               then None
-                               else Some dirspace);
-                            token;
-                            name;
-                            result;
-                          })
-                    gates)
-                gates_map))
+                   let all_of =
+                     CCList.map
+                       (fun m ->
+                         ( m,
+                           CCList.filter CCFun.(flip Sln_set.String.mem gate_approvers)
+                           @@ CCOption.get_or ~default:[]
+                           @@ Match_map.find_opt m query_to_users ))
+                       all_of
+                   in
+                   (* Set of users that have approved the token for the any_of matches. *)
+                   let any_of_set =
+                     Sln_set.String.of_list
+                     @@ CCList.filter CCFun.(flip Sln_set.String.mem gate_approvers)
+                     @@ CCList.flat_map
+                          CCFun.(
+                            flip Match_map.find_opt query_to_users %> CCOption.get_or ~default:[])
+                          any_of
+                   in
+                   let passed =
+                     CCList.for_all CCFun.(snd %> CCList.is_empty %> not) all_of
+                     && any_of_count <= Sln_set.String.cardinal any_of_set
+                   in
+                   let all_of =
+                     CCList.filter_map
+                       (function
+                         | q, [] -> Some q
+                         | _q, _ -> None)
+                       all_of
+                   in
+                   let result =
+                     {
+                       Terrat_gate.all_of;
+                       any_of;
+                       any_of_count = CCInt.max 0 (any_of_count - Sln_set.String.cardinal any_of_set);
+                     }
+                   in
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
+                          all_of=%s"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string all_of));
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
+                          any_of=%s"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         (CCString.concat " " @@ CCList.map Terrat_gate.Match.to_string any_of));
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
+                          any_of_count=%d"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         any_of_count);
+                   Logs.info (fun m ->
+                       m
+                         "%s : GATE : RESULT : dir=%s : workspace=%s : token=%s : name=%s : \
+                          passed=%s"
+                         request_id
+                         dir
+                         workspace
+                         (CCOption.get_or ~default:"" token)
+                         (CCOption.get_or ~default:"" name)
+                         (Bool.to_string passed));
+                   if passed then None
+                   else
+                     Some
+                       {
+                         Terrat_vcs_provider2.Gate_eval.dirspace =
+                           (if
+                              Terrat_dirspace.equal
+                                dirspace
+                                { Terrat_dirspace.dir = ""; workspace = "" }
+                            then None
+                            else Some dirspace);
+                         token;
+                         name;
+                         result;
+                       })
+                 gates)
+             gates_map)
       in
       let open Abb.Future.Infix_monad in
       run
       >>= function
-      | Ok res -> Abb.Future.return (Ok res)
+      | Ok res -> Abbs_future_combinators.return_ok res
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
       | Error `Error ->
           Logs.err (fun m -> m "%s" request_id);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
   end
 
   module Work_manifest = Terrat_vcs_service_github_provider.Work_manifest
@@ -404,15 +401,15 @@ module Provider :
         <$> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yml")
         <*> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yaml"))
       >>= function
-      | None -> Abb.Future.return (Ok None)
+      | None -> Abbs_future_combinators.return_ok None
       | Some (_, content) when CCString.is_empty (CCString.trim content) ->
-          Abb.Future.return (Ok None)
+          Abbs_future_combinators.return_ok None
       | Some (fname, content) ->
           Abb.Future.return
           @@ CCResult.map_err
                (fun (`Yaml_decode_err err) -> `Yaml_decode_err (fname, err))
                (Jsonu.of_yaml_string content)
-          >>= fun json -> Abb.Future.return (Ok (Some (fname, json)))
+          >>= fun json -> Abbs_future_combinators.return_ok (Some (fname, json))
 
     let maybe_fetch_centralized_repo_config_file request_id client centralized_repo basename =
       match centralized_repo with
@@ -423,7 +420,7 @@ module Provider :
             (Api.Remote_repo.to_repo remote_repo)
             branch
             basename
-      | None -> Abb.Future.return (Ok None)
+      | None -> Abbs_future_combinators.return_ok None
 
     let maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo =
       match centralized_repo with
@@ -435,9 +432,9 @@ module Provider :
             (Api.Remote_repo.to_repo remote_repo)
             (Api.Remote_repo.default_branch remote_repo)
           >>= function
-          | Some branch_sha -> Abb.Future.return (Ok (Some (remote_repo, branch_sha)))
-          | None -> Abb.Future.return (Ok None))
-      | None -> Abb.Future.return (Ok None)
+          | Some branch_sha -> Abbs_future_combinators.return_ok (Some (remote_repo, branch_sha))
+          | None -> Abbs_future_combinators.return_ok None)
+      | None -> Abbs_future_combinators.return_ok None
 
     let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
       let open Abbs_future_combinators.Infix_result_monad in
@@ -518,8 +515,8 @@ module Provider :
         Abbs_future_combinators.List_result.iter ~f:(function
           | Some (fname, json) ->
               wrap_err fname (Abb.Future.return (Terrat_base_repo_config_v1.of_version_1_json json))
-              >>= fun _ -> Abb.Future.return (Ok ())
-          | None -> Abb.Future.return (Ok ()))
+              >>= fun _ -> Abbs_future_combinators.return_ok ()
+          | None -> Abbs_future_combinators.return_ok ())
       in
       let get_json = function
         | None -> `Assoc []
@@ -615,12 +612,11 @@ module Provider :
                   (Abb.Future.return
                      (Terrat_base_repo_config_v1.of_version_1_json (get_json repo_config))))
           >>= fun (default_repo_config, repo_config) ->
-          Abb.Future.return
-            (Ok
-               ( provenance,
-                 Terrat_base_repo_config_v1.merge_with_default_branch_config
-                   ~default:default_repo_config
-                   repo_config ))
+          Abbs_future_combinators.return_ok
+            ( provenance,
+              Terrat_base_repo_config_v1.merge_with_default_branch_config
+                ~default:default_repo_config
+                repo_config )
       | _, _, (Some (_, _) as forced_repo_config), _, _ ->
           let provenance =
             collect_provenance
@@ -638,7 +634,7 @@ module Provider :
             "repo"
             (Abb.Future.return
                (Terrat_base_repo_config_v1.of_version_1_json (get_json repo_config)))
-          >>= fun repo_config -> Abb.Future.return (Ok (provenance, repo_config))
+          >>= fun repo_config -> Abbs_future_combinators.return_ok (provenance, repo_config)
   end
 
   module Access_control = struct
@@ -659,14 +655,14 @@ module Provider :
                       [ filename; previous_filename ])
                 diff
             in
-            Abb.Future.return (Ok (CCList.mem ~eq:CCString.equal path diff_paths))
-        | None -> Abb.Future.return (Ok false)
+            Abbs_future_combinators.return_ok (CCList.mem ~eq:CCString.equal path diff_paths)
+        | None -> Abbs_future_combinators.return_ok false
       in
       let open Abb.Future.Infix_monad in
       run
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error _ -> Abb.Future.return (Error `Error)
+      | Error _ -> Abbs_future_combinators.return_err `Error
   end
 
   module Commit_check = Terrat_vcs_service_github_provider.Commit_check

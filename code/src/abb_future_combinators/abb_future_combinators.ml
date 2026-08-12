@@ -51,6 +51,8 @@ module Make (Fut : Abb_intf.Future.S) = struct
     Fut.add_dep ~dep:f2 f1
 
   let unit = Fut.return ()
+  let return_ok v = Fut.return (Ok v)
+  let return_err e = Fut.return (Error e)
   let ignore fut = fut >>= fun _ -> unit
   let background fut = ignore (Fut.fork fut)
 

@@ -65,7 +65,7 @@ let post' _config storage api_key infracost_uri path ctx =
                   Sql.verify_work_manifest
                   ~f:CCFun.id
                   work_manifest_id)
-        | None -> Abb.Future.return (Error `Bad_work_manifest))
+        | None -> Abbs_future_combinators.return_err `Bad_work_manifest)
       >>= function
       | Ok (_ :: _) -> (
           let uri = Uri.with_path infracost_uri (Uri.path infracost_uri ^ "/" ^ path) in

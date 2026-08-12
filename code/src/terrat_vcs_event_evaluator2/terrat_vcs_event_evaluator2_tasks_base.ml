@@ -30,7 +30,7 @@ struct
               Logs.err (fun m ->
                   m "%s : BACKTRACE: %s" (Builder.log_id s) (Printexc.raw_backtrace_to_string bt)))
             bt_opt;
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
       | `Exn (exn, bt_opt) ->
           Logs.err (fun m -> m "%s : %s" (Builder.log_id s) (Printexc.to_string exn));
           CCOption.iter
@@ -38,10 +38,10 @@ struct
               Logs.err (fun m ->
                   m "%s : BACKTRACE: %s" (Builder.log_id s) (Printexc.raw_backtrace_to_string bt)))
             bt_opt;
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
       | `Aborted ->
           Logs.err (fun m -> m "%s : ABORTED" (Builder.log_id s));
-          Abb.Future.return (Error `Error))
+          Abbs_future_combinators.return_err `Error)
     @@ Abbs_time_it.run'
          (fun ret t ->
            Metrics.Task_exec_duration.observe (Metrics.exec_duration name) t;

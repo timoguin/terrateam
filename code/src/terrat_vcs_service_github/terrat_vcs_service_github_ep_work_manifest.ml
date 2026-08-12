@@ -28,11 +28,11 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               ~f:CCFun.id
               work_manifest_id)
         >>= function
-        | Ok [] -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
-        | Ok (_ :: _) -> Abb.Future.return (Ok ())
+        | Ok [] -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+        | Ok (_ :: _) -> Abbs_future_combinators.return_ok ()
         | Error (#Pgsql_pool.err | #Pgsql_io.err) ->
-            Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
-    | Some _ | None -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
+    | Some _ | None -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
 
   module Initiate = struct
     let post' config storage exec work_manifest_id initiate ctx =
@@ -56,28 +56,25 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                 |> Terrat_api_work_manifest.Initiate.Responses.OK.to_yojson
                 |> Yojson.Safe.to_string
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
           | Error `Forbidden ->
               Logs.err (fun m -> m "%s : ACCESS_TOKEN : FORBIDDEN" (Brtl_ctx.token ctx));
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "%s : ACCESS_TOKEN : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m ->
                   m "%s : ACCESS_TOKEN : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error `Error ->
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module Plans = struct
@@ -109,12 +106,13 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                 has_changes)
           >>= function
           | Ok () ->
-              Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
           | Error `Error ->
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
 
     let get _config storage work_manifest_id dir workspace =
       Brtl_ep.run_result_json ~f:(fun ctx ->
@@ -140,16 +138,16 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                 Terrat_api_work_manifest.Plan_get.Responses.OK.({ data } |> to_yojson)
                 |> Yojson.Safe.to_string
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK response) ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK response) ctx)
           | Ok None ->
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
           | Error `Error ->
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
   end
 
   module Results = struct
@@ -185,11 +183,11 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
           >>= fun r ->
           match r with
           | Ok () ->
-              Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
           | Error `Error ->
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module Access_token = struct
@@ -339,25 +337,23 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               Pgsql_io.Prepared_stmt.fetch db Sql.select_workspaces ~f:CCFun.id work_manifest_id)
           >>= function
           | Ok [] ->
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
           | Ok (workspaces :: _) ->
               let body =
                 Terrat_api_components.Work_manifest_workspaces.to_yojson workspaces
                 |> Yojson.Safe.to_string
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "%s : WORKSPACES : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m -> m "%s : WORKSPACES : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 end

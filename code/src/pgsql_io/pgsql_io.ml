@@ -134,7 +134,7 @@ module Io = struct
       | Error `E_io | Error `E_no_space | Error (`Unexpected _) ->
           conn.connected <- false;
           Error `Disconnected)
-    else Abb.Future.return (Error `Disconnected)
+    else Abbs_future_combinators.return_err `Disconnected
 
   (* Send several frames as a single buffered write + flush.  Each frame is
      encoded into its own fresh byte buffer (encode_frame copies out via
@@ -161,7 +161,7 @@ module Io = struct
       | Error `E_io | Error `E_no_space | Error (`Unexpected _) ->
           conn.connected <- false;
           Error `Disconnected)
-    else Abb.Future.return (Error `Disconnected)
+    else Abbs_future_combinators.return_err `Disconnected
 
   let backend_msg conn len buf =
     if Pgsql_codec.Decode.buffer_length conn.decoder > conn.buf_size_threshold then
@@ -217,7 +217,7 @@ module Io = struct
         >>= function
         | Ok 0 | Error `E_io | Error (`Unexpected _) ->
             conn.connected <- false;
-            Abb.Future.return (Error `Disconnected)
+            Abbs_future_combinators.return_err `Disconnected
         | Ok n ->
             (* Logs.debug (fun m -> m "Rx = %S%!" (Bytes.to_string (Bytes.sub conn.buf 0 n))); *)
             backend_msg_dispatch conn n conn.buf >>= fun ret -> wait_for_frames' conn ret)
@@ -233,7 +233,7 @@ module Io = struct
                 m "%s Rx %a" (Uuidm.to_string conn.id) Pgsql_codec.Frame.Backend.pp frame))
           fs;
         Abb.Future.return r
-    | Error err -> Abb.Future.return (Error (`Parse_error err))
+    | Error err -> Abbs_future_combinators.return_err (`Parse_error err)
 
   and wait_for_frame_needed_bytes conn =
     (* Read all the needed bytes, this is an important performance optimization
@@ -251,7 +251,7 @@ module Io = struct
             >>= fun n ->
             Buffer.add_subbytes b buf 0 n;
             needed_bytes := !needed_bytes - n;
-            Abb.Future.return (Ok n))
+            Abbs_future_combinators.return_ok n)
           ~while_:(function
             | Ok 0 | Error _ -> false
             | Ok _ -> !needed_bytes > 0)
@@ -259,7 +259,7 @@ module Io = struct
         >>= function
         | Ok 0 | Error `E_io | Error (`Unexpected _) ->
             conn.connected <- false;
-            Abb.Future.return (Error `Disconnected)
+            Abbs_future_combinators.return_err `Disconnected
         | Ok _ -> (
             let buf = Buffer.to_bytes b in
             backend_msg_dispatch conn (Bytes.length buf) buf
@@ -267,19 +267,19 @@ module Io = struct
             match ret with
             | Ok [] -> wait_for_frames conn
             | Ok _ as r -> Abb.Future.return r
-            | Error err -> Abb.Future.return (Error (`Parse_error err))))
+            | Error err -> Abbs_future_combinators.return_err (`Parse_error err)))
     | None -> assert false
 
   let rec consume_until ?(fs = []) conn f =
     let open Abbs_future_combinators.Infix_result_monad in
-    (if fs <> [] then Abb.Future.return (Ok fs) else wait_for_frames conn)
+    (if fs <> [] then Abbs_future_combinators.return_ok fs else wait_for_frames conn)
     >>= fun received_fs ->
     match CCList.drop_while (fun fr -> not (f fr)) received_fs with
     | [] -> consume_until conn f
     | _fr :: fs ->
         (* Printf.printf "fr = %s\n%!" (Pgsql_codec.Frame.Backend.show fr);
          * List.iter (fun frame -> Printf.printf "Fs %s\n%!" (Pgsql_codec.Frame.Backend.show frame)) fs; *)
-        Abb.Future.return (Ok fs)
+        Abbs_future_combinators.return_ok fs
 
   (* The backend's ReadyForQuery status byte ('I' idle, 'T' in tx, 'E' failed
      tx) is the authoritative transaction state.  Trust it over our own in_tx
@@ -335,7 +335,7 @@ module Io = struct
       | None -> Abb.Future.return ())
     >>= fun () ->
     assert (res = []);
-    Abb.Future.return (Ok ())
+    Abbs_future_combinators.return_ok ()
 
   let error_response conn fs = drain_to_ready_for_query conn ~consume:(consume_until ~fs conn)
 
@@ -385,7 +385,7 @@ module Io = struct
 
   and match_frames ~skip_leading_unmatched conn fs received_fs =
     match (fs, received_fs) with
-    | [], _ -> Abb.Future.return (Ok received_fs)
+    | [], _ -> Abbs_future_combinators.return_ok received_fs
     | _, [] -> consume_matching ~skip_leading_unmatched conn fs
     | f :: fs, r_f :: r_fs when f r_f -> match_frames ~skip_leading_unmatched:false conn fs r_fs
     | _, Pgsql_codec.Frame.Backend.NoticeResponse { msgs } :: rfs ->
@@ -393,11 +393,12 @@ module Io = struct
         match_frames ~skip_leading_unmatched conn fs rfs
     | _, (Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as r_fs) ->
         let open Abb.Future.Infix_monad in
-        error_response conn r_fs >>= fun _ -> Abb.Future.return (Error (handle_err_frame msgs))
+        error_response conn r_fs
+        >>= fun _ -> Abbs_future_combinators.return_err (handle_err_frame msgs)
     | _, _ :: r_fs when skip_leading_unmatched -> match_frames ~skip_leading_unmatched conn fs r_fs
     | _, _ ->
         let open Abb.Future.Infix_monad in
-        reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame received_fs))
+        reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame received_fs)
 
   and reset conn =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -428,7 +429,7 @@ module Io = struct
      threaded decode would break this single-step atomicity. *)
   let rec wait_for_notification conn =
     match Queue.take_opt conn.notifications with
-    | Some n -> Abb.Future.return (Ok n)
+    | Some n -> Abbs_future_combinators.return_ok n
     | None ->
         let open Abb.Future.Infix_monad in
         backend_msg_sync conn 0 conn.buf >>= fun ret -> wait_for_notification_frames conn ret
@@ -436,11 +437,11 @@ module Io = struct
   and wait_for_notification_frames conn ret =
     let open Abb.Future.Infix_monad in
     match ret with
-    | Error err -> Abb.Future.return (Error (`Parse_error err))
+    | Error err -> Abbs_future_combinators.return_err (`Parse_error err)
     | Ok frames -> (
         let remaining = dispatch_notifications conn frames in
         match Queue.take_opt conn.notifications with
-        | Some n -> Abb.Future.return (Ok n)
+        | Some n -> Abbs_future_combinators.return_ok n
         | None -> (
             match remaining with
             | [] -> (
@@ -448,11 +449,12 @@ module Io = struct
                 >>= function
                 | Ok 0 | Error `E_io | Error (`Unexpected _) ->
                     conn.connected <- false;
-                    Abb.Future.return (Error `Disconnected)
+                    Abbs_future_combinators.return_err `Disconnected
                 | Ok n ->
                     backend_msg_sync conn n conn.buf
                     >>= fun ret -> wait_for_notification_frames conn ret)
-            | fs -> reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))))
+            | fs ->
+                reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)))
 end
 
 type frame_err =
@@ -943,29 +945,31 @@ module Cursor = struct
     | Pgsql_codec.Frame.Backend.CommandComplete _ :: fs -> consume_exec_end conn row_func st fs
     | Pgsql_codec.Frame.Backend.DataRow _ :: _ as fs ->
         let open Abb.Future.Infix_monad in
-        Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+        Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
     | Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as fs ->
         let open Abb.Future.Infix_monad in
-        Io.error_response conn fs >>= fun _ -> Abb.Future.return (Error (Io.handle_err_frame msgs))
+        Io.error_response conn fs
+        >>= fun _ -> Abbs_future_combinators.return_err (Io.handle_err_frame msgs)
     | Pgsql_codec.Frame.Backend.NoticeResponse { msgs } :: fs ->
         conn.notice_response msgs;
         consume_exec_frames conn row_func st fs
     | fs ->
         let open Abb.Future.Infix_monad in
-        Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+        Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
   and consume_exec_end conn row_func st = function
     | [] ->
         let open Abbs_future_combinators.Infix_result_monad in
         Io.wait_for_frames conn >>= fun frames -> consume_exec_end conn row_func st frames
     | [ Pgsql_codec.Frame.Backend.ReadyForQuery _ ] ->
-        Abb.Future.return (Ok (row_func.Row_func.fin st))
+        Abbs_future_combinators.return_ok (row_func.Row_func.fin st)
     | Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as fs ->
         let open Abb.Future.Infix_monad in
-        Io.error_response conn fs >>= fun _ -> Abb.Future.return (Error (Io.handle_err_frame msgs))
+        Io.error_response conn fs
+        >>= fun _ -> Abbs_future_combinators.return_err (Io.handle_err_frame msgs)
     | fs ->
         let open Abb.Future.Infix_monad in
-        Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+        Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
   (* Consume the response to an already-sent Execute (+ its preceding frames).
      The frames for the portal must already be flushed; this only reads. *)
@@ -996,13 +1000,14 @@ module Cursor = struct
         consume_fetch_process_frame conn row_func st fs data
     | Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as fs ->
         let open Abb.Future.Infix_monad in
-        Io.error_response conn fs >>= fun _ -> Abb.Future.return (Error (Io.handle_err_frame msgs))
+        Io.error_response conn fs
+        >>= fun _ -> Abbs_future_combinators.return_err (Io.handle_err_frame msgs)
     | Pgsql_codec.Frame.Backend.NoticeResponse { msgs } :: fs ->
         conn.notice_response msgs;
         consume_fetch_frames conn row_func st fs
     | fs ->
         let open Abb.Future.Infix_monad in
-        Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+        Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
   and consume_fetch_process_frame conn row_func st fs data =
     let open Abb.Future.Infix_monad in
@@ -1019,7 +1024,8 @@ module Cursor = struct
     with
     | `Ok (Some fr) -> consume_fetch_frames conn row_func (row_func.Row_func.post_f st fr) fs
     | `Ok None ->
-        drain_fetch_response conn fs >>= fun () -> Abb.Future.return (Error (`Bad_result data))
+        drain_fetch_response conn fs
+        >>= fun () -> Abbs_future_combinators.return_err (`Bad_result data)
     | `Exn (exn, bt) ->
         drain_fetch_response conn fs >>= fun () -> Printexc.raise_with_backtrace exn bt
 
@@ -1039,13 +1045,14 @@ module Cursor = struct
         let open Abbs_future_combinators.Infix_result_monad in
         Io.wait_for_frames conn >>= fun frames -> consume_fetch_end conn row_func st frames
     | [ Pgsql_codec.Frame.Backend.ReadyForQuery _ ] ->
-        Abb.Future.return (Ok (row_func.Row_func.fin st))
+        Abbs_future_combinators.return_ok (row_func.Row_func.fin st)
     | Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as fs ->
         let open Abb.Future.Infix_monad in
-        Io.error_response conn fs >>= fun _ -> Abb.Future.return (Error (Io.handle_err_frame msgs))
+        Io.error_response conn fs
+        >>= fun _ -> Abbs_future_combinators.return_err (Io.handle_err_frame msgs)
     | fs ->
         let open Abb.Future.Infix_monad in
-        Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+        Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
   (* Consume the response to an already-sent Execute (+ its preceding frames),
      processing returned rows. *)
@@ -1079,7 +1086,7 @@ module Cursor = struct
           | _ -> false);
         ];
     Io.consume_matching t.conn (consume_expected_frames t.conn)
-    >>= fun _ -> Abb.Future.return (Ok ())
+    >>= fun _ -> Abbs_future_combinators.return_ok ()
 
   let with_cursor t ~f =
     Abbs_future_combinators.with_finally
@@ -1109,7 +1116,7 @@ module Prepared_stmt = struct
     Io.send_frame conn frame
     >>= fun () ->
     add_expected_frame conn Pgsql_codec.Frame.Backend.(equal ParseComplete);
-    Abb.Future.return (Ok { conn; sql; id = stmt })
+    Abbs_future_combinators.return_ok { conn; sql; id = stmt }
 
   let bind t rf =
     Typed_sql.kbind
@@ -1130,7 +1137,7 @@ module Prepared_stmt = struct
         Io.send_frame t.conn bind_frame
         >>= fun () ->
         add_expected_frame t.conn Pgsql_codec.Frame.Backend.(equal BindComplete);
-        Abb.Future.return (Ok (Cursor.make t.conn rf portal)))
+        Abbs_future_combinators.return_ok (Cursor.make t.conn rf portal))
       t.sql
 
   let destroy t =
@@ -1147,7 +1154,7 @@ module Prepared_stmt = struct
           | _ -> false);
         ];
     Io.consume_matching t.conn (consume_expected_frames t.conn)
-    >>= fun _ -> Abb.Future.return (Ok ())
+    >>= fun _ -> Abbs_future_combinators.return_ok ()
 
   (* A server-side prepared statement that no longer exists (26000, e.g. dropped
      by a rolled-back transaction) or whose cached plan is stale after DDL
@@ -1224,7 +1231,7 @@ module Prepared_stmt = struct
         Abb.Future.return ok
     | Error e when Option.is_some cached && is_stale_stmt e ->
         stmt_cache_remove conn query;
-        if conn.in_tx then Abb.Future.return (Error e)
+        if conn.in_tx then Abbs_future_combinators.return_err e
         else run_cached conn sql vs ~row_func ~consume ~force_fresh:true
     | Error _ as err -> Abb.Future.return err
 
@@ -1582,16 +1589,16 @@ and create_sm_ssl_conn
       match Abbs_tls.client_tcp ~size:buf_size tcp tls_config host with
       | Ok (r, w) ->
           create_sm_perform_login r w ?passwd ~notice_response ~buf_size_threshold ~user database
-      | Error (#Abb_tls.err as err) -> Abb.Future.return (Error (`Tls_negotiate_err err)))
+      | Error (#Abb_tls.err as err) -> Abbs_future_combinators.return_err (`Tls_negotiate_err err))
   | n when n = 1 && Bytes.get bytes 0 = 'N' && not required ->
       Logs.info (fun m -> m "Clear text connection state machine initiated");
       create_sm_perform_login r w ?passwd ~notice_response ~buf_size_threshold ~user database
   | n when n = 1 && Bytes.get bytes 0 = 'N' && required ->
       Logs.info (fun m -> m "Secure connection denied");
-      Abb.Future.return (Error `Tls_required_but_denied_err)
+      Abbs_future_combinators.return_err `Tls_required_but_denied_err
   | n ->
       Logs.info (fun m -> m "Create connection unexpected response");
-      Abb.Future.return (Error (`Tls_unexpected_response (n, Bytes.sub_string bytes 0 n)))
+      Abbs_future_combinators.return_err (`Tls_unexpected_response (n, Bytes.sub_string bytes 0 n))
 
 and create_sm_perform_login r w ?passwd ~notice_response ~buf_size_threshold ~user database =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -1645,8 +1652,8 @@ and create_sm_scram_sha256_step_03 ?passwd ~user client_final t =
       | Ok _ ->
           (* Should be waiting for the next frame as an AuthenticationOk *)
           create_sm_process_login_frames ?passwd ~user t fs
-      | _ -> Abb.Future.return (Error `Unsupported_auth_sasl_err))
-  | fs -> Abb.Future.return (Error (`Unmatching_frame fs))
+      | _ -> Abbs_future_combinators.return_err `Unsupported_auth_sasl_err)
+  | fs -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
 and create_sm_scram_sha256_step_02 ?passwd ~user client_request t =
   let module B = Pgsql_codec.Frame.Backend in
@@ -1663,8 +1670,8 @@ and create_sm_scram_sha256_step_02 ?passwd ~user client_request t =
           >>= fun () -> create_sm_scram_sha256_step_03 ?passwd ~user client_final t
       | _ ->
           Logs.debug (fun m -> m "Received unexpected SASL response");
-          Abb.Future.return (Error `Unsupported_auth_sasl_err))
-  | fs -> Abb.Future.return (Error (`Unmatching_frame fs))
+          Abbs_future_combinators.return_err `Unsupported_auth_sasl_err)
+  | fs -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
 and create_sm_process_login_frames ?passwd ~user t =
   let open Pgsql_codec.Frame.Backend in
@@ -1680,7 +1687,7 @@ and create_sm_process_login_frames ?passwd ~user t =
       | Some password ->
           Io.send_frame t Pgsql_codec.Frame.Frontend.(PasswordMessage { password })
           >>= fun () -> create_sm_process_login_frames ?passwd ~user t fs
-      | None -> Abb.Future.return (Error `Connect_missing_password_err))
+      | None -> Abbs_future_combinators.return_err `Connect_missing_password_err)
   | AuthenticationMD5Password { salt } :: fs -> (
       Logs.info (fun m -> m "Received AuthenticationMD5Password");
       let open Abbs_future_combinators.Infix_result_monad in
@@ -1691,17 +1698,17 @@ and create_sm_process_login_frames ?passwd ~user t =
           let password = "md5" ^ passusersalt in
           Io.send_frame t Pgsql_codec.Frame.Frontend.(PasswordMessage { password })
           >>= fun () -> create_sm_process_login_frames ?passwd ~user t fs
-      | None -> Abb.Future.return (Error `Connect_missing_password_err))
+      | None -> Abbs_future_combinators.return_err `Connect_missing_password_err)
   | ParameterStatus _ :: fs -> create_sm_process_login_frames ?passwd ~user t fs
   | BackendKeyData { pid; secret_key } :: fs ->
       let t = { t with backend_key_data = Backend_key_data.{ pid; secret_key } } in
       create_sm_process_login_frames ?passwd ~user t fs
   | [ ReadyForQuery _ ] ->
       Logs.info (fun m -> m "Received ReadyForQuery");
-      Abb.Future.return (Ok t)
+      Abbs_future_combinators.return_ok t
   | AuthenticationSCMCredential :: _ ->
-      Abb.Future.return (Error `Unsupported_auth_scm_credential_err)
-  | AuthenticationGSS :: _ -> Abb.Future.return (Error `Unsupported_auth_gss_err)
+      Abbs_future_combinators.return_err `Unsupported_auth_scm_credential_err
+  | AuthenticationGSS :: _ -> Abbs_future_combinators.return_err `Unsupported_auth_gss_err
   | AuthenticationSASL { auth_mechanisms } :: _fs
     when CCList.mem ~eq:CCString.equal "SCRAM-SHA-256" auth_mechanisms -> (
       match passwd with
@@ -1713,11 +1720,11 @@ and create_sm_process_login_frames ?passwd ~user t =
           Logs.debug (fun m -> m "Sending SASLInitialResponse");
           Io.send_frame t Pgsql_codec.Frame.Frontend.(SASLInitialResponse { auth_mechanism; data })
           >>= fun () -> create_sm_scram_sha256_step_02 ?passwd ~user client_first t
-      | None -> Abb.Future.return (Error `Connect_missing_password_err))
+      | None -> Abbs_future_combinators.return_err `Connect_missing_password_err)
   | AuthenticationSASL { auth_mechanisms = _ } :: _ ->
-      Abb.Future.return (Error `Unsupported_auth_sasl_err)
-  | AuthenticationSSPI :: _ -> Abb.Future.return (Error `Unsupported_auth_sspi_err)
-  | fs -> Abb.Future.return (Error (`Unmatching_frame fs))
+      Abbs_future_combinators.return_err `Unsupported_auth_sasl_err
+  | AuthenticationSSPI :: _ -> Abbs_future_combinators.return_err `Unsupported_auth_sspi_err
+  | fs -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
 let create
     ?tls_config
@@ -1734,7 +1741,7 @@ let create
   >>= function
   | Ok _ as r -> Abb.Future.return r
   | Error `Disconnected | Error #Abb_happy_eyeballs.connect_err | Error `E_io | Error `E_no_space ->
-      Abb.Future.return (Error `Connection_failed)
+      Abbs_future_combinators.return_err `Connection_failed
   | ( Error `Connect_missing_password_err
     | Error (`Tls_negotiate_err _)
     | Error `Tls_required_but_denied_err
@@ -1819,7 +1826,7 @@ let tx t ~f =
           | Error _ as r -> tx_rollback t >>= fun _ -> Abb.Future.return r)
       | Ok fs ->
           Logs.debug (fun m -> m "%s Tx received unexpected frames, failing" (Uuidm.to_string t.id));
-          tx_rollback t >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+          tx_rollback t >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
       | Error _ as err -> tx_rollback t >>= fun _ -> Abb.Future.return err)
     ~failure:(fun () ->
       Logs.info (fun m -> m "%s Tx failed, rolling back" (Uuidm.to_string t.id));
@@ -1856,7 +1863,8 @@ let listen conn ~channel =
         conn
         Pgsql_codec.Frame.Backend.
           [ equal (CommandComplete { tag = "LISTEN" }); equal (ReadyForQuery { status = 'I' }) ];
-      Io.consume_matching conn (consume_expected_frames conn) >>= fun _ -> Abb.Future.return (Ok ()))
+      Io.consume_matching conn (consume_expected_frames conn)
+      >>= fun _ -> Abbs_future_combinators.return_ok ())
 
 let unlisten conn ~channel =
   with_busy conn ~what:"unlisten" (fun () ->
@@ -1869,7 +1877,8 @@ let unlisten conn ~channel =
         conn
         Pgsql_codec.Frame.Backend.
           [ equal (CommandComplete { tag = "UNLISTEN" }); equal (ReadyForQuery { status = 'I' }) ];
-      Io.consume_matching conn (consume_expected_frames conn) >>= fun _ -> Abb.Future.return (Ok ()))
+      Io.consume_matching conn (consume_expected_frames conn)
+      >>= fun _ -> Abbs_future_combinators.return_ok ())
 
 let unlisten_all conn =
   with_busy conn ~what:"unlisten_all" (fun () ->
@@ -1883,7 +1892,7 @@ let unlisten_all conn =
       Io.consume_matching conn (consume_expected_frames conn)
       >>= fun _ ->
       conn.listening <- false;
-      Abb.Future.return (Ok ()))
+      Abbs_future_combinators.return_ok ())
 
 let notify conn ~channel ?(payload = "") () =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -1900,7 +1909,7 @@ let notify conn ~channel ?(payload = "") () =
       /% Var.text "payload")
   in
   Prepared_stmt.fetch conn sql ~f:(fun (_ : string) -> ()) channel payload
-  >>= fun (_ : unit list) -> Abb.Future.return (Ok ())
+  >>= fun (_ : unit list) -> Abbs_future_combinators.return_ok ()
 
 let wait_for_notification conn =
   with_busy conn ~what:"wait_for_notification" (fun () -> Io.wait_for_notification conn)
@@ -1974,13 +1983,14 @@ and consume_copy_frames conn = function
   | Pgsql_codec.Frame.Backend.CommandComplete { tag } :: fs -> consume_copy_end conn tag fs
   | Pgsql_codec.Frame.Backend.ErrorResponse { msgs } :: _ as fs ->
       let open Abb.Future.Infix_monad in
-      Io.error_response conn fs >>= fun _ -> Abb.Future.return (Error (Io.handle_err_frame msgs))
+      Io.error_response conn fs
+      >>= fun _ -> Abbs_future_combinators.return_err (Io.handle_err_frame msgs)
   | Pgsql_codec.Frame.Backend.NoticeResponse { msgs } :: fs ->
       conn.notice_response msgs;
       consume_copy_frames conn fs
   | fs ->
       let open Abb.Future.Infix_monad in
-      Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+      Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
 and consume_copy_end conn tag = function
   | [] ->
@@ -1988,13 +1998,13 @@ and consume_copy_end conn tag = function
       Io.wait_for_frames conn >>= fun frames -> consume_copy_end conn tag frames
   | Pgsql_codec.Frame.Backend.ReadyForQuery _ :: _ ->
       let n = Scanf.sscanf tag "COPY %d" Fun.id in
-      Abb.Future.return (Ok n)
+      Abbs_future_combinators.return_ok n
   | Pgsql_codec.Frame.Backend.NoticeResponse { msgs } :: fs ->
       conn.notice_response msgs;
       consume_copy_end conn tag fs
   | fs ->
       let open Abb.Future.Infix_monad in
-      Io.reset conn >>= fun _ -> Abb.Future.return (Error (`Unmatching_frame fs))
+      Io.reset conn >>= fun _ -> Abbs_future_combinators.return_err (`Unmatching_frame fs)
 
 let copy_to ~table ~cols t iter =
   let open Abbs_future_combinators.Infix_result_monad in

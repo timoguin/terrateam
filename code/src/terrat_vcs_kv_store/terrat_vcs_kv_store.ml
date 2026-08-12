@@ -27,11 +27,11 @@ struct
     Pgsql_pool.with_conn storage ~f:(fun db ->
         S.enforce_installation_access ~request_id:(Brtl_ctx.token ctx) user installation_id db)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Forbidden -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
 
   let make_key installation_id key =
     (S.namespace_prefix ^ ":" ^ P.Api.Account.Id.to_string installation_id, key)
@@ -57,17 +57,17 @@ struct
         | Ok _ as r -> Abb.Future.return r
         | Error #Terrat_kv_store.err as err -> Abb.Future.return err)
     >>= function
-    | Ok res -> Abb.Future.return (Ok (r res))
+    | Ok res -> Abbs_future_combinators.return_ok (r res)
     | Error (#Pgsql_pool.err as err) ->
         Logs.info (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
     | Error (`Syntax_err _) ->
         Logs.info (fun m -> m "%s : PARSE FAILURE" (Brtl_ctx.token ctx));
-        Abb.Future.return
-          (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+        Abbs_future_combinators.return_ok
+          (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
     | Error (#Terrat_kv_store.err as err) ->
         Logs.info (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Terrat_kv_store.pp_err err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
 
   module Get = struct
     let run _config storage installation_id key committed idx select =
@@ -126,12 +126,12 @@ struct
                 (Terrat_kv_store.set ?read_caps ?write_caps ?idx ?committed ~key data)
           | Error read_caps_err, _ ->
               Logs.info (fun m -> m "%s : READ_CAPS : %s" (Brtl_ctx.token ctx) read_caps_err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           | _, Error write_caps_err ->
               Logs.info (fun m -> m "%s : WRITE_CAPS : %s" (Brtl_ctx.token ctx) write_caps_err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
   end
 
   module Cas = struct
@@ -172,12 +172,12 @@ struct
                 (Terrat_kv_store.cas ?read_caps ?write_caps ?idx ?committed ?version ~key data)
           | Error read_caps_err, _ ->
               Logs.info (fun m -> m "%s : READ_CAPS : %s" (Brtl_ctx.token ctx) read_caps_err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           | _, Error write_caps_err ->
               Logs.info (fun m -> m "%s : WRITE_CAPS : %s" (Brtl_ctx.token ctx) write_caps_err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
   end
 
   module Delete = struct

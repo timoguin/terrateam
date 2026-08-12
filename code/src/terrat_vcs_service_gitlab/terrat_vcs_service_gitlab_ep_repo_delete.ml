@@ -33,29 +33,29 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) (S : S) = struct
     let open Abbs_future_combinators.Infix_result_monad in
     Pgsql_io.Prepared_stmt.fetch db (Sql.select_username ()) ~f:CCFun.id (Terrat_user.id user)
     >>= function
-    | username :: _ -> Abb.Future.return (Ok username)
-    | [] -> Abb.Future.return (Error `Forbidden)
+    | username :: _ -> Abbs_future_combinators.return_ok username
+    | [] -> Abbs_future_combinators.return_err `Forbidden
 
   let enforce_org_admin ~request_id ~org username client =
     let open Abbs_future_combinators.Infix_result_monad in
     let vcs_user = P.Api.User.make username in
     P.Api.get_org_role ~request_id ~org vcs_user client
     >>= function
-    | Some `Admin -> Abb.Future.return (Ok ())
-    | Some `User | None -> Abb.Future.return (Error `Forbidden)
+    | Some `Admin -> Abbs_future_combinators.return_ok ()
+    | Some `User | None -> Abbs_future_combinators.return_err `Forbidden
 
   let ensure_archived ~request_id client repo =
     let open Abbs_future_combinators.Infix_result_monad in
     P.Api.fetch_remote_repo ~request_id client repo
     >>= fun remote_repo ->
-    if P.Api.Remote_repo.is_archived remote_repo then Abb.Future.return (Ok ())
-    else Abb.Future.return (Error `Not_archived)
+    if P.Api.Remote_repo.is_archived remote_repo then Abbs_future_combinators.return_ok ()
+    else Abbs_future_combinators.return_err `Not_archived
 
   let perform_delete ~request_id config _storage installation_id repo_id user db =
     let open Abbs_future_combinators.Infix_result_monad in
     P.Db.query_repo_by_id ~request_id db installation_id repo_id
     >>= function
-    | None -> Abb.Future.return (Error `Not_found)
+    | None -> Abbs_future_combinators.return_err `Not_found
     | Some repo ->
         let account = P.Api.Account.make installation_id in
         P.Api.create_client ~request_id config account db
@@ -80,39 +80,40 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) (S : S) = struct
         Pgsql_pool.with_conn storage ~f:(fun db ->
             S.enforce_installation_access ~request_id user installation_id db
             >>= function
-            | Error `Forbidden -> Abb.Future.return (Error `Forbidden)
+            | Error `Forbidden -> Abbs_future_combinators.return_err `Forbidden
             | Ok () -> (
                 match P.Api.Repo.Id.of_string repo_id with
-                | None -> Abb.Future.return (Error `Invalid_repo_id)
+                | None -> Abbs_future_combinators.return_err `Invalid_repo_id
                 | Some repo_id ->
                     perform_delete ~request_id config storage installation_id repo_id user db))
         >>= function
         | Ok () ->
-            Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "{}") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "{}") ctx)
         | Error `Forbidden ->
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
         | Error `Invalid_repo_id ->
             let body = error_response "INVALID_REPO_ID" in
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
         | Error `Not_found ->
             let body = error_response "REPO_NOT_FOUND" in
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
         | Error `Not_archived ->
             let body = error_response "REPO_NOT_ARCHIVED" in
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
         | Error `Error ->
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_io.err as err) ->
             Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
 end

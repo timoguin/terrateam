@@ -26,7 +26,7 @@ let create_system_user ?access_token_id ?capabilities db =
   Pgsql_io.Prepared_stmt.fetch db (Sql.select_system_user ()) ~f:CCFun.id
   >>= function
   | [] -> assert false
-  | id :: _ -> Abb.Future.return (Ok (make ?access_token_id ?capabilities ~id ()))
+  | id :: _ -> Abbs_future_combinators.return_ok (make ?access_token_id ?capabilities ~id ())
 
 let access_token_id t = t.access_token_id
 let id t = t.id

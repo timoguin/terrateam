@@ -86,7 +86,7 @@ let call t req =
   | Some timeout ->
       let open Abb.Future.Infix_monad in
       Abbs_future_combinators.first
-        (Abb.Sys.sleep timeout >>= fun () -> Abb.Future.return (Error `Timeout))
+        (Abb.Sys.sleep timeout >>= fun () -> Abbs_future_combinators.return_err `Timeout)
         (Api.call Openapi.Request.(req |> with_base_url t.base_url |> add_headers t.headers))
       >>= fun (r, fut) -> Abb.Future.abort fut >>= fun () -> Abb.Future.return r
 
@@ -129,7 +129,7 @@ let rec fold' t ~init ~f req =
   | Some next ->
       let req = Openapi.Request.with_url next req in
       fold' t ~init ~f req
-  | None -> Abb.Future.return (Ok init)
+  | None -> Abbs_future_combinators.return_ok init
 
 let fold t ~init ~f req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -144,7 +144,7 @@ let fold t ~init ~f req =
   | Some next ->
       let req = Openapi.Request.with_url next req in
       fold' t ~init ~f req
-  | None -> Abb.Future.return (Ok init)
+  | None -> Abbs_future_combinators.return_ok init
 
 let collect_all t req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -152,8 +152,8 @@ let collect_all t req =
     ~init:[]
     ~f:(fun acc resp ->
       match Openapi.Response.value resp with
-      | `OK vs -> Abb.Future.return (Ok (vs @ acc))
-      | _ -> Abb.Future.return (Error `Error))
+      | `OK vs -> Abbs_future_combinators.return_ok (vs @ acc)
+      | _ -> Abbs_future_combinators.return_err `Error)
     t
     req
-  >>= fun res -> Abb.Future.return (Ok (CCList.rev res))
+  >>= fun res -> Abbs_future_combinators.return_ok (CCList.rev res)

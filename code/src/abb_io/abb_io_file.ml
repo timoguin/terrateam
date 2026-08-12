@@ -39,7 +39,7 @@ module Make (Abb : Abb_intf.S) = struct
       let open Fut_comb.Infix_result_monad in
       Abb.File.read fin ~buf:bytes ~pos:0 ~len
       >>= function
-      | 0 -> Abb.Future.return (Ok (Buffer.contents buffer))
+      | 0 -> Fut_comb.return_ok (Buffer.contents buffer)
       | n ->
           Buffer.add_subbytes buffer bytes 0 n;
           read_data buffer file bytes
@@ -58,7 +58,7 @@ module Make (Abb : Abb_intf.S) = struct
           let open Fut_comb.Infix_result_monad in
           Abb.File.write file [ buf ]
           >>= function
-          | n when n = buf.Abb_intf.Write_buf.len -> Abb.Future.return (Ok ())
+          | n when n = buf.Abb_intf.Write_buf.len -> Fut_comb.return_ok ()
           | n ->
               write_data file Abb_intf.Write_buf.{ buf with pos = buf.pos + n; len = buf.len - n }
         in

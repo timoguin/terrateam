@@ -73,12 +73,12 @@ module Make (S : S) = struct
             || CCList.mem ~eq:CCString.equal previous_filename terrateam_repo_config)
 
   let rec test_queries ctx = function
-    | [] -> Abb.Future.return (Ok None)
+    | [] -> Abbs_future_combinators.return_ok None
     | q :: qs -> (
         let open Abbs_future_combinators.Infix_result_monad in
         S.query ~request_id:ctx.Ctx.request_id ctx.Ctx.client ctx.Ctx.repo ctx.Ctx.user q
         >>= function
-        | true -> Abb.Future.return (Ok (Some q))
+        | true -> Abbs_future_combinators.return_ok (Some q)
         | false -> test_queries ctx qs)
 
   let eval_ci_change ctx ci_config_change diff =
@@ -87,8 +87,8 @@ module Make (S : S) = struct
     >>= function
     | true ->
         test_queries ctx ci_config_change
-        >>= fun res -> Abb.Future.return (Ok (CCOption.is_some res))
-    | false -> Abb.Future.return (Ok true)
+        >>= fun res -> Abbs_future_combinators.return_ok (CCOption.is_some res)
+    | false -> Abbs_future_combinators.return_ok true
 
   let eval_files ctx files_policy diff =
     let files =
@@ -109,20 +109,20 @@ module Make (S : S) = struct
         let open Abbs_future_combinators.Infix_result_monad in
         test_queries ctx policy
         >>= function
-        | Some _ -> Abb.Future.return (Ok ())
-        | None -> Abb.Future.return (Error (`Denied (fname, policy))))
+        | Some _ -> Abbs_future_combinators.return_ok ()
+        | None -> Abbs_future_combinators.return_err (`Denied (fname, policy)))
       (Sln_map.String.to_list matching_files)
     >>= function
-    | Ok () -> Abb.Future.return (Ok `Ok)
-    | Error (`Denied _ as ret) -> Abb.Future.return (Ok ret)
-    | Error (#query_err as err) -> Abb.Future.return (Error err)
+    | Ok () -> Abbs_future_combinators.return_ok `Ok
+    | Error (`Denied _ as ret) -> Abbs_future_combinators.return_ok ret
+    | Error (#query_err as err) -> Abbs_future_combinators.return_err err
 
   let eval_repo_config ctx terrateam_config_change diff =
     let open Abbs_future_combinators.Infix_result_monad in
     if is_repo_config_change diff then
       test_queries ctx terrateam_config_change
-      >>= fun res -> Abb.Future.return (Ok (CCOption.is_some res))
-    else Abb.Future.return (Ok true)
+      >>= fun res -> Abbs_future_combinators.return_ok (CCOption.is_some res)
+    else Abbs_future_combinators.return_ok true
 
   let eval ctx policies change_matches =
     Abbs_future_combinators.List_result.fold_left
@@ -136,22 +136,18 @@ module Make (S : S) = struct
             let open Abbs_future_combinators.Infix_result_monad in
             test_queries ctx policy
             >>= function
-            | Some _ -> Abb.Future.return (Ok R.{ r with pass = change :: pass })
+            | Some _ -> Abbs_future_combinators.return_ok R.{ r with pass = change :: pass }
             | None ->
-                Abb.Future.return
-                  (Ok
-                     R.
-                       {
-                         r with
-                         deny = Deny.{ change_match = change; policy = Some policy } :: deny;
-                       }))
+                Abbs_future_combinators.return_ok
+                  R.{ r with deny = Deny.{ change_match = change; policy = Some policy } :: deny })
         | None ->
-            Abb.Future.return
-              (Ok R.{ r with deny = Deny.{ change_match = change; policy = None } :: deny }))
+            Abbs_future_combinators.return_ok
+              R.{ r with deny = Deny.{ change_match = change; policy = None } :: deny })
       ~init:R.{ pass = []; deny = [] }
       change_matches
 
   let eval_match_list ctx match_list =
     let open Abbs_future_combinators.Infix_result_monad in
-    test_queries ctx match_list >>= fun res -> Abb.Future.return (Ok (CCOption.is_some res))
+    test_queries ctx match_list
+    >>= fun res -> Abbs_future_combinators.return_ok (CCOption.is_some res)
 end

@@ -972,9 +972,9 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
         Service_local.call t.w (fun req -> Server.Msg.Request req) curl_req
         >>= function
         | Ok res -> Abb.Future.return res
-        | Error `Chan_closed -> Abb.Future.return (Error `Closed)
+        | Error `Chan_closed -> Fc.return_err `Closed
       in
-      Abb.Future.return (Ok (id, response_fut))
+      Fc.return_ok (id, response_fut)
 
     let cancel t id = send_to_chan t.w (Server.Msg.Cancel id)
   end
@@ -1000,12 +1000,11 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
           Abb.Future.return ()
         in
         Connector.request connector options headers body meth_ uri
-        >>= fun (id, p) -> Abb.Future.return (Ok (connector, id, buf, p)))
+        >>= fun (id, p) -> Fc.return_ok (connector, id, buf, p))
       (fun res ->
         let open Fc.Infix_result_monad in
         Abb.Future.return res
-        >>= fun (_, _, buf, p) ->
-        p >>= fun resp -> Abb.Future.return (Ok (resp, Buffer.contents buf)))
+        >>= fun (_, _, buf, p) -> p >>= fun resp -> Fc.return_ok (resp, Buffer.contents buf))
       ~finally:(fun res ->
         Fc.ignore
           (let open Fc.Infix_result_monad in
@@ -1017,8 +1016,8 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
               this is a noop. *)
            Connector.cancel connector id))
     >>= function
-    | Ok res -> Abb.Future.return (Ok res)
-    | Error (#request_err as err) -> Abb.Future.return (Error err)
+    | Ok res -> Fc.return_ok res
+    | Error (#request_err as err) -> Fc.return_err err
 
   let get ?connector ?options ?headers uri = call ?connector ?options ?headers `GET uri
   let put ?connector ?options ?headers ?body uri = call ?connector ?options ?headers (`PUT body) uri

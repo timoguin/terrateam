@@ -289,7 +289,7 @@ module Server = struct
     let open Abb.Future.Infix_monad in
     let cleanup : (unit, Pgsql_io.err) result Abb.Future.t =
       if Pgsql_io.has_listens conn.Conn.conn then Pgsql_io.unlisten_all conn.Conn.conn
-      else Abb.Future.return (Ok ())
+      else Abbs_future_combinators.return_ok ()
     in
     cleanup
     >>= function
@@ -433,7 +433,7 @@ let with_conn t ~f =
       | Ok conn ->
           Logs.debug (fun m -> m "GET : %s" (Uuidm.to_string @@ Pgsql_io.id conn.Conn.conn));
           f conn.Conn.conn
-      | Error () -> Abb.Future.return (Error `Pgsql_pool_error))
+      | Error () -> Abbs_future_combinators.return_err `Pgsql_pool_error)
     ~finally:(function
       | Ok conn -> (
           Logs.debug (fun m -> m "RETURN : %s" (Uuidm.to_string @@ Pgsql_io.id conn.Conn.conn));

@@ -179,9 +179,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   (Uuidm.to_string @@ Pgsql_io.id db));
             Abb.Future.return ()))
     >>= function
-    | `Ok (Ok v) -> Abb.Future.return (Ok v)
-    | `Ok (Error err) -> Abb.Future.return (Error err)
-    | `Closed -> Abb.Future.return (Error `Closed)
+    | `Ok (Ok v) -> Abbs_future_combinators.return_ok v
+    | `Ok (Error err) -> Abbs_future_combinators.return_err err
+    | `Closed -> Abbs_future_combinators.return_err `Closed
 
   let make_tasks tasks_map =
     { Bs.Tasks.get = (fun _s k -> Abb.Future.return (Hmap.find (coerce_to_task k) tasks_map)) }

@@ -112,28 +112,24 @@ module Make (S : S with type Account_id.t = int) = struct
           | Ok installations ->
               let module R = Terrat_api_gitlab_installations.List.Responses.OK in
               let body = { R.installations } |> R.to_yojson |> Yojson.Safe.to_string in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
           | Error `Error ->
               Logs.err (fun m -> m "ERROR");
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#User.Oauth.access_token_err as err) ->
               Logs.err (fun m -> m "%a" User.Oauth.pp_access_token_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Openapic_abb.call_err as err) ->
               Logs.err (fun m -> m "%a" Openapic_abb.pp_call_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m ": %a" Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module Webhook = struct
@@ -165,9 +161,9 @@ module Make (S : S with type Account_id.t = int) = struct
       let module M = Gitlabc_components.API_Entities_Member in
       match Openapi.Response.value resp with
       | `OK { M.access_level; _ } ->
-          if access_level >= 40 then Abb.Future.return (Ok ())
-          else Abb.Future.return (Error (`Access_level_err access_level))
-      | `Not_found -> Abb.Future.return (Error `User_not_found_in_group_err)
+          if access_level >= 40 then Abbs_future_combinators.return_ok ()
+          else Abbs_future_combinators.return_err (`Access_level_err access_level)
+      | `Not_found -> Abbs_future_combinators.return_err `User_not_found_in_group_err
 
     let fetch_group_name client installation_id =
       let open Abbs_future_combinators.Infix_result_monad in
@@ -176,7 +172,7 @@ module Make (S : S with type Account_id.t = int) = struct
       >>= fun resp ->
       let module Group = Gitlabc_components.API_Entities_GroupDetail in
       let (`OK { Group.name; _ }) = Openapi.Response.value resp in
-      Abb.Future.return (Ok name)
+      Abbs_future_combinators.return_ok name
 
     let get' config storage user installation_id webhook_url =
       let module Oauth = Terrat_vcs_service_gitlab_user.Oauth in
@@ -210,7 +206,7 @@ module Make (S : S with type Account_id.t = int) = struct
             @@ Terrat_vcs_service_gitlab_provider.Api.Config.config config))
       >>= function
       | [] -> assert false
-      | webhook_secret :: _ -> Abb.Future.return (Ok webhook_secret)
+      | webhook_secret :: _ -> Abbs_future_combinators.return_ok webhook_secret
 
     let get config storage installation_id =
       Brtl_ep.run_result_json ~f:(fun ctx ->
@@ -231,8 +227,8 @@ module Make (S : S with type Account_id.t = int) = struct
               let body =
                 webhook |> Terrat_api_components.Gitlab_webhook.to_yojson |> Yojson.Safe.to_string
               in
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
           | Error (`Access_level_err access_level) ->
               Logs.err (fun m ->
                   m
@@ -240,8 +236,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     (Brtl_ctx.token ctx)
                     installation_id
                     access_level);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
           | Error (#Oauth.access_token_err as err) ->
               Logs.err (fun m ->
                   m
@@ -250,8 +246,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Oauth.pp_access_token_err
                     err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
           | Error (#Openapic_abb.call_err as err) ->
               Logs.err (fun m ->
                   m
@@ -260,9 +256,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Openapic_abb.pp_call_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m
@@ -271,9 +266,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Pgsql_pool.pp_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#User.query_user_id_err as err) ->
               Logs.err (fun m ->
                   m
@@ -282,18 +276,16 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     User.pp_query_user_id_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error `User_not_found_in_group_err ->
               Logs.err (fun m ->
                   m
                     "%s : installation_id=%d : USER_NOT_FOUND_IN_GROUP"
                     (Brtl_ctx.token ctx)
                     installation_id);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module List_repos = struct
@@ -407,7 +399,8 @@ module Make (S : S with type Account_id.t = int) = struct
       let query =
         Page.{ user = Terrat_user.id user; storage; installation_id; limit; dir = `Asc }
       in
-      Paginate.run ?page ~page_param:"page" query ctx >>= fun ctx -> Abb.Future.return (Ok ctx)
+      Paginate.run ?page ~page_param:"page" query ctx
+      >>= fun ctx -> Abbs_future_combinators.return_ok ctx
 
     let get config storage installation_id page limit =
       Brtl_ep.run_result_json ~f:(fun ctx ->
@@ -417,20 +410,19 @@ module Make (S : S with type Account_id.t = int) = struct
           let open Abb.Future.Infix_monad in
           get' config storage user installation_id page limit ctx
           >>= function
-          | Ok ctx -> Abb.Future.return (Ok ctx)
-          | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+          | Ok ctx -> Abbs_future_combinators.return_ok ctx
+          | Error `Forbidden ->
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module List_dirspaces = struct
@@ -738,15 +730,14 @@ module Make (S : S with type Account_id.t = int) = struct
                           }
                       in
                       Paginate.run ?page ~page_param:"page" query ctx
-                      >>= fun ctx -> Abb.Future.return (Ok ctx)
+                      >>= fun ctx -> Abbs_future_combinators.return_ok ctx
                   | Error (`Error msg) ->
                       let body =
                         Bad_request.(
                           { id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error `In_dir_not_supported ->
                       let body =
                         Bad_request.(
@@ -754,9 +745,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Bad_date_format date) ->
                       let body =
                         Bad_request.(
@@ -764,9 +754,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Unknown_tag tag) ->
                       let body =
                         Bad_request.(
@@ -774,10 +763,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
-                  )
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
               | Some (Ok None) | None ->
                   let query =
                     Page.
@@ -791,27 +778,26 @@ module Make (S : S with type Account_id.t = int) = struct
                       }
                   in
                   Paginate.run ?page ~page_param:"page" query ctx
-                  >>= fun ctx -> Abb.Future.return (Ok ctx)
+                  >>= fun ctx -> Abbs_future_combinators.return_ok ctx
               | Some (Error (`Tag_query_error (_, err))) ->
                   let body =
                     Bad_request.(
                       { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
-          | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+          | Error `Forbidden ->
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module List_work_manifest_outputs = struct
@@ -1006,15 +992,14 @@ module Make (S : S with type Account_id.t = int) = struct
                         }
                       in
                       Paginate.run ?page ~page_param:"page" query ctx
-                      >>= fun ctx -> Abb.Future.return (Ok ctx)
+                      >>= fun ctx -> Abbs_future_combinators.return_ok ctx
                   | Error (`Error msg) ->
                       let body =
                         Bad_request.(
                           { id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error `In_dir_not_supported ->
                       let body =
                         Bad_request.(
@@ -1022,9 +1007,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Bad_date_format date) ->
                       let body =
                         Bad_request.(
@@ -1032,9 +1016,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Unknown_tag tag) ->
                       let body =
                         Bad_request.(
@@ -1042,10 +1025,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
-                  )
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
               | Some (Ok None) | None ->
                   let query =
                     {
@@ -1060,27 +1041,26 @@ module Make (S : S with type Account_id.t = int) = struct
                     }
                   in
                   Paginate.run ?page ~page_param:"page" query ctx
-                  >>= fun ctx -> Abb.Future.return (Ok ctx)
+                  >>= fun ctx -> Abbs_future_combinators.return_ok ctx
               | Some (Error (`Tag_query_error (_, err))) ->
                   let body =
                     Bad_request.(
                       { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
-          | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+          | Error `Forbidden ->
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module List_work_manifests = struct
@@ -1378,15 +1358,14 @@ module Make (S : S with type Account_id.t = int) = struct
                           }
                       in
                       Paginate.run ?page ~page_param:"page" query ctx
-                      >>= fun ctx -> Abb.Future.return (Ok ctx)
+                      >>= fun ctx -> Abbs_future_combinators.return_ok ctx
                   | Error (`Error msg) ->
                       let body =
                         Bad_request.(
                           { id = msg; data = None } |> to_yojson |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error `In_dir_not_supported ->
                       let body =
                         Bad_request.(
@@ -1394,9 +1373,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Bad_date_format date) ->
                       let body =
                         Bad_request.(
@@ -1404,9 +1382,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
                   | Error (`Unknown_tag tag) ->
                       let body =
                         Bad_request.(
@@ -1414,10 +1391,8 @@ module Make (S : S with type Account_id.t = int) = struct
                           |> to_yojson
                           |> Yojson.Safe.to_string)
                       in
-                      Abb.Future.return
-                        (Ok
-                           (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
-                  )
+                      Abbs_future_combinators.return_ok
+                        (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
               | Some (Ok None) | None ->
                   let query =
                     Page.
@@ -1431,27 +1406,26 @@ module Make (S : S with type Account_id.t = int) = struct
                       }
                   in
                   Paginate.run ?page ~page_param:"page" query ctx
-                  >>= fun ctx -> Abb.Future.return (Ok ctx)
+                  >>= fun ctx -> Abbs_future_combinators.return_ok ctx
               | Some (Error (`Tag_query_error (_, err))) ->
                   let body =
                     Bad_request.(
                       { id = "PARSE_ERROR"; data = Some err } |> to_yojson |> Yojson.Safe.to_string)
                   in
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)))
-          | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx))
+          | Error `Forbidden ->
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m ->
                   m "INSTALLATION : %s : LIST_REPOS : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 
   module Token = struct
@@ -1498,7 +1472,8 @@ module Make (S : S with type Account_id.t = int) = struct
           put' config storage user installation_id token
           >>= function
           | Ok () ->
-              Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
           | Error (`Access_level_err access_level) ->
               Logs.err (fun m ->
                   m
@@ -1506,8 +1481,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     (Brtl_ctx.token ctx)
                     installation_id
                     access_level);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
           | Error (#Oauth.access_token_err as err) ->
               Logs.err (fun m ->
                   m
@@ -1516,8 +1491,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Oauth.pp_access_token_err
                     err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
           | Error (#Openapic_abb.call_err as err) ->
               Logs.err (fun m ->
                   m
@@ -1526,9 +1501,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Openapic_abb.pp_call_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m ->
                   m
@@ -1537,9 +1511,8 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     Pgsql_pool.pp_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error (#User.query_user_id_err as err) ->
               Logs.err (fun m ->
                   m
@@ -1548,17 +1521,15 @@ module Make (S : S with type Account_id.t = int) = struct
                     installation_id
                     User.pp_query_user_id_err
                     err);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
           | Error `User_not_found_in_group_err ->
               Logs.err (fun m ->
                   m
                     "%s : installation_id=%d : USER_NOT_FOUND_IN_GROUP"
                     (Brtl_ctx.token ctx)
                     installation_id);
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
   end
 end

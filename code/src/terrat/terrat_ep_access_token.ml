@@ -4,8 +4,8 @@ module Logs = (val Logs.src_log src : Logs.LOG)
 
 let ensure_has_access_token_id user ctx =
   match Terrat_user.access_token_id user with
-  | Some access_token_id -> Abb.Future.return (Ok access_token_id)
-  | None -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+  | Some access_token_id -> Abbs_future_combinators.return_ok access_token_id
+  | None -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
 
 module Refresh = struct
   module Sql = struct
@@ -36,20 +36,19 @@ module Refresh = struct
                 access_token_id
               >>= function
               | [] ->
-                  Abb.Future.return
-                    (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
               | capabilities :: _ ->
                   let user = Terrat_user.make ~id:(Terrat_user.id user) ?capabilities () in
                   Terrat_user.Token.to_token ~expiration:(Duration.of_min 1) db user
                   >>= fun token ->
-                  Abb.Future.return
-                    (Ok
-                       (Brtl_ctx.set_response
-                          (Brtl_rspnc.create
-                             ~status:`OK
-                             (Yojson.Safe.to_string
-                             @@ Terrat_api_access_token.Refresh.Responses.OK.(to_yojson { token })))
-                          ctx)))
+                  Abbs_future_combinators.return_ok
+                    (Brtl_ctx.set_response
+                       (Brtl_rspnc.create
+                          ~status:`OK
+                          (Yojson.Safe.to_string
+                          @@ Terrat_api_access_token.Refresh.Responses.OK.(to_yojson { token })))
+                       ctx))
         in
         let open Abb.Future.Infix_monad in
         run
@@ -64,7 +63,7 @@ module Refresh = struct
                   (Terrat_user.id user)
                   Terrat_user.Token.pp_to_token_err
                   err);
-            Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m ->
                 m
@@ -74,5 +73,5 @@ module Refresh = struct
                   (Terrat_user.id user)
                   Pgsql_pool.pp_err
                   err);
-            Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
 end

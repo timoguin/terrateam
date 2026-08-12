@@ -55,8 +55,8 @@ let get ?select ?idx ?committed ~key t =
         (Parameters.make ~select ~idx ~committed ~key ~vcs:t.vcs ~installation_id:t.installation ()))
   >>= fun resp ->
   match Openapi.Response.value resp with
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
-  | `Not_found -> Abb.Future.return (Ok None)
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
+  | `Not_found -> Abbs_future_combinators.return_ok None
   | `OK
       {
         Terrat_api_components_kv_record.committed;
@@ -69,22 +69,19 @@ let get ?select ?idx ?committed ~key t =
         read_caps;
         write_caps;
       } ->
-      Abb.Future.return
-        (Ok
-           (Some
-              {
-                Record.committed;
-                created_at;
-                data;
-                idx;
-                key;
-                size;
-                version;
-                read_caps =
-                  CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
-                write_caps =
-                  CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
-              }))
+      Abbs_future_combinators.return_ok
+        (Some
+           {
+             Record.committed;
+             created_at;
+             data;
+             idx;
+             key;
+             size;
+             version;
+             read_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
+             write_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
+           })
 
 let set ?read_caps ?write_caps ?idx ?committed ~key data t =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -116,20 +113,19 @@ let set ?read_caps ?write_caps ?idx ?committed ~key data t =
       } ->
       (* Data returned from the server is empty, so we replace it with the data
          we just sent.  Gotta save those bytes. *)
-      Abb.Future.return
-        (Ok
-           {
-             Record.committed;
-             created_at;
-             data;
-             idx;
-             key;
-             size;
-             version;
-             read_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
-             write_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
-           })
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
+      Abbs_future_combinators.return_ok
+        {
+          Record.committed;
+          created_at;
+          data;
+          idx;
+          key;
+          size;
+          version;
+          read_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
+          write_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
+        }
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
 
 let cas ?read_caps ?write_caps ?idx ?committed ?version ~key data t =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -162,24 +158,21 @@ let cas ?read_caps ?write_caps ?idx ?committed ?version ~key data t =
       } ->
       (* Data returned from the server is empty, so we replace it with the data
          we just sent.  Gotta save those bytes. *)
-      Abb.Future.return
-        (Ok
-           (Some
-              {
-                Record.committed;
-                created_at;
-                data;
-                idx;
-                key;
-                size;
-                version;
-                read_caps =
-                  CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
-                write_caps =
-                  CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
-              }))
-  | `Bad_request -> Abb.Future.return (Ok None)
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
+      Abbs_future_combinators.return_ok
+        (Some
+           {
+             Record.committed;
+             created_at;
+             data;
+             idx;
+             key;
+             size;
+             version;
+             read_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
+             write_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
+           })
+  | `Bad_request -> Abbs_future_combinators.return_ok None
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
 
 let delete ?idx ?version ~key t =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -189,8 +182,8 @@ let delete ?idx ?version ~key t =
       make (Parameters.make ~installation_id:t.installation ~vcs:t.vcs ~idx ~version ~key ()))
   >>= fun resp ->
   match Openapi.Response.value resp with
-  | `OK { Terrat_api_components_kv_delete.result } -> Abb.Future.return (Ok result)
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
+  | `OK { Terrat_api_components_kv_delete.result } -> Abbs_future_combinators.return_ok result
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
 
 let count ?committed:_ ~key:_ _t = raise (Failure "nyi")
 let size ?idx:_ ?committed:_ ~key:_ _t = raise (Failure "nyi")
@@ -214,37 +207,35 @@ let iter ?select ?idx ?inclusive ?prefix ?committed ?limit ~key t =
            ()))
   >>= fun resp ->
   match Openapi.Response.value resp with
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
   | `OK { Terrat_api_components_kv_record_list.results } ->
-      Abb.Future.return
-        (Ok
-           (CCList.map
-              (fun {
-                     Terrat_api_components_kv_record.committed;
-                     created_at;
-                     data;
-                     idx;
-                     key;
-                     size;
-                     version;
-                     read_caps;
-                     write_caps;
-                   }
-                 ->
-                {
-                  Record.committed;
+      Abbs_future_combinators.return_ok
+        (CCList.map
+           (fun {
+                  Terrat_api_components_kv_record.committed;
                   created_at;
                   data;
                   idx;
                   key;
                   size;
                   version;
-                  read_caps =
-                    CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
-                  write_caps =
-                    CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
-                })
-              results))
+                  read_caps;
+                  write_caps;
+                }
+              ->
+             {
+               Record.committed;
+               created_at;
+               data;
+               idx;
+               key;
+               size;
+               version;
+               read_caps = CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) read_caps;
+               write_caps =
+                 CCOption.map CCFun.(caps_of_yojson %> CCResult.get_or_failwith) write_caps;
+             })
+           results)
 
 let commit ~keys t =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -260,9 +251,8 @@ let commit ~keys t =
   >>= fun resp ->
   match Openapi.Response.value resp with
   | `OK { Terrat_api_components_kv_commit_result.keys } ->
-      Abb.Future.return
-        (Ok
-           (CCList.map
-              (fun { Terrat_api_components_kv_commit_result.Keys.Items.key; idx } -> (key, idx))
-              keys))
-  | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
+      Abbs_future_combinators.return_ok
+        (CCList.map
+           (fun { Terrat_api_components_kv_commit_result.Keys.Items.key; idx } -> (key, idx))
+           keys)
+  | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err

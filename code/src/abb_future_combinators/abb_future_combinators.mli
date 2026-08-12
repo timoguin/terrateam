@@ -3,6 +3,14 @@ module Make (Fut : Abb_intf.Future.S) : sig
   (** A future that has been determined to the unit value. *)
   val unit : unit Fut.t
 
+  (** [return_ok v] is [Fut.return (Ok v)]: a future already determined to [Ok v]. A convenience for
+      the pervasive [result]-in-future idiom. *)
+  val return_ok : 'a -> ('a, 'b) result Fut.t
+
+  (** [return_err e] is [Fut.return (Error e)]: a future already determined to [Error e]. A
+      convenience for the pervasive [result]-in-future idiom. *)
+  val return_err : 'b -> ('a, 'b) result Fut.t
+
   (** Take a future value, wait for it to be determined and throw the value away. *)
   val ignore : 'a Fut.t -> unit Fut.t
 

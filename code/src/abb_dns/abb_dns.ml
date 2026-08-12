@@ -77,7 +77,7 @@ module Make (Abb : Abb_intf.S) = struct
     let clock = Mtime_clock.elapsed_ns
 
     let rec connect_to_ns t errors = function
-      | [] -> Abb.Future.return (Error errors)
+      | [] -> Abb_fut_comb.return_err errors
       | `Plaintext (addr, port) :: nameservers -> (
           let domain, addr =
             match addr with
@@ -87,7 +87,7 @@ module Make (Abb : Abb_intf.S) = struct
                 (Abb_intf.Socket.Domain.Inet6, Unix.inet_addr_of_string (Ipaddr.V6.to_string addr))
           in
           match Abb.Socket.Udp.create ~domain with
-          | Ok sock -> Abb.Future.return (Ok (sock, Abb_intf.Socket.Sockaddr.(Inet { addr; port })))
+          | Ok sock -> Abb_fut_comb.return_ok (sock, Abb_intf.Socket.Sockaddr.(Inet { addr; port }))
           | Error (#Abb_intf.Errors.sock_create as err) ->
               connect_to_ns t (Abb_intf.Errors.show_sock_create err :: errors) nameservers)
 
@@ -102,9 +102,9 @@ module Make (Abb : Abb_intf.S) = struct
         ~timeout:(Abb.Sys.sleep (Duration.to_f t.timeout_ns))
         (connect_to_ns t [] nameservers)
       >>= function
-      | `Ok (Ok (sock, sockaddr)) -> Abb.Future.return (Ok (`Udp, { sock; sockaddr }))
-      | `Ok (Error errors) -> Abb.Future.return (Error (`Msg (CCString.concat "," errors)))
-      | `Timeout -> Abb.Future.return (Error (`Msg "Timeout"))
+      | `Ok (Ok (sock, sockaddr)) -> Abb_fut_comb.return_ok (`Udp, { sock; sockaddr })
+      | `Ok (Error errors) -> Abb_fut_comb.return_err (`Msg (CCString.concat "," errors))
+      | `Timeout -> Abb_fut_comb.return_err (`Msg "Timeout")
 
     let send_recv ctx data =
       let open Abb.Future.Infix_monad in
@@ -120,12 +120,12 @@ module Make (Abb : Abb_intf.S) = struct
           >>= function
           | Ok (n, _) ->
               let data = Bytes.sub_string buf 0 n in
-              Abb.Future.return (Ok data)
+              Abb_fut_comb.return_ok data
           | Error (#Abb_intf.Errors.recvfrom as err) ->
-              Abb.Future.return (Error (`Msg (Abb_intf.Errors.show_recvfrom err))))
-      | Ok _ -> Abb.Future.return (Error (`Msg "Failed to write whole query"))
+              Abb_fut_comb.return_err (`Msg (Abb_intf.Errors.show_recvfrom err)))
+      | Ok _ -> Abb_fut_comb.return_err (`Msg "Failed to write whole query")
       | Error (#Abb_intf.Errors.sendto as err) ->
-          Abb.Future.return (Error (`Msg (Abb_intf.Errors.show_sendto err)))
+          Abb_fut_comb.return_err (`Msg (Abb_intf.Errors.show_sendto err))
 
     let close ctx = Abb_fut_comb.ignore (Abb.Socket.close ctx.sock)
   end
