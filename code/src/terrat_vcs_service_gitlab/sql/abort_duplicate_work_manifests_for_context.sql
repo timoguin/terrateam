@@ -22,6 +22,15 @@ context as (
     on dbh.repo = jc.repo and dbh.branch = coalesce(gpr.base_branch, jc.params->>'dest_branch', jc.params->>'branch')
   where jc.id = $context_id
 ),
+-- The job making the request.  Defined before the jobs CTE below so that it
+-- reads the jobs table rather than that CTE.
+cur_job as (
+  select created_at from jobs where id = $job_id
+),
+-- Only jobs that predate the job making the request.  A job is not older than
+-- itself, so this excludes aborting our own work manifests as well as those of
+-- any job created after us: newer work supersedes older work, never the
+-- reverse.
 jobs as (
   select
     jobs.*
@@ -29,6 +38,7 @@ jobs as (
   inner join context as jc
     on jc.id = jobs.context_id
   where jobs.context_id = jc.id
+        and jobs.created_at < (select created_at from cur_job)
 ),
 dirspaces as (
     select dir, workspace from unnest($dirs, $workspaces) as v(dir, workspace)
