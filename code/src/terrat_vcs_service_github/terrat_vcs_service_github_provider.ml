@@ -579,7 +579,8 @@ module Db = struct
         /% Var.(ud (uuid "context_id") (fun c -> c.Terrat_job_context.Context.id))
         /% Var.(ud (text "run_type") Terrat_work_manifest3.Step.to_string)
         /% Var.(str_array (text "dirs"))
-        /% Var.(str_array (text "workspaces")))
+        /% Var.(str_array (text "workspaces"))
+        /% Var.uuid "job_id")
 
     let select_conflicting_work_manifests_in_repo_query =
       read [%blob "sql/select_conflicting_work_manifests_in_repo2.sql"]
@@ -616,7 +617,8 @@ module Db = struct
         /% Var.(ud (uuid "context_id") (fun c -> c.Terrat_job_context.Context.id))
         /% Var.(ud (text "run_type") Terrat_work_manifest3.Step.to_string)
         /% Var.(str_array (text "dirs"))
-        /% Var.(str_array (text "workspaces")))
+        /% Var.(str_array (text "workspaces"))
+        /% Var.uuid "job_id")
 
     let select_dirspaces_owned_by_other_pull_requests_query =
       read [%blob "sql/select_dirspaces_owned_by_other_pull_requests.sql"]
@@ -1922,7 +1924,13 @@ module Db = struct
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
         Abbs_future_combinators.return_err `Error
 
-  let query_conflicting_work_manifests_in_repo_for_context ~request_id db context dirspaces op =
+  let query_conflicting_work_manifests_in_repo_for_context
+      ~request_id
+      ~job_id
+      db
+      context
+      dirspaces
+      op =
     let run_type =
       match op with
       | `Plan -> Terrat_work_manifest3.Step.Plan
@@ -1944,7 +1952,8 @@ module Db = struct
             context
             run_type
             dirs
-            workspaces)
+            workspaces
+            job_id)
       >>= fun ids ->
       CCList.iter
         (fun id -> Logs.info (fun m -> m "%s : ABORTED_WORK_MANIFEST : %a" request_id Uuidm.pp id))
@@ -1959,7 +1968,8 @@ module Db = struct
             context
             run_type
             dirs
-            workspaces)
+            workspaces
+            job_id)
       >>= fun ids ->
       match
         CCList.partition_filter_map
@@ -5548,6 +5558,15 @@ module Job_context = struct
         /% Var.uuid "job"
         /% Var.ud (Var.text "state") string_of_state)
 
+    let abort_live_work_manifests_for_job =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* work manifest id *)
+        Ret.uuid
+        /^ read [%blob "sql/abort_live_work_manifests_for_job.sql"]
+        /% Var.uuid "job")
+
     let upsert_job_work_manifest =
       Pgsql_io.Typed_sql.(
         sql
@@ -5853,9 +5872,35 @@ module Job_context = struct
           Logs.err (fun m -> m "%s : JOB : QUERY : %a" request_id Pgsql_io.pp_err err);
           Abbs_future_combinators.return_err `Error
 
+    (* Making a job terminal also aborts any work manifest of its own that is
+       still live.  Nothing will process their results once the job is
+       terminal, so they would otherwise sit queued or running forever and
+       block every future operation on their dirspaces. *)
     let update_state ~request_id db ~job_id state =
+      let run =
+        let open Abbs_future_combinators.Infix_result_monad in
+        Pgsql_io.Prepared_stmt.execute db Sql.update_job_state job_id state
+        >>= fun () ->
+        match state with
+        | Terrat_job_context.Job.State.(Completed | Failed) ->
+            Pgsql_io.Prepared_stmt.fetch db Sql.abort_live_work_manifests_for_job ~f:CCFun.id job_id
+            >>= fun ids ->
+            CCList.iter
+              (fun id ->
+                Logs.info (fun m ->
+                    m
+                      "%s : JOB : ABORT_LIVE_WORK_MANIFEST : job=%a : work_manifest=%a"
+                      request_id
+                      Uuidm.pp
+                      job_id
+                      Uuidm.pp
+                      id))
+              ids;
+            Abb.Future.return (Ok ())
+        | Terrat_job_context.Job.State.Running -> Abb.Future.return (Ok ())
+      in
       let open Abb.Future.Infix_monad in
-      Pgsql_io.Prepared_stmt.execute db Sql.update_job_state job_id state
+      run
       >>= function
       | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->

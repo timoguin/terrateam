@@ -400,8 +400,11 @@ module type S = sig
       result
       Abb.Future.t
 
+    (* [job_id] is the job asking the question.  Work manifests belonging to it,
+       or to any job created after it, are never aborted. *)
     val query_conflicting_work_manifests_in_repo_for_context :
       request_id:string ->
+      job_id:Uuidm.t ->
       t ->
       (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
       Terrat_change.Dirspace.t list ->

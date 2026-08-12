@@ -72,6 +72,12 @@ left join github_drift_latest_unlocks as latest_drift_unlocks
 where gwm.state in ('queued', 'running')
 -- Don't consider index runs conflicting, they don't change the underlying infra
       and gwm.run_kind <> 'index'
+-- Our own work is not a conflict with ourselves.  The abort above deliberately
+-- spares this job's work manifests, so without this we would report our own
+-- superseded work back to the user as a conflicting or stale operation.
+      and not exists (select 1
+                      from job_work_manifests as jwm
+                      where jwm.work_manifest = gwm.id and jwm.job_id = $job_id)
       and ((gwm.pull_number is not null
             and (latest_unlocks.unlocked_at is null or latest_unlocks.unlocked_at < gwm.created_at))
            or (gdwm.work_manifest is not null

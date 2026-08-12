@@ -162,6 +162,8 @@ struct
           >>= fun working_set_matches ->
           fetch Keys.context
           >>= fun context ->
+          fetch Keys.job
+          >>= fun job ->
           let dirspaces =
             CCList.map
               (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } -> dirspace)
@@ -180,6 +182,7 @@ struct
                 (fun () ->
                   S.Db.query_conflicting_work_manifests_in_repo_for_context
                     ~request_id:(Builder.log_id s)
+                    ~job_id:job.Tjc.Job.id
                     db
                     context
                     dirspaces

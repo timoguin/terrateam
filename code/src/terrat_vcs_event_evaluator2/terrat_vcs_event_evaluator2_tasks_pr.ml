@@ -215,7 +215,7 @@ struct
           time)
       (fun () -> S.Db.store_pull_request ~request_id:(Builder.log_id s) db pull_request)
 
-  let query_conflicting_work_manifests s db context dirspaces op =
+  let query_conflicting_work_manifests s db ~job_id context dirspaces op =
     time_it
       s
       (fun m log_id time ->
@@ -228,6 +228,7 @@ struct
       (fun () ->
         S.Db.query_conflicting_work_manifests_in_repo_for_context
           ~request_id:(Builder.log_id s)
+          ~job_id
           db
           context
           dirspaces
@@ -742,8 +743,10 @@ struct
           (* TODO: Do not depend on pull request *)
           fetch Keys.context
           >>= fun context ->
+          fetch Keys.job
+          >>= fun job ->
           Builder.run_db s ~f:(fun db ->
-              query_conflicting_work_manifests s db context dirspaces `Plan)
+              query_conflicting_work_manifests s db ~job_id:job.Tjc.Job.id context dirspaces `Plan)
           >>= function
           | None -> Abbs_future_combinators.return_ok ()
           | Some (P2.Conflicting_work_manifests.Conflicting wms) ->
@@ -988,9 +991,12 @@ struct
           in
           fetch Keys.context
           >>= fun context ->
+          fetch Keys.job
+          >>= fun job ->
           Builder.run_db s ~f:(fun db ->
               S.Db.query_conflicting_work_manifests_in_repo_for_context
                 ~request_id:(Builder.log_id s)
+                ~job_id:job.Tjc.Job.id
                 db
                 context
                 dirspaces
