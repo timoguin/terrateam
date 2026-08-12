@@ -219,7 +219,7 @@ let rec of_ast' ~tag_map t =
       >>= fun () ->
       Buffer.add_char t.q ')';
       Ok ()
-  | T.And (l, r) ->
+  | T.And (l, r) | T.Implicit_and (l, r) ->
       let open CCResult.Infix in
       Buffer.add_char t.q '(';
       of_ast' ~tag_map t l

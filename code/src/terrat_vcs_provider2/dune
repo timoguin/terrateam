@@ -14,6 +14,7 @@
   terrat_gate
   terrat_job_context
   terrat_pull_request
+  terrat_tag_query
   terrat_tier
   terrat_vcs_api
   terrat_vcs_stacks

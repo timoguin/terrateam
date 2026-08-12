@@ -117,7 +117,7 @@ module Msg = struct
   type ('account, 'db, 'pull_request, 'target, 'apply_requirements, 'config) t =
     | Access_control_denied of (string * access_control_denied)
     | Account_expired
-    | Apply_no_matching_dirspaces
+    | Apply_no_matching_dirspaces of Terrat_tag_query.t
     | Apply_requirements_config_err of [ Terrat_tag_query_ast.err | `Invalid_query of string ]
     | Apply_requirements_validation_err
     | Autoapply_running
@@ -135,10 +135,11 @@ module Msg = struct
     | Index_complete of (bool * (string * int option * string) list)
     | Invalid_unlock_id of string
     | Maybe_stale_work_manifests of ('account, 'target) Terrat_work_manifest3.Existing.t list
+    | Matches_in_later_layer of Terrat_change.Dirspace.t list
     | Mismatched_refs
     | Missing_plans of Terrat_change.Dirspace.t list
     | Plan_all_changes_applied
-    | Plan_no_matching_dirspaces
+    | Plan_no_matching_dirspaces of Terrat_tag_query.t
     | Premium_feature_err of premium_features
     | Pull_request_not_appliable of ('pull_request * 'apply_requirements)
     | Pull_request_not_mergeable
@@ -164,10 +165,33 @@ module Msg = struct
         synthesized_config : Terrat_change_match3.Config.t;
         work_manifest : ('account, 'target) Terrat_work_manifest3.Existing.t;
       }
+    | Tag_query_dropped_dirspaces of {
+        command : string;
+        suggestion : string;
+        dirspaces : Terrat_change.Dirspace.t list;
+      }
     | Tier_check of Terrat_tier.Check.t
     | Unexpected_temporary_err
     | Unlock_success
     | Work_manifest_run_failed of { run_id : string }
+
+  (* Both [no matching dirspaces] messages, in both services, say the same thing
+     about the query that matched nothing, so they render from one payload. *)
+  let no_matching_dirspaces_kv tag_query =
+    let implicit_and, suggestion =
+      match Terrat_tag_query.warning tag_query with
+      | Some (Terrat_tag_query.Implicit_and { suggestion }) -> (true, suggestion)
+      | None -> (false, None)
+    in
+    `Assoc
+      [
+        ("tag_query", `String (Terrat_tag_query.to_string tag_query));
+        ("implicit_and", `Bool implicit_and);
+        ( "suggestion",
+          match suggestion with
+          | Some suggestion -> `String suggestion
+          | None -> `Null );
+      ]
 end
 
 module type S = sig

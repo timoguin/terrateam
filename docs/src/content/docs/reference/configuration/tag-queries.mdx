@@ -74,6 +74,17 @@ The following table presents some examples of tag queries:
 | `not deprecated`             | Matches resources without the `deprecated` tag.               |
 | `app in dir`                 | Matches resources where `app` is a fragment in their directory path. |
 | `(web or api) and prod`      | Matches resources with either `web` or `api` tags, and also the `prod` tag. |
+| `dir:app or dir:database`    | Matches resources in either the `app` or the `database` directory.       |
+
+Because `and` is the default operator, a space between two terms means both have to be true of the
+same directory. A directory can only be one directory, so a query like
+`dir:app dir:database` matches nothing. To select several directories, join them with `or`.
+
+`and` binds more tightly than `or`, whether it is written out or left implied. `prod api or dev`
+means `(prod and api) or dev`, exactly like `prod and api or dev`. Use parentheses when you want
+the other grouping. This matters most in a long list of directories: leaving out a single `or`
+turns two of the entries into one `and` that can never match, and those two directories are
+silently dropped from the run while the rest still go ahead.
 
 ## Using Tag Queries
 
