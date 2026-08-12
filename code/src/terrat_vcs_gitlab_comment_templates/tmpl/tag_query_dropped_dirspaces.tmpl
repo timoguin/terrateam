@@ -1,0 +1,16 @@
+## Some Directories Were Left Out :warning:
+
+Your tag query used a space between terms, which means `and`. A directory can only be one
+directory, so those terms cancelled each other out and the following were left out of this run:
+
+| Dir | Workspace |
+| --- | --------- |
+{%- for d in dirspaces %}
+| `{{ d.dir }}` | `{{ d.workspace }}` |
+{%- endfor %}
+
+Everything else you asked for is running. To include the rest, comment:
+
+```
+{{ command }} {{ suggestion }}
+```

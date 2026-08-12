@@ -570,6 +570,108 @@ let test_deprecated_dir_glob =
         "Terrat_tag_query.match_ ~ctx ~tag_set query"
         (Terrat_tag_query.match_ ~ctx ~tag_set query))
 
+let warning_of_string_exn s = Terrat_tag_query.warning (of_string_exn s)
+
+let assert_no_warning s =
+  Oth.Assert.none ~fail_msg:(Printf.sprintf "Unexpected warning for %S" s) (warning_of_string_exn s)
+
+let assert_implicit_and ~suggestion s =
+  match warning_of_string_exn s with
+  | Some (Terrat_tag_query.Implicit_and { suggestion = actual }) ->
+      Oth.Assert.Eq.string_option ~expected:suggestion ~actual
+  | None -> Oth.Assert.false_ (Printf.sprintf "Expected an implicit and warning for %S" s)
+
+let test_warning_implicit_and_dirs =
+  Oth.test ~name:"Warning implicit and dirs" (fun _ ->
+      assert_implicit_and ~suggestion:(Some "dir:foo or dir:bar") "dir:foo dir:bar";
+      assert_implicit_and
+        ~suggestion:(Some "dir:foo or dir:bar or dir:baz")
+        "dir:foo dir:bar dir:baz")
+
+let test_warning_implicit_and_dir_globs =
+  Oth.test ~name:"Warning implicit and dir globs" (fun _ ->
+      assert_implicit_and ~suggestion:(Some "dir~foo or dir:bar") "dir~foo dir:bar";
+      assert_implicit_and ~suggestion:(Some "foo in dir or bar in dir") "foo in dir bar in dir")
+
+let test_warning_implicit_and_mixed_with_or =
+  Oth.test ~name:"Warning implicit and mixed with or" (fun _ ->
+      (* A list of directories where one [or] was left out.  Every directory named
+         is meant to be an alternative, so all of them go in the rewrite. *)
+      assert_implicit_and
+        ~suggestion:(Some "dir:a or dir:b or dir:c or dir:d")
+        "dir:a or dir:b dir:c or dir:d";
+      assert_implicit_and ~suggestion:(Some "dir:foo or dir:bar or dir:baz")
+      @@ "(dir:foo or dir:bar) dir:baz";
+      (* A directory repeated in the query is only offered once. *)
+      assert_implicit_and ~suggestion:(Some "dir:a or dir:b") "dir:a or dir:b dir:a")
+
+let test_warning_implicit_and_no_suggestion =
+  Oth.test ~name:"Warning implicit and no suggestion" (fun _ ->
+      (* An implicit and that is not a list of directories is a legitimate query,
+         so it is reported without a rewrite. *)
+      assert_implicit_and ~suggestion:None "dir:foo workspace:prod";
+      assert_implicit_and ~suggestion:None "dir:foo dir:bar workspace:prod";
+      assert_implicit_and ~suggestion:None "dir:foo not dir:bar";
+      assert_implicit_and ~suggestion:None "dir:foo (dir:bar and dir:baz)")
+
+let test_warning_explicit_operators =
+  Oth.test ~name:"Warning explicit operators" (fun _ ->
+      assert_no_warning "dir:foo and dir:bar";
+      assert_no_warning "dir:foo or dir:bar";
+      assert_no_warning "dir:foo";
+      assert_no_warning "not dir:foo";
+      assert_no_warning "(dir:foo or dir:bar) and workspace:prod";
+      assert_no_warning "")
+
+let test_warning_on_query =
+  Oth.test ~name:"Warning on query" (fun _ ->
+      (* The warning travels on the query itself, which is what makes it survive a
+         round trip through storage. *)
+      let query = of_string_exn "dir:foo dir:bar" in
+      match Terrat_tag_query.warning query with
+      | Some (Terrat_tag_query.Implicit_and { suggestion }) ->
+          Oth.Assert.Eq.string_option ~expected:(Some "dir:foo or dir:bar") ~actual:suggestion
+      | None -> Oth.Assert.false_ "Expected an implicit and warning")
+
+let test_implicit_and_still_matches =
+  Oth.test ~name:"Implicit and still matches" (fun _ ->
+      (* The warning is a diagnostic, the query itself must be unchanged: whitespace
+         is still an [and]. *)
+      let query = of_string_exn "a b" in
+      let dirspace = Terrat_change.Dirspace.{ dir = "foo"; workspace = "default" } in
+      let ctx = Terrat_tag_query.Ctx.make ~dirspace () in
+      Oth.Assert.true_
+        "matches when both tags are present"
+        (Terrat_tag_query.match_ ~ctx ~tag_set:(Terrat_tag_set.of_list [ "a"; "b" ]) query);
+      Oth.Assert.true_
+        "does not match when only one tag is present"
+        (not (Terrat_tag_query.match_ ~ctx ~tag_set:(Terrat_tag_set.of_list [ "a" ]) query)))
+
+let matching_tag_sets q tag_sets =
+  let query = of_string_exn q in
+  let dirspace = Terrat_change.Dirspace.{ dir = "foo"; workspace = "default" } in
+  let ctx = Terrat_tag_query.Ctx.make ~dirspace () in
+  CCList.filter
+    (fun tags -> Terrat_tag_query.match_ ~ctx ~tag_set:(Terrat_tag_set.of_list tags) query)
+    tag_sets
+
+let test_implicit_and_binds_like_and =
+  Oth.test ~name:"Implicit and binds like and" (fun _ ->
+      (* Juxtaposition is an [and] and has to bind exactly as tightly as one.  Before
+         the parser gave the rule a precedence, `a b or c` parsed as `a and (b or c)`
+         and an implicit and swallowed the whole rest of the expression. *)
+      let tag_sets = [ [ "a"; "b" ]; [ "a" ]; [ "b" ]; [ "c" ]; [ "a"; "c" ] ] in
+      Oth.Assert.Eq.list
+        ~eq:(CCList.equal CCString.equal)
+        ~pp:(CCList.pp CCString.pp)
+        ~expected:(matching_tag_sets "a and b or c" tag_sets)
+        ~actual:(matching_tag_sets "a b or c" tag_sets);
+      Oth.Assert.Eq.list
+        ~eq:(CCList.equal CCString.equal)
+        ~pp:(CCList.pp CCString.pp)
+        ~expected:(matching_tag_sets "c or a and b" tag_sets)
+        ~actual:(matching_tag_sets "c or a b" tag_sets))
+
 let test =
   Oth.parallel
     [
@@ -629,6 +731,14 @@ let test =
       test_quote_escape_1;
       test_quote_escape_2;
       test_deprecated_dir_glob;
+      test_warning_implicit_and_dirs;
+      test_warning_implicit_and_dir_globs;
+      test_warning_implicit_and_mixed_with_or;
+      test_warning_implicit_and_no_suggestion;
+      test_warning_explicit_operators;
+      test_warning_on_query;
+      test_implicit_and_still_matches;
+      test_implicit_and_binds_like_and;
     ]
 
 let () =

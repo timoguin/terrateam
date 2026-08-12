@@ -1,0 +1,17 @@
+## Waiting On An Earlier Layer :hourglass:
+
+Everything matching your request runs in a later layer:
+
+| Dir | Workspace |
+| --- | --------- |
+{%- for d in dirspaces %}
+| `{{ d.dir }}` | `{{ d.workspace }}` |
+{%- endfor %}
+
+A layered run plans and applies one layer at a time, so these run once the changes they depend on have been applied.
+
+To work on what is ready now, comment:
+
+```
+terrateam plan
+```

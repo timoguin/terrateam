@@ -3391,10 +3391,10 @@ module Comment = struct
              "ACCOUNT_EXPIRED"
              Tmpl.account_expired_err
              kv
-    | Msg.Apply_no_matching_dirspaces ->
-        let kv = Snabela.Kv.(Map.of_list []) in
+    | Msg.Apply_no_matching_dirspaces tag_query ->
+        let kv = Msg.no_matching_dirspaces_kv tag_query in
         Abbs_future_combinators.Result.ignore
-        @@ Gcm_api.apply_template_and_publish
+        @@ Gcm_api.apply_template_and_publish_jinja
              ~request_id
              client
              pull_request
@@ -3894,10 +3894,52 @@ module Comment = struct
              "PLAN_ALL_CHANGES_APPLIED"
              Tmpl.plan_all_changes_applied
              kv
-    | Msg.Plan_no_matching_dirspaces ->
-        let kv = Snabela.Kv.(Map.of_list []) in
+    | Msg.Tag_query_dropped_dirspaces { command; suggestion; dirspaces } ->
+        let kv =
+          `Assoc
+            [
+              ("command", `String command);
+              ("suggestion", `String suggestion);
+              ( "dirspaces",
+                `List
+                  (CCList.map
+                     (fun { Terrat_dirspace.dir; workspace } ->
+                       `Assoc [ ("dir", `String dir); ("workspace", `String workspace) ])
+                     dirspaces) );
+            ]
+        in
         Abbs_future_combinators.Result.ignore
-        @@ Gcm_api.apply_template_and_publish
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "TAG_QUERY_DROPPED_DIRSPACES"
+             Tmpl.tag_query_dropped_dirspaces
+             kv
+    | Msg.Matches_in_later_layer dirspaces ->
+        let kv =
+          `Assoc
+            [
+              ( "dirspaces",
+                `List
+                  (CCList.map
+                     (fun { Terrat_dirspace.dir; workspace } ->
+                       `Assoc [ ("dir", `String dir); ("workspace", `String workspace) ])
+                     dirspaces) );
+            ]
+        in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "MATCHES_IN_LATER_LAYER"
+             Tmpl.matches_in_later_layer
+             kv
+    | Msg.Plan_no_matching_dirspaces tag_query ->
+        let kv = Msg.no_matching_dirspaces_kv tag_query in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
              ~request_id
              client
              pull_request

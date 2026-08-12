@@ -1054,52 +1054,81 @@ struct
           let open Irm in
           fetch Keys.job
           >>= function
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Plan _; _ } -> (
-              fetch Keys.all_matches
+          | { Tjc.Job.type_ = Tjc.Job.Type_.Plan { tag_query; kind = _ }; _ } -> (
+              (* [working_set_matches] is what a plan would actually run.  If it is
+                 empty then nothing is going to happen, and the user who typed the
+                 command has to be told which of the reasons it is.  Running the
+                 plan anyway means a work manifest over no dirspaces and not a word
+                 back, which is how a mistyped tag query used to disappear. *)
+              fetch Keys.working_set_matches
               >>= function
               | [] ->
+                  fetch Keys.all_matches
+                  >>= fun all_matches ->
+                  fetch Keys.all_tag_query_matches
+                  >>= fun all_tag_query_matches ->
+                  fetch Keys.all_unapplied_matches
+                  >>= fun all_unapplied_matches ->
+                  let unapplied_matching_query =
+                    CCList.filter
+                      (Terrat_change_match3.match_tag_query ~tag_query)
+                      (CCList.flatten all_unapplied_matches)
+                  in
                   fetch Keys.publish_comment
                   >>= fun publish_comment ->
+                  let msg =
+                    match
+                      ( CCList.flatten all_matches,
+                        CCList.flatten all_tag_query_matches,
+                        unapplied_matching_query )
+                    with
+                    | [], _, _ ->
+                        (* Nothing in the pull request to plan in the first place. *)
+                        Msg.Plan_no_matching_dirspaces tag_query
+                    | _ :: _, [], _ ->
+                        (* The query selected none of what is there.  This is where
+                           the implicit and hint earns its keep. *)
+                        Msg.Plan_no_matching_dirspaces tag_query
+                    | _ :: _, _ :: _, [] ->
+                        (* The query selected something, and all of it has already
+                           been applied. *)
+                        Msg.Plan_all_changes_applied
+                    | _ :: _, _ :: _, (_ :: _ as queued) ->
+                        (* The query matches something unapplied, it is just not in
+                           the layer that runs next.  Naming what it is waiting on
+                           is the only answer that is not a riddle. *)
+                        Msg.Matches_in_later_layer
+                          (CCList.map
+                             (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } -> dirspace)
+                             queued)
+                  in
                   Fc.Result.all2
                     (fetch Keys.maybe_create_completed_apply_check)
-                    (publish_comment' publish_comment Msg.Plan_no_matching_dirspaces)
+                    (publish_comment' publish_comment msg)
                   >>= fun ((), ()) -> Abbs_future_combinators.return_err `Noop
-              | _ :: _ -> (
-                  fetch Keys.all_unapplied_matches
-                  >>= function
-                  | [] ->
-                      (* There are matching changes, but every one of them has
-                         already been applied, so there is nothing left to
-                         plan. *)
-                      fetch Keys.publish_comment
-                      >>= fun publish_comment ->
-                      Fc.Result.all2
-                        (fetch Keys.maybe_create_completed_apply_check)
-                        (publish_comment' publish_comment Msg.Plan_all_changes_applied)
-                      >>= fun ((), ()) -> Abbs_future_combinators.return_err `Noop
-                  | _ :: _ ->
-                      fetch Keys.repo
-                      >>= fun repo ->
-                      fetch Keys.account
-                      >>= fun account ->
-                      fetch Keys.client
-                      >>= fun _client ->
-                      fetch Keys.working_branch_ref
-                      >>= fun working_branch_ref ->
-                      let checks =
-                        [
-                          S.Commit_check.make_str
-                            ~config:(Builder.State.config s)
-                            ~description:"Waiting"
-                            ~status:Terrat_commit_check.Status.Queued
-                            ~repo
-                            ~account
-                            "terrateam apply";
-                        ]
-                      in
-                      fetch Keys.create_commit_checks
-                      >>= fun create_commit_checks ->
-                      create_commit_checks' create_commit_checks working_branch_ref checks))
+              | _ :: _ ->
+                  fetch Keys.repo
+                  >>= fun repo ->
+                  fetch Keys.account
+                  >>= fun account ->
+                  fetch Keys.client
+                  >>= fun _client ->
+                  fetch Keys.working_branch_ref
+                  >>= fun working_branch_ref ->
+                  let checks =
+                    [
+                      S.Commit_check.make_str
+                        ~config:(Builder.State.config s)
+                        ~description:"Waiting"
+                        ~status:Terrat_commit_check.Status.Queued
+                        ~repo
+                        ~account
+                        "terrateam apply";
+                    ]
+                  in
+                  fetch Keys.create_commit_checks
+                  >>= fun create_commit_checks ->
+                  create_commit_checks' create_commit_checks working_branch_ref checks)
           | _ -> Abbs_future_combinators.return_ok ())
 
     let check_dirspaces_to_apply =
@@ -1112,16 +1141,106 @@ struct
               >>= function
               | [] -> Abbs_future_combinators.return_err `Noop
               | _ :: _ -> Abbs_future_combinators.return_ok ())
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Apply _; _ } -> (
+          | { Tjc.Job.type_ = Tjc.Job.Type_.Apply { tag_query; kind = _; force = _ }; _ } -> (
+              (* Same reasoning as [check_dirspaces_to_plan]: an empty working set
+                 has several causes and the user is owed the one that applies to
+                 them, not the same sentence for all of them. *)
               fetch Keys.working_set_matches
               >>= function
               | [] ->
+                  fetch Keys.all_unapplied_matches
+                  >>= fun all_unapplied_matches ->
+                  let unapplied_matching_query =
+                    CCList.filter
+                      (Terrat_change_match3.match_tag_query ~tag_query)
+                      (CCList.flatten all_unapplied_matches)
+                  in
                   fetch Keys.publish_comment
                   >>= fun publish_comment ->
-                  publish_comment' publish_comment Msg.Apply_no_matching_dirspaces
+                  let msg =
+                    match unapplied_matching_query with
+                    | [] ->
+                        (* Nothing matching is pending apply, either because
+                           nothing matched or because all of it is applied, which
+                           is what this message says. *)
+                        Msg.Apply_no_matching_dirspaces tag_query
+                    | _ :: _ as queued ->
+                        Msg.Matches_in_later_layer
+                          (CCList.map
+                             (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } -> dirspace)
+                             queued)
+                  in
+                  publish_comment' publish_comment msg
                   >>= fun () -> Abbs_future_combinators.return_err `Noop
               | _ :: _ -> Abbs_future_combinators.return_ok ())
           | _ -> Abbs_future_combinators.return_ok ())
+
+    (* A tag query that selects some of what the user named and quietly drops the
+       rest is the failure this whole change exists for.  When the query is a list
+       of directories with an implicit [and] in it, run what matched and say which
+       directories the [and] ate. *)
+    let warn_tag_query_dropped_dirspaces =
+      run ~name:"warn_tag_query_dropped_dirspaces" (fun _s { Bs.Fetcher.fetch } ->
+          let open Irm in
+          fetch Keys.job
+          >>= fun job ->
+          let module T = Tjc.Job.Type_ in
+          let command_and_query =
+            match job.Tjc.Job.type_ with
+            | T.Apply { tag_query; kind = _; force = _ } -> Some ("terrateam apply", tag_query)
+            | T.Plan { tag_query; kind = _ } -> Some ("terrateam plan", tag_query)
+            | T.Autoapply
+            | T.Autoplan
+            | T.Gate_approval _
+            | T.Help
+            | T.Index
+            | T.Repo_config
+            | T.Unlock _
+            | T.Push -> None
+          in
+          match command_and_query with
+          | Some (command, tag_query) -> (
+              match Terrat_tag_query.warning tag_query with
+              | Some (Terrat_tag_query.Implicit_and { suggestion = Some suggestion }) -> (
+                  match Terrat_tag_query.of_string suggestion with
+                  | Ok suggested_query -> (
+                      fetch Keys.all_matches
+                      >>= fun all_matches ->
+                      let all_matches = CCList.flatten all_matches in
+                      let selected =
+                        Terrat_data.Dirspace_set.of_list
+                          (CCList.filter_map
+                             (fun ({ Terrat_change_match3.Dirspace_config.dirspace; _ } as change)
+                                ->
+                               if Terrat_change_match3.match_tag_query ~tag_query change then
+                                 Some dirspace
+                               else None)
+                             all_matches)
+                      in
+                      let dropped =
+                        CCList.filter_map
+                          (fun ({ Terrat_change_match3.Dirspace_config.dirspace; _ } as change) ->
+                            if
+                              Terrat_change_match3.match_tag_query ~tag_query:suggested_query change
+                              && not (Terrat_data.Dirspace_set.mem dirspace selected)
+                            then Some dirspace
+                            else None)
+                          all_matches
+                      in
+                      match dropped with
+                      | [] -> Abbs_future_combinators.return_ok ()
+                      | _ :: _ ->
+                          fetch Keys.publish_comment
+                          >>= fun publish_comment ->
+                          publish_comment'
+                            publish_comment
+                            (Msg.Tag_query_dropped_dirspaces
+                               { command; suggestion; dirspaces = dropped })
+                          >>= fun () -> Abbs_future_combinators.return_ok ())
+                  | Error _ -> Abbs_future_combinators.return_ok ())
+              | Some (Terrat_tag_query.Implicit_and { suggestion = None }) | None ->
+                  Abbs_future_combinators.return_ok ())
+          | None -> Abbs_future_combinators.return_ok ())
 
     let check_gates =
       run ~name:"check_gates" (fun s { Bs.Fetcher.fetch } ->
@@ -1293,6 +1412,8 @@ struct
             >>= fun () ->
             fetch Keys.check_dirspaces_to_plan
             >>= fun () ->
+            fetch Keys.warn_tag_query_dropped_dirspaces
+            >>= fun () ->
             Fc.Infix_result_app.(
               (fun () () () () () () () () () -> ())
               <$> fetch Keys.check_access_control_ci_change
@@ -1355,6 +1476,8 @@ struct
             Fc.Result.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
             >>= fun _ ->
             fetch Keys.check_dirspaces_to_apply
+            >>= fun () ->
+            fetch Keys.warn_tag_query_dropped_dirspaces
             >>= fun () ->
             Fc.Infix_result_app.(
               (fun () () () () () () () () () () () _ -> ())
@@ -1642,6 +1765,9 @@ struct
     |> Hmap.add (coerce Keys.check_dirspaces_to_apply) Tasks.check_dirspaces_to_apply
     |> Hmap.add (coerce Keys.check_dirspaces_to_plan) Tasks.check_dirspaces_to_plan
     |> Hmap.add (coerce Keys.check_gates) Tasks.check_gates
+    |> Hmap.add
+         (coerce Keys.warn_tag_query_dropped_dirspaces)
+         Tasks.warn_tag_query_dropped_dirspaces
     |> Hmap.add (coerce Keys.check_merge_conflict) Tasks.check_merge_conflict
     |> Hmap.add (coerce Keys.check_pull_request_state) Tasks.check_pull_request_state
     |> Hmap.add (coerce Keys.comment_id) Tasks.comment_id

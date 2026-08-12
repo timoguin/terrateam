@@ -419,6 +419,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let check_dirspaces_to_plan : unit Key.t = Hmap.Key.create "check_dirspaces_to_plan"
   let check_dirspaces_to_apply : unit Key.t = Hmap.Key.create "check_dirspaces_to_apply"
   let check_gates : unit Key.t = Hmap.Key.create "check_gates"
+
+  let warn_tag_query_dropped_dirspaces : unit Key.t =
+    Hmap.Key.create "warn_tag_query_dropped_dirspaces"
+
   let store_gate_approval : unit Key.t = Hmap.Key.create "store_gate_approval"
 
   let check_dirspaces_owned_by_other_pull_requests : unit Key.t =

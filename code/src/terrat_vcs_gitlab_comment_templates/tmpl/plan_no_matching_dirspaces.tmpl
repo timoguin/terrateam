@@ -1,6 +1,21 @@
 ## No Matching Changes :heavy_multiplication_x:
 
 There are no matching changes to plan.
+{%- if implicit_and %}
+
+> :warning: **Did you mean `or`?** A space between terms in a tag query means `and`, so every term has to be true of the same directory.
+{%- if suggestion %}
+>
+> One directory cannot be two directories at once, which is why nothing matched. To plan all of them, comment:
+>
+> ```
+> terrateam plan {{ suggestion }}
+> ```
+{%- else %}
+>
+> Your query was `{{ tag_query }}`. If you meant those terms as alternatives, join them with `or` instead.
+{%- endif %}
+{%- endif %}
 
 To plan all changes, comment:
 

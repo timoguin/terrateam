@@ -5352,12 +5352,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun pull_request ->
           Dv.client ctx state
           >>= fun client ->
+          Dv.tag_query ctx state
+          >>= fun tag_query ->
           publish_msg
             state.State.request_id
             client
             (S.Api.User.to_string @@ Event.user state.State.event)
             pull_request
-            Msg.Plan_no_matching_dirspaces
+            (Msg.Plan_no_matching_dirspaces tag_query)
           >>= fun () -> Abbs_future_combinators.return_err (`Noop state)
       | _ :: _, _ -> Abbs_future_combinators.return_ok state
 
@@ -5938,12 +5940,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun client ->
           Dv.pull_request ctx state
           >>= fun pull_request ->
+          Dv.tag_query ctx state
+          >>= fun tag_query ->
           publish_msg
             state.State.request_id
             client
             (S.Api.User.to_string @@ Event.user state.State.event)
             pull_request
-            Msg.Apply_no_matching_dirspaces
+            (Msg.Apply_no_matching_dirspaces tag_query)
           >>= fun () -> Abbs_future_combinators.return_err (`Noop state)
       | _, _ :: _, _ -> Abbs_future_combinators.return_ok state
 
