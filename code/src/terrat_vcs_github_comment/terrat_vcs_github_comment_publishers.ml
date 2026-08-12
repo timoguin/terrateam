@@ -325,7 +325,7 @@ module Comment_api = struct
   let comment_on_pull_request ~request_id client pull_request _msg_type body =
     let open Abbs_future_combinators.Infix_result_monad in
     Api.comment_on_pull_request ~request_id client pull_request body
-    >>= fun comment_id -> Abb.Future.return (Ok comment_id)
+    >>= fun comment_id -> Abbs_future_combinators.return_ok comment_id
 
   let apply_template_and_publish ~request_id client pull_request msg_type template kv =
     Logs.info (fun m -> m "%s : PUBLISH : %s" request_id msg_type);
@@ -333,7 +333,7 @@ module Comment_api = struct
     | Ok body -> comment_on_pull_request ~request_id client pull_request msg_type body
     | Error (#Snabela.err as err) ->
         Logs.err (fun m -> m "%s : TEMPLATE_ERROR : %a" request_id Snabela.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let apply_template_and_publish_jinja ~request_id client pull_request msg_type template kv =
     Logs.info (fun m -> m "%s : PUBLISH : %s" request_id msg_type);
@@ -341,7 +341,7 @@ module Comment_api = struct
     | Ok body -> comment_on_pull_request ~request_id client pull_request msg_type body
     | Error err ->
         Logs.err (fun m -> m "%s : TEMPLATE_ERROR : %s" request_id err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 end
 
 module Publisher_tools = struct

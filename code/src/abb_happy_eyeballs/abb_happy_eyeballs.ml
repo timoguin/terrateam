@@ -30,7 +30,7 @@ module Make (Abb : Abb_intf.S) = struct
         in
         Abb.Socket.Tcp.connect tcp addr
         >>= function
-        | Ok () -> Abb.Future.return (Ok tcp)
+        | Ok () -> Abb_fut_comb.return_ok tcp
         | Error _ as err ->
             Abb_fut_comb.ignore (Abb.Socket.close tcp) >>= fun () -> Abb.Future.return err)
       ~failure:(fun () -> Abb_fut_comb.ignore (Abb.Socket.close tcp))
@@ -114,14 +114,14 @@ module Make (Abb : Abb_intf.S) = struct
         let actions' = CCList.map act actions' in
         do_step he timer_duration (actions' @ futs)
     | `Ok ret, futs ->
-        Abb_fut_comb.List.iter_par ~f:Abb.Future.abort futs >>= fun () -> Abb.Future.return (Ok ret)
+        Abb_fut_comb.List.iter_par ~f:Abb.Future.abort futs >>= fun () -> Abb_fut_comb.return_ok ret
     | `Timeout, futs -> (
         Abb.Sys.monotonic ()
         >>= fun ts ->
         let ts = Duration.(to_us_64 (of_f ts)) in
         let he, cont, _actions = Happy_eyeballs.timer he ts in
         match cont with
-        | `Suspend -> Abb.Future.return (Error (`He_connect_err ("", "timeout")))
+        | `Suspend -> Abb_fut_comb.return_err (`He_connect_err ("", "timeout"))
         | `Act ->
             let timer = Abb.Sys.sleep (Duration.to_f timer_duration) >>| fun () -> `Timeout in
             do_step he timer_duration (timer :: futs))

@@ -284,8 +284,8 @@ struct
         <*> Abb.Future.fork (plan_cleanup config storage)
         <*> Abb.Future.fork (repo_config_cleanup config storage))
       >>= fun (drift, flow_state_cleanup, plan_cleanup, repo_config_cleanup) ->
-      Abb.Future.return
-        (Ok { config; drift; flow_state_cleanup; plan_cleanup; repo_config_cleanup; storage; exec })
+      Abbs_future_combinators.return_ok
+        { config; drift; flow_state_cleanup; plan_cleanup; repo_config_cleanup; storage; exec }
 
     let stop _t = raise (Failure "nyi")
     let routes t = Routes.routes t
@@ -296,8 +296,8 @@ struct
         Pgsql_pool.with_conn t.storage ~f:(fun db ->
             Pgsql_io.Prepared_stmt.fetch db Sql.select_gitlab_user2_exists ~f:CCFun.id user_id
             >>= function
-            | [] -> Abb.Future.return (Ok None)
-            | _ :: _ -> Abb.Future.return (Ok (Some (Terrat_user.make ~id:user_id ()))))
+            | [] -> Abbs_future_combinators.return_ok None
+            | _ :: _ -> Abbs_future_combinators.return_ok (Some (Terrat_user.make ~id:user_id ())))
       in
       let open Abb.Future.Infix_monad in
       run
@@ -305,9 +305,9 @@ struct
       | Ok _ as ret -> Abb.Future.return ret
       | Error (#Pgsql_pool.err as err) ->
           Logs.err (fun m -> m "GET_USER : user_id=%a : %a" Uuidm.pp user_id Pgsql_pool.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "GET_USER : user_id=%a : %a" Uuidm.pp user_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
   end
 end

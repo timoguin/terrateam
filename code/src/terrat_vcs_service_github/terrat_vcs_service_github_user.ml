@@ -81,15 +81,15 @@ let get_token config storage user =
             expiration
             oauth.Oauth.refresh_token
             refresh_expiration
-          >>= fun () -> Abb.Future.return (Ok oauth.Oauth.access_token))
-  | (token, false, _) :: _ -> Abb.Future.return (Ok token)
+          >>= fun () -> Abbs_future_combinators.return_ok oauth.Oauth.access_token)
+  | (token, false, _) :: _ -> Abbs_future_combinators.return_ok token
 
 let enforce_installation_access storage user installation_id ctx =
   if
     Terrat_user.has_capability
       (Terrat_user.Capability.Installation_id (CCInt.to_string installation_id))
       user
-  then Abb.Future.return (Ok ())
+  then Abbs_future_combinators.return_ok ()
   else
     let open Abb.Future.Infix_monad in
     Pgsql_pool.with_conn storage ~f:(fun db ->
@@ -100,8 +100,8 @@ let enforce_installation_access storage user installation_id ctx =
           (Terrat_user.id user)
           (CCInt64.of_int installation_id))
     >>= function
-    | Ok (_ :: _) -> Abb.Future.return (Ok ())
-    | Ok [] -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+    | Ok (_ :: _) -> Abbs_future_combinators.return_ok ()
+    | Ok [] -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m ->
             m
@@ -109,7 +109,7 @@ let enforce_installation_access storage user installation_id ctx =
               (Brtl_ctx.token ctx)
               Pgsql_pool.pp_err
               err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m ->
             m
@@ -117,4 +117,4 @@ let enforce_installation_access storage user installation_id ctx =
               (Brtl_ctx.token ctx)
               Pgsql_io.pp_err
               err);
-        Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)

@@ -42,7 +42,7 @@ let store db t =
   Pgsql_io.Prepared_stmt.fetch db (Sql.insert_task ()) ~f:CCFun.id t.name t.user_id
   >>= function
   | [] -> assert false
-  | id :: _ -> Abb.Future.return (Ok { t with id })
+  | id :: _ -> Abbs_future_combinators.return_ok { t with id }
 
 let update_task db id state = Pgsql_io.Prepared_stmt.execute db (Sql.update_task ()) id state
 let abort db t = update_task db t.id "aborted"

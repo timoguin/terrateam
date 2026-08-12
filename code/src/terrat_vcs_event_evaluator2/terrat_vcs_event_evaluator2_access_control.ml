@@ -25,7 +25,7 @@ struct
           | false -> Some ci_config_update)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abb.Future.return (Ok None))
+      Abbs_future_combinators.return_ok None)
 
   let eval_files access_control diff =
     let files_policy = access_control.Ace.config.Ac.files in
@@ -42,7 +42,7 @@ struct
           | `Denied denied -> Some denied)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abb.Future.return (Ok None))
+      Abbs_future_combinators.return_ok None)
 
   let eval_repo_config access_control diff =
     let terrateam_config_update = access_control.Ace.config.Ac.terrateam_config_update in
@@ -59,7 +59,7 @@ struct
           | false -> Some terrateam_config_update)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abb.Future.return (Ok None))
+      Abbs_future_combinators.return_ok None)
 
   let eval' access_control change_matches selector =
     if access_control.Ace.config.Ac.enabled then
@@ -79,7 +79,8 @@ struct
         (fun () -> Ace.Access_control.eval access_control.Ace.ctx policies change_matches)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abb.Future.return (Ok Terrat_access_control2.R.{ pass = change_matches; deny = [] }))
+      Abbs_future_combinators.return_ok
+        Terrat_access_control2.R.{ pass = change_matches; deny = [] })
 
   let eval_superapproved access_control reviewers change_matches =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -113,22 +114,21 @@ struct
                 ~init:acc
                 pass
             in
-            Abb.Future.return (Ok acc))
+            Abbs_future_combinators.return_ok acc)
           ~init:pass_with_superapproval
           reviewers
         >>= fun unapproved ->
-        Abb.Future.return
-          (Ok
-             (Terrat_data.Dirspace_map.fold
-                (fun k _ acc -> Terrat_data.Dirspace_map.remove k acc)
-                unapproved
-                pass_with_superapproval))
+        Abbs_future_combinators.return_ok
+          (Terrat_data.Dirspace_map.fold
+             (fun k _ acc -> Terrat_data.Dirspace_map.remove k acc)
+             unapproved
+             pass_with_superapproval)
     | _ ->
         Logs.debug (fun m ->
             m
               "%s : ACCESS_CONTROL : NO_MATCHING_CHANGES_FOR_SUPERAPPROVAL"
               access_control.Ace.request_id);
-        Abb.Future.return (Ok Terrat_data.Dirspace_map.empty)
+        Abbs_future_combinators.return_ok Terrat_data.Dirspace_map.empty
 
   let eval_tf_operation access_control matches = function
     | `Plan -> eval' access_control matches (fun { P.plan; _ } -> plan)
@@ -162,8 +162,8 @@ struct
                    -> not (Terrat_data.Dirspace_map.mem dirspace superapproved))
                 deny
             in
-            Abb.Future.return (Ok { Terrat_access_control2.R.pass; deny })
-        | r -> Abb.Future.return (Ok r))
+            Abbs_future_combinators.return_ok { Terrat_access_control2.R.pass; deny }
+        | r -> Abbs_future_combinators.return_ok r)
     | `Apply_force -> eval' access_control matches (fun { P.apply_force; _ } -> apply_force)
 
   let plan_require_all_dirspace_access access_control =

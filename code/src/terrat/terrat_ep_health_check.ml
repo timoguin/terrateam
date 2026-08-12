@@ -35,8 +35,8 @@ let get' storage ctx =
   Pgsql_pool.with_conn storage ~f:(fun db ->
       Abbs_future_combinators.timeout ~timeout:(Abb.Sys.sleep ping_timeout) (Pgsql_io.ping db)
       >>= function
-      | `Ok r -> Abb.Future.return (Ok r)
-      | `Timeout -> Pgsql_io.destroy db >>= fun () -> Abb.Future.return (Error `Timeout))
+      | `Ok r -> Abbs_future_combinators.return_ok r
+      | `Timeout -> Pgsql_io.destroy db >>= fun () -> Abbs_future_combinators.return_err `Timeout)
   >>= function
   | Ok true ->
       Prmths.Counter.inc_one (Metrics.responses_total "success");

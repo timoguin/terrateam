@@ -27,8 +27,8 @@ struct
     let open Abb.Future.Infix_monad in
     f msg
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let create_token installation_id work_manifest_id db =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -51,7 +51,7 @@ struct
     | Ok _ as r -> Abb.Future.return r
     | Error (#Terrat_user.Token.to_token_err as err) ->
         Logs.err (fun m -> m "%s : CREATE_TOKEN : %a" log_id Terrat_user.Token.pp_to_token_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let match_tag_queries ~accessor ~changes queries =
     CCList.map
@@ -267,7 +267,7 @@ struct
         fetch Keys.compute_node_id
         >>= fun compute_node_id ->
         Builder.run_db s ~f:(fun db -> set_work s compute_node_id id response db)
-        >>= fun () -> Abb.Future.return (Error (`Suspend_eval name))
+        >>= fun () -> Abbs_future_combinators.return_err (`Suspend_eval name)
     | Some (E.Fail { work_manifest; error }) when eq work_manifest -> (
         Logs.info (fun m -> m "%s : WM : FAIL : name=%s" (Builder.log_id s) name);
         fail work_manifest s fetcher
@@ -277,8 +277,8 @@ struct
         fetch Keys.work_manifests_for_job
         >>= function
         | wms when all_wms_completed @@ CCList.filter eq wms ->
-            Abb.Future.return (Ok (CCList.filter eq wms))
-        | _ -> Abb.Future.return (Error (`Suspend_eval name)))
+            Abbs_future_combinators.return_ok (CCList.filter eq wms)
+        | _ -> Abbs_future_combinators.return_err (`Suspend_eval name))
     | Some (E.Result { work_manifest; result = wm_result }) when eq work_manifest -> (
         Logs.info (fun m -> m "%s : WM : RESULT : name=%s" (Builder.log_id s) name);
         result work_manifest wm_result s fetcher
@@ -295,11 +295,11 @@ struct
         | wms when all_wms_completed @@ CCList.filter eq wms ->
             Logs.info (fun m ->
                 m "%s : WM : RESULT : name=%s : all_wms_completed" (Builder.log_id s) name);
-            Abb.Future.return (Ok (CCList.filter eq wms))
+            Abbs_future_combinators.return_ok (CCList.filter eq wms)
         | _ ->
             Logs.info (fun m ->
                 m "%s : WM : RESULT : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-            Abb.Future.return (Error (`Suspend_eval name)))
+            Abbs_future_combinators.return_err (`Suspend_eval name))
     | Some _ | None -> (
         fetch Keys.job
         >>= fun job ->
@@ -310,7 +310,7 @@ struct
         >>= function
         | wms when too_many_aborts wms ->
             Logs.info (fun m -> m "%s : WM : TOO_MANY_ABORTS" (Builder.log_id s));
-            Abb.Future.return (Error `Error)
+            Abbs_future_combinators.return_err `Error
         | wms -> (
             match rem_aborted @@ CCList.filter eq wms with
             | [] -> (
@@ -320,7 +320,7 @@ struct
                 | [] ->
                     Logs.info (fun m ->
                         m "%s : WM : CREATE : name=%s : NO_WORK_MANIFESTS" (Builder.log_id s) name);
-                    Abb.Future.return (Ok [])
+                    Abbs_future_combinators.return_ok []
                 | wms ->
                     CCList.iter
                       (fun {
@@ -350,13 +350,13 @@ struct
                     fetch Keys.job
                     >>= fun job ->
                     Builder.run_db s ~f:(fun db -> add_work_manifests s job.Tjc.Job.id wms db)
-                    >>= fun () -> Abb.Future.return (Error (`Suspend_eval name)))
+                    >>= fun () -> Abbs_future_combinators.return_err (`Suspend_eval name))
             | wms when all_wms_completed wms ->
                 Logs.info (fun m ->
                     m "%s : WM : CREATE : name=%s : all_wms_completed" (Builder.log_id s) name);
-                Abb.Future.return (Ok wms)
+                Abbs_future_combinators.return_ok wms
             | _ ->
                 Logs.info (fun m ->
                     m "%s : WM : CREATE : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-                Abb.Future.return (Error (`Suspend_eval name))))
+                Abbs_future_combinators.return_err (`Suspend_eval name)))
 end

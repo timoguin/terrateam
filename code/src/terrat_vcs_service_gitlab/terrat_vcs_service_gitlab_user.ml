@@ -132,7 +132,7 @@ module Oauth = struct
       ~f:(fun token expired refresh_token -> (token, expired, refresh_token))
       (Terrat_user.id user)
     >>= function
-    | [] -> Abb.Future.return (Error (`User_not_found user))
+    | [] -> Abbs_future_combinators.return_err (`User_not_found user)
     | (_, true, refresh_token) :: _ ->
         refresh ~config refresh_token
         >>= fun oauth ->
@@ -156,8 +156,8 @@ module Oauth = struct
           expiration
           oauth.Response.refresh_token
           refresh_expiration
-        >>= fun () -> Abb.Future.return (Ok oauth.Response.access_token)
-    | (token, _, _) :: _ -> Abb.Future.return (Ok token)
+        >>= fun () -> Abbs_future_combinators.return_ok oauth.Response.access_token
+    | (token, _, _) :: _ -> Abbs_future_combinators.return_ok token
 end
 
 module Sql = struct
@@ -201,12 +201,12 @@ let query_user_id' db user =
     ~f:(fun _ _ _ _ user_id -> user_id)
     (Terrat_user.id user)
   >>= function
-  | [] -> Abb.Future.return (Ok None)
-  | user_id :: _ -> Abb.Future.return (Ok (Some (CCInt64.to_int user_id)))
+  | [] -> Abbs_future_combinators.return_ok None
+  | user_id :: _ -> Abbs_future_combinators.return_ok (Some (CCInt64.to_int user_id))
 
 let query_user_id db user =
   let open Abbs_future_combinators.Infix_result_monad in
   query_user_id' db user
   >>= function
-  | Some user_id -> Abb.Future.return (Ok user_id)
-  | None -> Abb.Future.return (Error (`User_not_found_err user))
+  | Some user_id -> Abbs_future_combinators.return_ok user_id
+  | None -> Abbs_future_combinators.return_err (`User_not_found_err user)

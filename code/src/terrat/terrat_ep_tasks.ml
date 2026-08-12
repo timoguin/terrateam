@@ -36,15 +36,16 @@ let get storage task_id =
       >>= function
       | Ok (task :: _) ->
           let body = Terrat_api_components.Task.to_yojson task |> Yojson.Safe.to_string in
-          Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+          Abbs_future_combinators.return_ok
+            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
       | Ok [] ->
-          Abb.Future.return
-            (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx))
+          Abbs_future_combinators.return_ok
+            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
       | Error (#Pgsql_pool.err as err) ->
           Logs.err (fun m -> m "TASK : %s : GET : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-          Abb.Future.return
-            (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+          Abbs_future_combinators.return_ok
+            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "TASK : %s : GET : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-          Abb.Future.return
-            (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+          Abbs_future_combinators.return_ok
+            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))

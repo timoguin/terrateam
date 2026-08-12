@@ -27,6 +27,6 @@ let fetch uri =
       let cache_control = CCOption.get_or ~default:"" (Cohttp.Header.get headers "cache-control") in
       let max_age = get_max_age cache_control in
       match Jwk.of_string body with
-      | Some jwk -> Abb.Future.return (Ok (jwk, max_age))
-      | None -> Abb.Future.return (Error `Bad_response))
-  | _ -> Abb.Future.return (Error `Bad_response)
+      | Some jwk -> Abbs_future_combinators.return_ok (jwk, max_age)
+      | None -> Abbs_future_combinators.return_err `Bad_response)
+  | _ -> Abbs_future_combinators.return_err `Bad_response

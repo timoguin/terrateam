@@ -52,11 +52,11 @@ module Make (M : S) = struct
 
   let start_migration mt name =
     let open Abb.Future.Infix_monad in
-    M.start_migration mt name >>= fun () -> Abb.Future.return (Ok ())
+    M.start_migration mt name >>= fun () -> Abbs_future_combinators.return_ok ()
 
   let complete_migration mt name =
     let open Abb.Future.Infix_monad in
-    M.complete_migration mt name >>= fun () -> Abb.Future.return (Ok ())
+    M.complete_migration mt name >>= fun () -> Abbs_future_combinators.return_ok ()
 
   let exec mt (name, m) =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -65,7 +65,7 @@ module Make (M : S) = struct
     run_migration m mt
     >>= fun r ->
     add_migration mt name
-    >>= fun () -> complete_migration mt name >>= fun () -> Abb.Future.return (Ok r)
+    >>= fun () -> complete_migration mt name >>= fun () -> Abbs_future_combinators.return_ok r
 
   let rec verify_consistency migrations ms =
     match (migrations, ms) with
@@ -86,16 +86,16 @@ module Make (M : S) = struct
         >>= function
         | migrations -> (
             match verify_consistency migrations ms with
-            | Some [] -> Abb.Future.return (Ok `Done)
+            | Some [] -> Abbs_future_combinators.return_ok `Done
             | Some (migration :: _) ->
                 let open Abb.Future.Infix_monad in
                 M.list_migrations tx [ fst migration ]
                 >>= fun () ->
                 let open Abbs_future_combinators.Infix_result_monad in
-                exec tx migration >>= fun r -> Abb.Future.return (Ok (`Cont r))
-            | None -> Abb.Future.return (Error `Consistency_err)))
+                exec tx migration >>= fun r -> Abbs_future_combinators.return_ok (`Cont r)
+            | None -> Abbs_future_combinators.return_err `Consistency_err))
     >>= function
-    | `Done -> Abb.Future.return (Ok ())
+    | `Done -> Abbs_future_combinators.return_ok ()
     | `Cont `Sync -> run' mt ms
     | `Cont (`Async mig) -> run_migration mig mt >>= fun () -> run' mt ms
 

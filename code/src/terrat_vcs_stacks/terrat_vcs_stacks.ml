@@ -242,8 +242,8 @@ module Make (M : M with type db = Pgsql_io.t) = struct
                 stacks.Tac.Stacks.stacks;
           }
         in
-        Abb.Future.return (Ok (Some stacks))
-    | None -> Abb.Future.return (Ok None)
+        Abbs_future_combinators.return_ok (Some stacks)
+    | None -> Abbs_future_combinators.return_ok None
 
   let enforce_installation_access user installation_id db ctx =
     M.enforce_installation_access ~request_id:(Brtl_ctx.token ctx) user installation_id db
@@ -262,15 +262,17 @@ module Make (M : M with type db = Pgsql_io.t) = struct
         >>= function
         | Ok (Some stacks) ->
             let body = Yojson.Safe.to_string @@ Terrat_api_components.Stacks.to_yojson stacks in
-            Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Ok None ->
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx))
-        | Error `Forbidden -> Abb.Future.return (Error (Brtl_ctx.set_response `Forbidden ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
+        | Error `Forbidden ->
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
         | Error `Error ->
-            Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
         | Error #Pgsql_pool.err ->
-            Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
 
   module Rt = struct
     let stacks () =

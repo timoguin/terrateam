@@ -208,7 +208,7 @@ module Set = struct
           (Ttm_kv_store.set ?read_caps ?write_caps ?idx ~committed:(not draft) ~key data store)
       with Yojson.Json_error err ->
         Printf.eprintf "Error parsing data: %s\n" err;
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     in
     run f
 
@@ -267,7 +267,7 @@ module Cas = struct
              store)
       with Yojson.Json_error err ->
         Printf.eprintf "Error parsing data: %s\n" err;
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     in
     run f
 
@@ -447,14 +447,14 @@ module Cp = struct
       Logs.debug (fun m -> m "Downloading: idx=%d" idx);
       Ttm_kv_store.get ~idx ~committed:(not draft) ~key:src store
       >>= function
-      | Ok r -> Abb.Future.return (Ok (idx, r))
-      | Error (#Ttm_kv_store.err as err) -> Abb.Future.return (Error (idx, err))
+      | Ok r -> Abbs_future_combinators.return_ok (idx, r)
+      | Error (#Ttm_kv_store.err as err) -> Abbs_future_combinators.return_err (idx, err)
     in
     let process_chunk fout chunk =
       let open Abb.Future.Infix_monad in
       chunk
       >>= function
-      | Ok (_, None) -> Abb.Future.return (Ok `Done)
+      | Ok (_, None) -> Abbs_future_combinators.return_ok `Done
       | Ok (idx, Some r) -> (
           match Payload.of_yojson @@ Ttm_kv_store.Record.data r with
           | Ok { Payload.chk; data } when chk <> "sha256:" ^ Sha256.(to_hex @@ string data) ->
@@ -473,7 +473,7 @@ module Cp = struct
                   [ { buf = Bytes.unsafe_of_string data; pos = 0; len = CCString.length data } ]
               >>= function
               | Ok n when n <> CCString.length data -> raise (Failure "nyi")
-              | Ok _ -> Abb.Future.return (Ok `Cont)
+              | Ok _ -> Abbs_future_combinators.return_ok `Cont
               | Error _ -> raise (Failure "nyi"))
           | Error _ -> raise (Failure "nyi"))
       | Error _ -> raise (Failure "nyi")
@@ -492,7 +492,7 @@ module Cp = struct
             >>= function
             | Ok `Done ->
                 Abbs_future_combinators.List.iter ~f:Abb.Future.abort rest
-                >>= fun () -> Abb.Future.return (Ok ())
+                >>= fun () -> Abbs_future_combinators.return_ok ()
             | Ok `Cont -> loop store idx fout src rest
             | Error _ ->
                 Abbs_future_combinators.List.iter ~f:Abb.Future.abort rest
@@ -505,16 +505,16 @@ module Cp = struct
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok () -> Abb.Future.return (Ok 0)
+    | Ok () -> Abbs_future_combinators.return_ok 0
     | Error (#Ttm_client.create_err as err) ->
         Logs.err (fun m -> m "%a" Ttm_client.pp_create_err err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     | Error (#Abb_intf.Errors.write as err) ->
         Logs.err (fun m -> m "%a" Abb_intf.Errors.pp_write err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     | Error (#Abbs_io_file.with_file_err as err) ->
         Logs.err (fun m -> m "%a" Abbs_io_file.pp_with_file_err err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
 
   let run_upload store draft read_caps write_caps src dst =
     let upload_chunk draft idx checksum chunk =
@@ -523,8 +523,8 @@ module Cp = struct
       Logs.debug (fun m -> m "Uploading: idx=%d : chk=%s" idx checksum);
       Ttm_kv_store.cas ?read_caps ?write_caps ~idx ~committed:(not draft) ~key:dst data store
       >>= function
-      | Ok _ -> Abb.Future.return (Ok ())
-      | Error (#Ttm_kv_store.err as err) -> Abb.Future.return (Error err)
+      | Ok _ -> Abbs_future_combinators.return_ok ()
+      | Error (#Ttm_kv_store.err as err) -> Abbs_future_combinators.return_err err
     in
     let rec loop store draft idx fin dst chunks =
       if CCList.length chunks < chunk_slots then
@@ -536,7 +536,8 @@ module Cp = struct
             Abbs_future_combinators.all chunks
             >>= fun results ->
             let open Abbs_future_combinators.Infix_result_monad in
-            Abb.Future.return (CCResult.flatten_l results) >>= fun _ -> Abb.Future.return (Ok ())
+            Abb.Future.return (CCResult.flatten_l results)
+            >>= fun _ -> Abbs_future_combinators.return_ok ()
         | Ok n ->
             let chunk = Base64.encode_string @@ Bytes.sub_string buf 0 n in
             let checksum = "sha256:" ^ Sha256.(to_hex @@ string chunk) in
@@ -560,21 +561,21 @@ module Cp = struct
       | Ok _ ->
           Logs.debug (fun m -> m "Processing file: %s" src);
           Abbs_io_file.with_file_in src ~f:(fun fin -> loop store draft 0 fin dst [])
-      | Error (#Ttm_kv_store.err as err) -> Abb.Future.return (Error err)
+      | Error (#Ttm_kv_store.err as err) -> Abbs_future_combinators.return_err err
     in
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok () -> Abb.Future.return (Ok 0)
+    | Ok () -> Abbs_future_combinators.return_ok 0
     | Error (#Ttm_client.create_err as err) ->
         Logs.err (fun m -> m "%a" Ttm_client.pp_create_err err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     | Error (#Abb_intf.Errors.read as err) ->
         Logs.err (fun m -> m "%a" Abb_intf.Errors.pp_read err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     | Error (#Abbs_io_file.with_file_err as err) ->
         Logs.err (fun m -> m "%a" Abbs_io_file.pp_with_file_err err);
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
 
   let run_op store draft read_caps write_caps = function
     | `Download (src, dst) -> run_download store draft src dst
@@ -598,7 +599,7 @@ module Cp = struct
             m
               "One path must be a local file path and the other must be a path in the KV-store.  \
                Specify a KV-store path via 'kv://<key>'");
-        Abb.Future.return (Ok 1)
+        Abbs_future_combinators.return_ok 1
     in
     run f
 

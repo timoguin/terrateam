@@ -44,11 +44,12 @@ module Migrate = struct
             >>= function
             | Ok _ as r -> Abb.Future.return r
             | Error ((`Migration_err #err | `Consistency_err) as err) ->
-                Abb.Future.return (Error err)))
+                Abbs_future_combinators.return_err err))
     >>= function
     | Ok _ as r -> Abb.Future.return r
-    | Error (#err as err) -> Abb.Future.return (Error (`Migration_err err))
-    | Error ((`Migration_err #err | `Consistency_err) as err) -> Abb.Future.return (Error err)
+    | Error (#err as err) -> Abbs_future_combinators.return_err (`Migration_err err)
+    | Error ((`Migration_err #err | `Consistency_err) as err) ->
+        Abbs_future_combinators.return_err err
 
   let get_migrations { config = _; storage = _; tx = db } =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -78,9 +79,10 @@ let run_sql ?(mode = `Tx) sql_contents { Migrate.config = _; storage; tx = db } 
   let conn ~f =
     let open Abbs_future_combinators.Infix_result_monad in
     match mode with
-    | `Tx -> f db >>= fun () -> Abb.Future.return (Ok `Sync)
-    | `Notx -> Pgsql_pool.with_conn storage ~f >>= fun () -> Abb.Future.return (Ok `Sync)
-    | `Async -> Abb.Future.return (Ok (`Async (fun _ -> Pgsql_pool.with_conn storage ~f)))
+    | `Tx -> f db >>= fun () -> Abbs_future_combinators.return_ok `Sync
+    | `Notx -> Pgsql_pool.with_conn storage ~f >>= fun () -> Abbs_future_combinators.return_ok `Sync
+    | `Async ->
+        Abbs_future_combinators.return_ok (`Async (fun _ -> Pgsql_pool.with_conn storage ~f))
   in
   let stmts =
     sql_contents
@@ -111,7 +113,7 @@ let add_encryption_key { Migrate.config = _; storage = _; tx = db } =
       /% Var.(ud (text "data") Base64.encode_exn))
   in
   Pgsql_io.Prepared_stmt.execute db insert_encryption_key key
-  >>= fun () -> Abb.Future.return (Ok `Sync)
+  >>= fun () -> Abbs_future_combinators.return_ok `Sync
 
 let add_gitlab_token_from_config { Migrate.config; storage = _; tx = db } =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -126,8 +128,8 @@ let add_gitlab_token_from_config { Migrate.config; storage = _; tx = db } =
   | Some gc ->
       let access_token = Gc.access_token gc in
       Pgsql_io.Prepared_stmt.execute db (add_gitlab_token_from_config ()) access_token
-      >>= fun () -> Abb.Future.return (Ok `Sync)
-  | None -> Abb.Future.return (Ok `Sync)
+      >>= fun () -> Abbs_future_combinators.return_ok `Sync
+  | None -> Abbs_future_combinators.return_ok `Sync
 
 let migrations =
   [
@@ -209,8 +211,8 @@ let migrations =
     ("add-repo-tree-id-column", run_sql [%blob "migrations/2025-05-13-add-repo-tree-id-column.sql"]);
     ( "refactor-fill-in-missing-core-ids",
       fun { Migrate.config; storage; tx = _ } ->
-        Abb.Future.return
-          (Ok (`Async (fun _ -> Terrat_migrations_ex_150.fill_in_all (config, storage)))) );
+        Abbs_future_combinators.return_ok
+          (`Async (fun _ -> Terrat_migrations_ex_150.fill_in_all (config, storage))) );
     ( "refactor-remove-null-constraints-on-core-tables",
       run_sql [%blob "migrations/2025-05-19-refactor-remove-null-constraints.sql"] );
     ( "refactor-add-pkey-indexes",
@@ -235,16 +237,16 @@ let migrations =
       run_sql [%blob "migrations/2025-07-07-refactor-github-dirspace-locking-phase-2.sql"] );
     ( "refactor-github-dirspace-locking-phase-3.1",
       fun { Migrate.config; storage; tx = _ } ->
-        Abb.Future.return
-          (Ok (`Async (fun _ -> Terrat_migrations_ex_568.run_github (config, storage)))) );
+        Abbs_future_combinators.return_ok
+          (`Async (fun _ -> Terrat_migrations_ex_568.run_github (config, storage))) );
     ( "refactor-gihtub-dirspace-locking-phase-3.2",
       run_sql [%blob "migrations/2025-07-09-refactor-github-dirspace-locking-phase-3.sql"] );
     ( "refactor-gitlab-dirspace-locking-phase-1",
       run_sql [%blob "migrations/2025-07-14-refactor-gitlab-dirspace-locking-phase-1.sql"] );
     ( "refactor-gitlab-dirspace-locking-phase-2",
       fun { Migrate.config; storage; tx = _ } ->
-        Abb.Future.return
-          (Ok (`Async (fun _ -> Terrat_migrations_ex_568.run_gitlab (config, storage)))) );
+        Abbs_future_combinators.return_ok
+          (`Async (fun _ -> Terrat_migrations_ex_568.run_gitlab (config, storage))) );
     ( "refactor-gitlab-dirspace-locking-phase-3",
       run_sql [%blob "migrations/2025-07-14-refactor-gitlab-dirspace-locking-phase-3.sql"] );
     ( "fix-make-gitlab-tables-closer-to-github",

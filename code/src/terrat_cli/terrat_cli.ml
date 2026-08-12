@@ -287,7 +287,7 @@ struct
                   let installation_token = Githubc2_components.Installation_token.value token in
                   print_endline
                     installation_token.Githubc2_components.Installation_token.Primary.token;
-                  Abb.Future.return (Ok ())
+                  Abbs_future_combinators.return_ok ()
               | (`Unauthorized _ | `Forbidden _ | `Not_found _ | `Unprocessable_entity _) as err ->
                   failwith (Terrat_github.show_get_installation_access_token_err err))
           | None -> assert false)

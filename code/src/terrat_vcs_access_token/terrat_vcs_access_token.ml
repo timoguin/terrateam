@@ -68,20 +68,19 @@ module Make (_ : Terrat_vcs_provider2.S) (S : S) = struct
           run
           >>= function
           | Ok results ->
-              Abb.Future.return
-                (Ok
-                   (Brtl_ctx.set_response
-                      (Brtl_rspnc.create
-                         ~status:`OK
-                         (Yojson.Safe.to_string
-                         @@ Terrat_api_components.Access_token_page.(to_yojson { results })))
-                      ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response
+                   (Brtl_rspnc.create
+                      ~status:`OK
+                      (Yojson.Safe.to_string
+                      @@ Terrat_api_components.Access_token_page.(to_yojson { results })))
+                   ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m -> m "%s : LIST : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m "%s : LIST : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
   end
 
   module Create = struct
@@ -134,17 +133,16 @@ module Make (_ : Terrat_vcs_provider2.S) (S : S) = struct
                         Terrat_user.Token.to_token db user
                         >>= fun refresh_token ->
                         let module At = Terrat_api_components.Access_token in
-                        Abb.Future.return
-                          (Ok
-                             (Brtl_ctx.set_response
-                                (Brtl_rspnc.create
-                                   ~status:`OK
-                                   (Yojson.Safe.to_string @@ At.to_yojson { At.refresh_token }))
-                                ctx)))
+                        Abbs_future_combinators.return_ok
+                          (Brtl_ctx.set_response
+                             (Brtl_rspnc.create
+                                ~status:`OK
+                                (Yojson.Safe.to_string @@ At.to_yojson { At.refresh_token }))
+                             ctx))
             | Error err ->
                 Logs.info (fun m -> m "%s : CREATE : %s" (Brtl_ctx.token ctx) err);
-                Abb.Future.return
-                  (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+                Abbs_future_combinators.return_ok
+                  (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           in
           let open Abb.Future.Infix_monad in
           run
@@ -153,11 +151,11 @@ module Make (_ : Terrat_vcs_provider2.S) (S : S) = struct
           | Error (#Terrat_user.Token.to_token_err as err) ->
               Logs.err (fun m ->
                   m "%s : CREATE : %a" (Brtl_ctx.token ctx) Terrat_user.Token.pp_to_token_err err);
-              Abb.Future.return
-                (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m "%s : CREATE : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
   end
 
   module Delete = struct
@@ -178,13 +176,14 @@ module Make (_ : Terrat_vcs_provider2.S) (S : S) = struct
           run
           >>= function
           | Ok () ->
-              Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx))
+              Abbs_future_combinators.return_ok
+                (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
           | Error (#Pgsql_io.err as err) ->
               Logs.err (fun m -> m "%s : DELETE : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
           | Error (#Pgsql_pool.err as err) ->
               Logs.err (fun m -> m "%s : DELETE : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-              Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+              Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
   end
 
   module Rt = struct

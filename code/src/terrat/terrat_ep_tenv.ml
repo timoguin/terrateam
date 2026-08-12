@@ -108,14 +108,14 @@ let get _config storage _origin work_manifest_id path ctx =
             Abb_io_file.write_file ~fname:(body_path ^ ".tmp") body
             >>= fun () ->
             Abb.File.rename ~src:(body_path ^ ".tmp") ~dst:body_path
-            >>= fun () -> Abb.Future.return (Ok { V.body_path; headers = headers_of_interest })
+            >>= fun () ->
+            Abbs_future_combinators.return_ok { V.body_path; headers = headers_of_interest }
         | resp, _ ->
-            Abb.Future.return
-              (Error
-                 (`Curl_err
-                    (Printf.sprintf
-                       "Bad response: %s"
-                       (Http.Status.to_string @@ Http.Response.status resp))))
+            Abbs_future_combinators.return_err
+              (`Curl_err
+                 (Printf.sprintf
+                    "Bad response: %s"
+                    (Http.Status.to_string @@ Http.Response.status resp)))
       in
       Tenv_cache.fetch tenv_cache path fetch
       >>= function
@@ -128,13 +128,13 @@ let get _config storage _origin work_manifest_id path ctx =
                 let rec loop () =
                   Abb.File.read fin ~buf ~pos:0 ~len:(Bytes.length buf)
                   >>= function
-                  | Ok 0 -> Abb.Future.return (Ok ())
+                  | Ok 0 -> Abbs_future_combinators.return_ok ()
                   | Ok n ->
                       Brtl_rspnc.Http.Response_io.write_body writer (Bytes.sub_string buf 0 n)
                       >>= fun () -> loop ()
                   | Error _ ->
                       Logs.err (fun m -> m "%s : GET : STREAM_ERROR" (Brtl_ctx.token ctx));
-                      Abb.Future.return (Ok ())
+                      Abbs_future_combinators.return_ok ()
                 in
                 loop ())
             >>= fun _ -> Abb.Future.return ()

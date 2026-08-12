@@ -122,24 +122,24 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let open Abb.Future.Infix_monad in
     build
     >>= function
-    | Ok v -> Abb.Future.return (Ok (`Ok v))
+    | Ok v -> Abbs_future_combinators.return_ok (`Ok v)
     | Error (`Suspend_eval _ as err) ->
         Logs.info (fun m -> m "%s : %a" request_id Builder.pp_err err);
-        Abb.Future.return (Ok err)
+        Abbs_future_combinators.return_ok err
     | Error (`Noop as err) ->
         (* A Noop isn't an error, it just means tehre is nothing to do *)
         Logs.info (fun m -> m "%s : %a" request_id Builder.pp_err err);
-        Abb.Future.return (Ok `Noop)
+        Abbs_future_combinators.return_ok `Noop
     | Error #err as err -> Abb.Future.return err
 
   let log_err ~request_id fut =
     Abb.Future.await_bind
       (function
-        | `Det (Ok ret) -> Abb.Future.return (Ok ret)
+        | `Det (Ok ret) -> Abbs_future_combinators.return_ok ret
         | `Det (Error (`Suspend_eval _) as err) -> Abb.Future.return err
         | `Det (Error (#Builder.err as err)) ->
             Logs.err (fun m -> m "%s : %a" request_id Builder.pp_err err);
-            Abb.Future.return (Error err)
+            Abbs_future_combinators.return_err err
         | `Exn (Buildsys.Error.Fetch_cycle_exn exn, bt_opt) ->
             Logs.err (fun m -> m "%s : %a" request_id Buildsys.Error.pp exn);
             CCOption.iter
@@ -147,7 +147,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 Logs.err (fun m ->
                     m "%s : BACKTRACE: %s" request_id (Printexc.raw_backtrace_to_string bt)))
               bt_opt;
-            Abb.Future.return (Error `Error)
+            Abbs_future_combinators.return_err `Error
         | `Exn (exn, bt_opt) ->
             Logs.err (fun m -> m "%s : %s" request_id (Printexc.to_string exn));
             CCOption.iter
@@ -155,10 +155,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 Logs.err (fun m ->
                     m "%s : BACKTRACE: %s" request_id (Printexc.raw_backtrace_to_string bt)))
               bt_opt;
-            Abb.Future.return (Error `Error)
+            Abbs_future_combinators.return_err `Error
         | `Aborted ->
             Logs.err (fun m -> m "%s : ABORTED" request_id);
-            Abb.Future.return (Error `Error))
+            Abbs_future_combinators.return_err `Error)
       fut
 
   let run_work_manifest_event ~request_id ~config ~exec ~db event =
@@ -201,7 +201,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     | Ok () ->
                         let open Fc.Infix_result_monad in
                         S.Work_manifest.update_state ~request_id db wm.Wm.id Wm.State.Running
-                        >>= fun () -> Abb.Future.return (Ok `Cont)
+                        >>= fun () -> Abbs_future_combinators.return_ok `Cont
                     | Error err ->
                         let open Fc.Infix_result_monad in
                         S.Work_manifest.update_state ~request_id db wm.Wm.id Wm.State.Aborted
@@ -219,11 +219,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                           ~db
                           ~exec
                           (Keys.Work_manifest_event.Fail { work_manifest = wm; error = err })
-                        >>= fun _ -> Abb.Future.return (Ok `Cont))
-                | None -> Abb.Future.return (Ok `Done))))
+                        >>= fun _ -> Abbs_future_combinators.return_ok `Cont)
+                | None -> Abbs_future_combinators.return_ok `Done)))
     >>= function
     | `Cont -> run_next_pending_compute ~request_id ~config ~storage ~exec ()
-    | `Done -> Abb.Future.return (Ok ())
+    | `Done -> Abbs_future_combinators.return_ok ()
 
   let run_pull_request_event
       ~request_id
@@ -287,7 +287,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     |> Keys.Key.add Keys.context context
                     |> CCFun.flip Builder.State.set_orig_store s
                   in
-                  Abb.Future.return (Ok s))
+                  Abbs_future_combinators.return_ok s)
               >>= fun s ->
               Pgsql_io.tx db ~f:(fun () ->
                   Logs.info (fun m ->
@@ -313,7 +313,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   >>= fun s ->
                   let open Irm in
                   tx_safe ~request_id @@ Builder.eval s Keys.iter_job
-                  >>= fun r -> Abb.Future.return (Ok (s, r))))
+                  >>= fun r -> Abbs_future_combinators.return_ok (s, r)))
           >>= function
           | Ok (s, (`Ok _ | `Noop)) -> (
               let open Irm in
@@ -325,7 +325,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         store
                         |> Keys.Key.add Keys.job job
                            (* Make publishing comments a noop so we don't give double messages to the user *)
-                        |> Keys.Key.add Keys.publish_comment (fun _ -> Abb.Future.return (Ok ()))
+                        |> Keys.Key.add Keys.publish_comment (fun _ ->
+                            Abbs_future_combinators.return_ok ())
                         |> Tasks_base.forward_std_keys s
                       in
                       Builder.State.make
@@ -353,8 +354,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                             ~tasks:(Tasks_pr.tasks tasks)
                             ()
                           >>= fun s -> tx_safe ~request_id @@ Builder.eval s Keys.run_next_layer))
-              | (`Suspend_eval _ | `Noop) as r -> Abb.Future.return (Ok r))
-          | Ok (_, (`Suspend_eval _ as r)) -> Abb.Future.return (Ok r)
+              | (`Suspend_eval _ | `Noop) as r -> Abbs_future_combinators.return_ok r)
+          | Ok (_, (`Suspend_eval _ as r)) -> Abbs_future_combinators.return_ok r
           | Error err ->
               let open Irm in
               Logs.info (fun m ->
@@ -371,7 +372,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     db
                     ~job_id:job.Tjc.Job.id
                     Tjc.Job.State.Failed)
-              >>= fun () -> Abb.Future.return (Ok `Noop)
+              >>= fun () -> Abbs_future_combinators.return_ok `Noop
         in
         log_err ~request_id run)
       ~finally:(fun () ->
@@ -413,8 +414,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           ~store
           ()
         >>= function
-        | Ok _ -> Abb.Future.return (Ok ())
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok _ -> Abbs_future_combinators.return_ok ()
+        | Error _ -> Abbs_future_combinators.return_err `Error)
     | Some _ ->
         let run =
           let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
@@ -440,13 +441,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         in
         Abb.Future.await_bind
           (function
-            | `Det _ -> Abb.Future.return (Ok ())
+            | `Det _ -> Abbs_future_combinators.return_ok ()
             | `Exn (exn, _) ->
                 Logs.err (fun m -> m "%s : %s" request_id (Printexc.to_string exn));
-                Abb.Future.return (Error `Error)
+                Abbs_future_combinators.return_err `Error
             | `Aborted ->
                 Logs.err (fun m -> m "%s : ABORTED" request_id);
-                Abb.Future.return (Error `Error))
+                Abbs_future_combinators.return_err `Error)
           run
 
   let work_manifest_job_failed ~request_id ~config ~storage ~exec ~account ~repo ~run_id () =
@@ -465,9 +466,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | Some work_manifest -> (
               S.Db.query_flow_state ~request_id db work_manifest.Terrat_work_manifest3.id
               >>= function
-              | Some _ -> Abb.Future.return (Ok (`Legacy work_manifest))
-              | None -> Abb.Future.return (Ok `New_age))
-          | None -> Abb.Future.return (Ok `New_age))
+              | Some _ -> Abbs_future_combinators.return_ok (`Legacy work_manifest)
+              | None -> Abbs_future_combinators.return_ok `New_age)
+          | None -> Abbs_future_combinators.return_ok `New_age)
       >>= function
       | `New_age ->
           with_conn storage ~f:(fun db ->
@@ -480,13 +481,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | `Legacy work_manifest ->
           let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
           Legacy.run_work_manifest_failure ~ctx work_manifest.Terrat_work_manifest3.id
-          >>= fun _ -> Abb.Future.return (Ok (`Ok ()))
+          >>= fun _ -> Abbs_future_combinators.return_ok (`Ok ())
     in
     let open Abb.Future.Infix_monad in
     log_err ~request_id run
     >>= function
-    | Ok _ -> Abb.Future.return (Ok ())
-    | Error _ -> Abb.Future.return (Error `Error)
+    | Ok _ -> Abbs_future_combinators.return_ok ()
+    | Error _ -> Abbs_future_combinators.return_err `Error
 
   let compute_node_poll ~request_id ~config ~storage ~exec ~compute_node_id offering =
     let open Abb.Future.Infix_monad in
@@ -495,8 +496,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       with_conn storage ~f:(fun db ->
           S.Db.query_flow_state ~request_id db compute_node_id
           >>= function
-          | Some _ -> Abb.Future.return (Ok `Legacy)
-          | None -> Abb.Future.return (Ok `New_age))
+          | Some _ -> Abbs_future_combinators.return_ok `Legacy
+          | None -> Abbs_future_combinators.return_ok `New_age)
       >>= function
       | `New_age ->
           let module Offering = Terrat_api_components.Work_manifest_initiate in
@@ -539,16 +540,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
               Legacy.run_work_manifest_initiate ~ctx ~encryption_key compute_node_id offering
               >>= function
-              | Ok (Some r) -> Abb.Future.return (Ok (`Ok r))
-              | Ok None -> Abb.Future.return (Error `Error)
-              | Error err -> Abb.Future.return (Error err)))
+              | Ok (Some r) -> Abbs_future_combinators.return_ok (`Ok r)
+              | Ok None -> Abbs_future_combinators.return_err `Error
+              | Error err -> Abbs_future_combinators.return_err err))
     in
     Fc.with_finally
       (fun () ->
         log_err ~request_id run
         >>= function
-        | Ok (`Ok r) -> Abb.Future.return (Ok r)
-        | Ok (`Suspend_eval _) | Ok `Noop | Error _ -> Abb.Future.return (Error `Error))
+        | Ok (`Ok r) -> Abbs_future_combinators.return_ok r
+        | Ok (`Suspend_eval _) | Ok `Noop | Error _ -> Abbs_future_combinators.return_err `Error)
       ~finally:(fun () ->
         Fc.ignore
         @@ Abb.Future.fork
@@ -586,7 +587,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 ~betwixt:(fun _ -> Fc.unit))
       | Some _ ->
           let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
-          Legacy.run_scheduled_drift ctx >>= fun _ -> Abb.Future.return (Ok (`Ok 0))
+          Legacy.run_scheduled_drift ctx >>= fun _ -> Abbs_future_combinators.return_ok (`Ok 0)
     in
     Fc.with_finally
       (fun () -> Fc.ignore @@ log_err ~request_id run)
@@ -610,8 +611,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           let open Irm in
           S.Work_manifest.query ~request_id db work_manifest_id
           >>= function
-          | Some work_manifest -> Abb.Future.return (Ok work_manifest)
-          | None -> Abb.Future.return (Error `Error))
+          | Some work_manifest -> Abbs_future_combinators.return_ok work_manifest
+          | None -> Abbs_future_combinators.return_err `Error)
     in
     let query_compute_node db =
       Abbs_time_it.run
@@ -627,8 +628,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           let open Irm in
           S.Job_context.Compute_node.query ~request_id ~compute_node_id:work_manifest_id db
           >>= function
-          | Some compute_node -> Abb.Future.return (Ok compute_node)
-          | None -> Abb.Future.return (Error `Error))
+          | Some compute_node -> Abbs_future_combinators.return_ok compute_node
+          | None -> Abbs_future_combinators.return_err `Error)
     in
     let query_job db =
       Abbs_time_it.run
@@ -661,8 +662,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       with_conn storage ~f:(fun db ->
           S.Db.query_flow_state ~request_id db work_manifest_id
           >>= function
-          | Some _ -> Abb.Future.return (Ok `Legacy)
-          | None -> Abb.Future.return (Ok `New_age))
+          | Some _ -> Abbs_future_combinators.return_ok `Legacy
+          | None -> Abbs_future_combinators.return_ok `New_age)
       >>= function
       | `New_age -> (
           let open Abb.Future.Infix_monad in
@@ -692,7 +693,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       Logs.info (fun m ->
                           m "%s : target=%s" (Builder.log_id s) (Hmap.Key.info target));
                       tx_safe ~request_id @@ Builder.eval s target
-                      >>= fun r -> Abb.Future.return (Ok (s, work_manifest, job, r))
+                      >>= fun r -> Abbs_future_combinators.return_ok (s, work_manifest, job, r)
                   | None ->
                       Logs.info (fun m ->
                           m
@@ -700,7 +701,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                             request_id
                             Uuidm.pp
                             work_manifest_id);
-                      Abb.Future.return (Error `Error)))
+                      Abbs_future_combinators.return_err `Error))
           >>= function
           | Ok (s, work_manifest, job, `Ok _) ->
               (* We've calculated the API response, so background running the next
@@ -738,7 +739,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      Fc.ignore
                      @@ Abb.Future.fork
                      @@ run_next_pending_compute ~request_id ~config ~storage ~exec ()))
-              >>= fun _ -> Abb.Future.return (Ok (`Ok ()))
+              >>= fun _ -> Abbs_future_combinators.return_ok (`Ok ())
           | Ok (s, work_manifest, job, `Suspend_eval _) ->
               let open Abb.Future.Infix_monad in
               Abb.Future.fork
@@ -812,8 +813,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      Fc.ignore
                      @@ Abb.Future.fork
                      @@ run_next_pending_compute ~request_id ~config ~storage ~exec ()))
-              >>= fun _ -> Abb.Future.return (Ok (`Ok ()))
-          | Ok (_, _, _, `Noop) -> Abb.Future.return (Ok `Noop)
+              >>= fun _ -> Abbs_future_combinators.return_ok (`Ok ())
+          | Ok (_, _, _, `Noop) -> Abbs_future_combinators.return_ok `Noop
           | Error #err as err ->
               let open Abb.Future.Infix_monad in
               with_conn storage ~f:(fun db ->
@@ -837,15 +838,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           let open Abb.Future.Infix_monad in
           let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
           Legacy.run_work_manifest_result ~ctx work_manifest_id result
-          >>= fun _ -> Abb.Future.return (Ok (`Ok ()))
+          >>= fun _ -> Abbs_future_combinators.return_ok (`Ok ())
     in
     let open Abb.Future.Infix_monad in
     Fc.with_finally
       (fun () ->
         log_err ~request_id run
         >>= function
-        | Ok _ -> Abb.Future.return (Ok ())
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok _ -> Abbs_future_combinators.return_ok ()
+        | Error _ -> Abbs_future_combinators.return_err `Error)
       ~finally:(fun () ->
         Fc.ignore
         @@ Abb.Future.fork
@@ -912,15 +913,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           if branch = default_branch then
             let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
             Legacy.run_push ~ctx ~account ~user ~repo ~branch ()
-          else Abb.Future.return (Ok ())
+          else Abbs_future_combinators.return_ok ()
     in
     Fc.with_finally
       (fun () ->
         let open Abb.Future.Infix_monad in
         log_err ~request_id run
         >>= function
-        | Ok _ -> Abb.Future.return (Ok ())
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok _ -> Abbs_future_combinators.return_ok ()
+        | Error _ -> Abbs_future_combinators.return_err `Error)
       ~finally:(fun () ->
         Fc.ignore
         @@ Abb.Future.fork

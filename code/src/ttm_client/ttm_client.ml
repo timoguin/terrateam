@@ -24,21 +24,17 @@ let create' ?call_timeout ~api_key ~base_url () =
     >>= fun resp ->
     match Openapi.Response.value resp with
     | `OK { Terrat_api_access_token.Refresh.Responses.OK.token } ->
-        Abb.Future.return
-          (Ok
-             {
-               base_url;
-               api_key;
-               call_timeout;
-               client =
-                 Openapic_abb.create
-                   ~user_agent:"Ttm Client"
-                   ?call_timeout
-                   ~base_url
-                   (`Bearer token);
-             })
-    | `Forbidden -> Abb.Future.return (Error `Refresh_token_err)
-  with Create_err_exn err -> Abb.Future.return (Error (err : create_err :> [> create_err ]))
+        Abbs_future_combinators.return_ok
+          {
+            base_url;
+            api_key;
+            call_timeout;
+            client =
+              Openapic_abb.create ~user_agent:"Ttm Client" ?call_timeout ~base_url (`Bearer token);
+          }
+    | `Forbidden -> Abbs_future_combinators.return_err `Refresh_token_err
+  with Create_err_exn err ->
+    Abbs_future_combinators.return_err (err : create_err :> [> create_err ])
 
 let create ?call_timeout ?api_key ~base_url () =
   try
@@ -53,8 +49,9 @@ let create ?call_timeout ?api_key ~base_url () =
     let client =
       Openapic_abb.create ~user_agent:"Ttm Client" ?call_timeout ~base_url (`Bearer api_key)
     in
-    Abb.Future.return (Ok { base_url; api_key; call_timeout; client })
-  with Create_err_exn err -> Abb.Future.return (Error (err : create_err :> [> create_err ]))
+    Abbs_future_combinators.return_ok { base_url; api_key; call_timeout; client }
+  with Create_err_exn err ->
+    Abbs_future_combinators.return_err (err : create_err :> [> create_err ])
 
 let call ?(tries = 3) t req =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -67,8 +64,8 @@ let call ?(tries = 3) t req =
           create' ?call_timeout:t.call_timeout ~api_key:t.api_key ~base_url:t.base_url ()
           >>= fun c ->
           t.client <- c.client;
-          Abb.Future.return (Ok resp)
-      | resp -> Abb.Future.return (Ok resp))
+          Abbs_future_combinators.return_ok resp
+      | resp -> Abbs_future_combinators.return_ok resp)
     ~while_:
       (Abbs_future_combinators.finite_tries tries (function
         | Error `Refresh_token_err -> false

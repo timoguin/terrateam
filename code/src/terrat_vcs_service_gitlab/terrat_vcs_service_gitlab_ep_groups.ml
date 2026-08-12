@@ -24,7 +24,8 @@ module List = struct
     >>= fun groups ->
     let module G = Gitlabc_components_api_entities_group in
     let module R = Terrat_api_components_gitlab_group in
-    Abb.Future.return (Ok (CCList.map (fun { G.id; full_name = name; _ } -> { R.id; name }) groups))
+    Abbs_future_combinators.return_ok
+      (CCList.map (fun { G.id; full_name = name; _ } -> { R.id; name }) groups)
 
   let get config storage =
     Brtl_ep.run_result_json ~f:(fun ctx ->
@@ -42,21 +43,22 @@ module List = struct
               |> Terrat_api_gitlab_groups.List.Responses.OK.to_yojson
               |> Yojson.Safe.to_string
             in
-            Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Error `Error ->
             Logs.err (fun m -> m "user=%a" Terrat_user.pp user);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Oauth.access_token_err as err) ->
             Logs.err (fun m -> m "user=%a : %a" Terrat_user.pp user Oauth.pp_access_token_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Openapic_abb.call_err as err) ->
             Logs.err (fun m -> m "user=%a : %a" Terrat_user.pp user Openapic_abb.pp_call_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m -> m "user=%a : %a" Terrat_user.pp user Pgsql_pool.pp_err err);
-            Abb.Future.return
-              (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)))
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
 end

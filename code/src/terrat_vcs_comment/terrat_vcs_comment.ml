@@ -54,7 +54,7 @@ module Make (M : S) = struct
     Alr.filter_map ~f:(fun el -> M.query_comment_id t el) els
     >>= fun cids ->
     let uniq = Id_set.of_list cids |> Id_set.to_list in
-    Abb.Future.return (Ok uniq)
+    Abbs_future_combinators.return_ok uniq
 
   let find_all_els_from t comment_ids =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -64,7 +64,7 @@ module Make (M : S) = struct
     let flat = CCList.flatten elss in
     let set = El_set.of_list flat in
     let list = El_set.to_list set in
-    Abb.Future.return (Ok list)
+    Abbs_future_combinators.return_ok list
 
   let split_by_size t els =
     let combine (groups, curr_acc) r =
@@ -120,7 +120,7 @@ module Make (M : S) = struct
     let open Abbs_future_combinators.Infix_result_monad in
     let groups = partition_by_strategy els in
     match groups with
-    | [] -> M.post_comment t [] >>= fun _ -> Abb.Future.return (Ok ())
+    | [] -> M.post_comment t [] >>= fun _ -> Abbs_future_combinators.return_ok ()
     | _ ->
         Abbs_future_combinators.List_result.iter
           ~f:(function

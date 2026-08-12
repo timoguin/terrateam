@@ -11,7 +11,7 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
       assert (pos >= 0);
       assert (len > 0);
       match Otls.Tls.read tls ~pos ~len buf with
-      | Ok n -> Abb.Future.return (Ok n)
+      | Ok n -> Fut_comb.return_ok n
       | Error `Want_pollin ->
           let open Abb.Future.Infix_monad in
           Abb.Socket.readable sock >>= fun () -> read ~buf ~pos ~len
@@ -20,22 +20,22 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
           Abb.Socket.writable sock >>= fun () -> read ~buf ~pos ~len
       | Error `Error ->
           let err = Otls.Tls.error tls in
-          Abb.Future.return (Error (`Unexpected (Failure err)))
+          Fut_comb.return_err (`Unexpected (Failure err))
     in
     let rec write ~bufs =
       match bufs with
-      | [] -> Abb.Future.return (Ok 0)
+      | [] -> Fut_comb.return_ok 0
       | { Abb_intf.Write_buf.buf; pos; len } :: bs -> (
           assert (pos >= 0);
           assert (len > 0);
           match Otls.Tls.write tls ~pos ~len buf with
           | Ok n when n = len ->
               let open Fut_comb.Infix_result_monad in
-              write ~bufs:bs >>= fun n' -> Abb.Future.return (Ok (n + n'))
+              write ~bufs:bs >>= fun n' -> Fut_comb.return_ok (n + n')
           | Ok n ->
               let open Fut_comb.Infix_result_monad in
               write ~bufs:Abb_intf.Write_buf.({ buf; pos = pos + n; len = len - n } :: bs)
-              >>= fun n' -> Abb.Future.return (Ok (n + n'))
+              >>= fun n' -> Fut_comb.return_ok (n + n')
           | Error `Want_pollin ->
               let open Abb.Future.Infix_monad in
               Abb.Socket.readable sock >>= fun () -> write ~bufs
@@ -44,7 +44,7 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
               Abb.Socket.writable sock >>= fun () -> write ~bufs
           | Error `Error ->
               let err = Otls.Tls.error tls in
-              Abb.Future.return (Error (`Unexpected (Failure err))))
+              Fut_comb.return_err (`Unexpected (Failure err)))
     in
     let close () =
       let open Abb.Future.Infix_monad in

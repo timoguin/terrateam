@@ -144,8 +144,8 @@ let list ~log_id ~owner ~repo ~ref_ client =
         |> Sln_map.String.values
         |> Iter.to_list
       in
-      Abb.Future.return (Ok all_unique_checks)
+      Abbs_future_combinators.return_ok all_unique_checks
   | Error #Githubc2_abb.call_err as err -> Abb.Future.return err
   | Error (#Terrat_github.Commit_status.list_err as err) ->
-      Abb.Future.return
-        (Error (`Commit_check_list_err (Terrat_github.Commit_status.show_list_err err)))
+      Abbs_future_combinators.return_err
+        (`Commit_check_list_err (Terrat_github.Commit_status.show_list_err err))

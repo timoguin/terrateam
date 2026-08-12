@@ -135,6 +135,6 @@ let () =
   Random.self_init ();
   Oth_abb.run
     ~file:__FILE__
-    ~setup:(fun () -> Abb.Future.return (Ok ()))
+    ~setup:(fun () -> Fc.return_ok ())
     ~teardown:(fun () -> Abb.Future.return ())
     (fun () -> Oth_abb.(serial [ test_const; test_dynamic_dependency ]))

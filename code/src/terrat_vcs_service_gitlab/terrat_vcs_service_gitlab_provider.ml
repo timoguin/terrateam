@@ -67,7 +67,7 @@ let enforce_installation_access ~request_id user account_id db =
     Terrat_user.has_capability
       (Terrat_user.Capability.Installation_id (CCInt.to_string account_id))
       user
-  then Abb.Future.return (Ok ())
+  then Abbs_future_combinators.return_ok ()
   else
     let open Abb.Future.Infix_monad in
     Pgsql_io.Prepared_stmt.fetch
@@ -77,11 +77,11 @@ let enforce_installation_access ~request_id user account_id db =
       (Terrat_user.id user)
       (CCInt64.of_int account_id)
     >>= function
-    | Ok [] -> Abb.Future.return (Error `Forbidden)
-    | Ok (_ :: _) -> Abb.Future.return (Ok ())
+    | Ok [] -> Abbs_future_combinators.return_err `Forbidden
+    | Ok (_ :: _) -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ENFORCE_INSTALLATION_ACCESS : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Forbidden)
+        Abbs_future_combinators.return_err `Forbidden
 
 module Unlock_id = struct
   type t =
@@ -802,7 +802,7 @@ module Db = struct
     let module Ds = Terrat_change.Dirspace in
     let ids = CCList.sort_uniq ~cmp:Uuidm.compare ids in
     match ids with
-    | [] -> Abb.Future.return (Ok [])
+    | [] -> Abbs_future_combinators.return_ok []
     | _ -> (
         let group_rows_by_id rows =
           let tbl = Hashtbl.create (CCList.length rows) in
@@ -902,7 +902,7 @@ module Db = struct
         in
         let fetch_pull_request_details pr_ids =
           match pr_ids with
-          | [] -> Abb.Future.return (Ok (Hashtbl.create 0))
+          | [] -> Abbs_future_combinators.return_ok (Hashtbl.create 0)
           | _ ->
               let open Abbs_future_combinators.Infix_result_monad in
               Metrics.Psql_query_time.time
@@ -936,11 +936,11 @@ module Db = struct
                           title,
                           user ) ))
                     pr_ids)
-              >>= fun rows -> Abb.Future.return (Ok (index_rows_by_id rows))
+              >>= fun rows -> Abbs_future_combinators.return_ok (index_rows_by_id rows)
         in
         let fetch_drift_details drift_ids =
           match drift_ids with
-          | [] -> Abb.Future.return (Ok (Hashtbl.create 0))
+          | [] -> Abbs_future_combinators.return_ok (Hashtbl.create 0)
           | _ ->
               let open Abbs_future_combinators.Infix_result_monad in
               Metrics.Psql_query_time.time
@@ -951,7 +951,7 @@ module Db = struct
                     (Sql.select_drift_work_manifests_batch ())
                     ~f:(fun id branch _reconcile -> (id, branch))
                     drift_ids)
-              >>= fun rows -> Abb.Future.return (Ok (index_rows_by_id rows))
+              >>= fun rows -> Abbs_future_combinators.return_ok (index_rows_by_id rows)
         in
         let resolve_targets pr_tbl drift_tbl wms =
           CCList.filter_map
@@ -1034,8 +1034,8 @@ module Db = struct
                   request_id
                   (CCList.length wms)
                   (CCList.length results));
-            Abb.Future.return (Error `Error))
-          else Abb.Future.return (Ok results)
+            Abbs_future_combinators.return_err `Error)
+          else Abbs_future_combinators.return_ok results
         in
         let open Abb.Future.Infix_monad in
         run
@@ -1044,8 +1044,8 @@ module Db = struct
         | Error (#Pgsql_io.err as err) ->
             Prmths.Counter.inc_one Metrics.pgsql_errors_total;
             Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-            Abb.Future.return (Error `Error)
-        | Error `Error -> Abb.Future.return (Error `Error))
+            Abbs_future_combinators.return_err `Error
+        | Error `Error -> Abbs_future_combinators.return_err `Error)
 
   let query_work_manifests ~request_id db ids =
     let ids = CCList.sort_uniq ~cmp:Uuidm.compare ids in
@@ -1059,17 +1059,17 @@ module Db = struct
               request_id
               (CCList.length ids)
               (CCList.length results));
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
     | Ok _ as ret -> Abb.Future.return ret
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let query_work_manifest ~request_id db work_manifest_id =
     let open Abb.Future.Infix_monad in
     load_work_manifests ~request_id db [ work_manifest_id ]
     >>= function
-    | Ok [] -> Abb.Future.return (Ok None)
-    | Ok (wm :: _) -> Abb.Future.return (Ok (Some wm))
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok [] -> Abbs_future_combinators.return_ok None
+    | Ok (wm :: _) -> Abbs_future_combinators.return_ok (Some wm)
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let store_account_repository ~request_id db account repo =
     let open Abb.Future.Infix_monad in
@@ -1084,11 +1084,11 @@ module Db = struct
           (Api.Repo.owner repo)
           (Api.Repo.name repo))
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let lock_repository ~request_id db _account repo =
     let open Abb.Future.Infix_monad in
@@ -1099,11 +1099,11 @@ module Db = struct
           ~f:CCFun.id
           (CCInt64.of_int (Api.Repo.id repo)))
     >>= function
-    | Ok _ -> Abb.Future.return (Ok ())
+    | Ok _ -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_pull_request ~request_id db pull_request =
     let open Abb.Future.Infix_monad in
@@ -1132,11 +1132,11 @@ module Db = struct
           (Pr.title pull_request)
           (Pr.user pull_request))
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let index_of_index idx =
     let module Idx = Terrat_code_idx in
@@ -1176,11 +1176,11 @@ module Db = struct
     Metrics.Psql_query_time.time (Metrics.psql_query_time "insert_index") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (Sql.insert_index ()) work_manifest_id (R.to_yojson index))
     >>= function
-    | Ok () -> Abb.Future.return (Ok (index_of_index index))
+    | Ok () -> Abbs_future_combinators.return_ok (index_of_index index)
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_index_result ~request_id db work_manifest_id index =
     let module Wm = Terrat_work_manifest3 in
@@ -1226,12 +1226,12 @@ module Db = struct
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
-    | Error `Error -> Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let store_repo_config_json ~request_id db account ref_ json =
     let open Abb.Future.Infix_monad in
@@ -1243,11 +1243,11 @@ module Db = struct
           (Api.Ref.to_string ref_)
           json)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_repo_config_history ~request_id db account repo ~branch ~sha json =
     let open Abb.Future.Infix_monad in
@@ -1261,11 +1261,11 @@ module Db = struct
           (CCInt64.of_int @@ Api.Repo.id repo)
           (CCInt64.of_int @@ Api.Account.id account))
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_repo_tree ~request_id db account ref_ files =
     let module I = Terrat_api_components.Work_manifest_build_tree_result.Files.Items in
@@ -1294,25 +1294,25 @@ module Db = struct
               (CCInt64.of_int @@ Api.Account.id account)
               (Api.Ref.to_string ref_))
         >>= function
-        | Ok () -> Abb.Future.return (Ok ())
+        | Ok () -> Abbs_future_combinators.return_ok ()
         | Error (#Pgsql_io.err as err) ->
             Prmths.Counter.inc_one Metrics.pgsql_errors_total;
             Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-            Abb.Future.return (Error `Error))
+            Abbs_future_combinators.return_err `Error)
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_flow_state ~request_id db work_manifest_id data =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "upsert_flow_state") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (Sql.upsert_flow_state ()) work_manifest_id data)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_dirspaceflows ~request_id ~base_ref ~branch_ref ~lock_policy db repo dirspaceflows =
     let id = CCInt64.of_int (Api.Repo.id repo) in
@@ -1351,14 +1351,14 @@ module Db = struct
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let maybe_store_gates ~request_id db work_manifest_id = function
-    | Some [] | None -> Abb.Future.return (Ok ())
+    | Some [] | None -> Abbs_future_combinators.return_ok ()
     | Some gates -> (
         let open Abbs_future_combinators.Infix_result_monad in
         let module G = Terrat_api_components.Gate in
@@ -1398,7 +1398,7 @@ module Db = struct
                   (CCOption.get_or ~default:"" dir)
                   (CCOption.get_or ~default:"" workspace))
               gates
-        | Some _ | None -> Abb.Future.return (Ok ()))
+        | Some _ | None -> Abbs_future_combinators.return_ok ())
 
   let store_tf_operation_result ~request_id:_ _db _work_manifest_id _result =
     raise (Failure "NOT SUPPORTED")
@@ -1505,18 +1505,18 @@ module Db = struct
         run
         >>= function
         | Ok _ as res -> Abb.Future.return res
-        | Error (#Pgsql_io.err as err) -> Abb.Future.return (Error err)
-        | Error `Error -> Abb.Future.return (Error `Error))
+        | Error (#Pgsql_io.err as err) -> Abbs_future_combinators.return_err err
+        | Error `Error -> Abbs_future_combinators.return_err `Error)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (`Match_parse_err err) ->
         Logs.info (fun m -> m "%s : MATCH_PARSE_ERR : %s" request_id err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
-    | Error `Error -> Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let store_drift_schedule ~request_id db repo drift =
     let module D = Terrat_base_repo_config_v1.Drift in
@@ -1558,11 +1558,11 @@ module Db = struct
          (CCInt64.of_int @@ Api.Repo.id repo)
          [])
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_account_status ~request_id db account =
     let open Abb.Future.Infix_monad in
@@ -1575,18 +1575,19 @@ module Db = struct
           ~f:(fun account_status trial_end_days -> (account_status, trial_end_days))
           (CCInt64.of_int @@ Api.Account.id account))
     >>= function
-    | Ok (("expired", _) :: _) -> Abb.Future.return (Ok `Expired)
-    | Ok (("disabled", _) :: _) -> Abb.Future.return (Ok `Disabled)
+    | Ok (("expired", _) :: _) -> Abbs_future_combinators.return_ok `Expired
+    | Ok (("disabled", _) :: _) -> Abbs_future_combinators.return_ok `Disabled
     | Ok (("trial_ending", Some trial_end_days) :: _) ->
         (* Ensure that trial end always is now or in the future *)
-        Abb.Future.return
-          (Ok (`Trial_ending (Duration.of_day (CCInt.max 0 (CCInt32.to_int trial_end_days)))))
-    | Ok (("trial_ending", None) :: _) -> Abb.Future.return (Ok (`Trial_ending (Duration.of_day 0)))
-    | Ok _ -> Abb.Future.return (Ok `Active)
+        Abbs_future_combinators.return_ok
+          (`Trial_ending (Duration.of_day (CCInt.max 0 (CCInt32.to_int trial_end_days))))
+    | Ok (("trial_ending", None) :: _) ->
+        Abbs_future_combinators.return_ok (`Trial_ending (Duration.of_day 0))
+    | Ok _ -> Abbs_future_combinators.return_ok `Active
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_index ~request_id db account ref_ =
     let open Abb.Future.Infix_monad in
@@ -1598,12 +1599,12 @@ module Db = struct
           (CCInt64.of_int @@ Api.Account.id account)
           (Api.Ref.to_string ref_))
     >>= function
-    | Ok (idx :: _) -> Abb.Future.return (Ok (Some (index_of_index idx)))
-    | Ok [] -> Abb.Future.return (Ok None)
+    | Ok (idx :: _) -> Abbs_future_combinators.return_ok (Some (index_of_index idx))
+    | Ok [] -> Abbs_future_combinators.return_ok None
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_repo_config_json ~request_id db account ref_ =
     let open Abb.Future.Infix_monad in
@@ -1615,12 +1616,12 @@ module Db = struct
           (CCInt64.of_int @@ Api.Account.id account)
           (Api.Ref.to_string ref_))
     >>= function
-    | Ok (repo_config :: _) -> Abb.Future.return (Ok (Some repo_config))
-    | Ok [] -> Abb.Future.return (Ok None)
+    | Ok (repo_config :: _) -> Abbs_future_combinators.return_ok (Some repo_config)
+    | Ok [] -> Abbs_future_combinators.return_ok None
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_repo_tree ?base_ref ~request_id db account ref_ =
     let module I = Terrat_api_components.Work_manifest_build_tree_result.Files.Items in
@@ -1650,17 +1651,17 @@ module Db = struct
               (CCInt64.of_int @@ Api.Account.id account)
               (Api.Ref.to_string ref_))
         >>= function
-        | Ok (_ :: _) -> Abb.Future.return (Ok (Some []))
-        | Ok [] -> Abb.Future.return (Ok None)
+        | Ok (_ :: _) -> Abbs_future_combinators.return_ok (Some [])
+        | Ok [] -> Abbs_future_combinators.return_ok None
         | Error (#Pgsql_io.err as err) ->
             Prmths.Counter.inc_one Metrics.pgsql_errors_total;
             Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-            Abb.Future.return (Error `Error))
-    | Ok files -> Abb.Future.return (Ok (Some files))
+            Abbs_future_combinators.return_err `Error)
+    | Ok files -> Abbs_future_combinators.return_ok (Some files)
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_next_pending_work_manifest ?new_age:(_ = false) ~request_id db =
     let run =
@@ -1668,7 +1669,7 @@ module Db = struct
       Metrics.Psql_query_time.time (Metrics.psql_query_time "select_next_work_manifest") (fun () ->
           Pgsql_io.Prepared_stmt.fetch db ~f:CCFun.id Sql.select_next_work_manifest)
       >>= function
-      | [] -> Abb.Future.return (Ok None)
+      | [] -> Abbs_future_combinators.return_ok None
       | [ id ] ->
           Abbs_time_it.run
             (fun time ->
@@ -1680,8 +1681,8 @@ module Db = struct
               | Some wm ->
                   let module Wm = Terrat_work_manifest3 in
                   assert (wm.Wm.state = Wm.State.Queued);
-                  Abb.Future.return (Ok (Some wm))
-              | None -> Abb.Future.return (Ok None))
+                  Abbs_future_combinators.return_ok (Some wm)
+              | None -> Abbs_future_combinators.return_ok None)
       | _ :: _ -> assert false
     in
     let open Abb.Future.Infix_monad in
@@ -1690,32 +1691,32 @@ module Db = struct
     | Ok _ as ret -> Abb.Future.return ret
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_pool.pp_err err);
-        Abb.Future.return (Error `Error)
-    | Error `Error -> Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let query_flow_state ~request_id db work_manifest_id =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "select_flow_state") (fun () ->
         Pgsql_io.Prepared_stmt.fetch db (Sql.select_flow_state ()) ~f:CCFun.id work_manifest_id)
     >>= function
-    | Ok (data :: _) -> Abb.Future.return (Ok (Some data))
-    | Ok [] -> Abb.Future.return (Ok None)
+    | Ok (data :: _) -> Abbs_future_combinators.return_ok (Some data)
+    | Ok [] -> Abbs_future_combinators.return_ok None
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let delete_flow_state ~request_id db work_manifest_id =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_flow_state") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (Sql.delete_flow_state ()) work_manifest_id)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_pull_request_out_of_change_applies ~request_id db pull_request =
     let run =
@@ -1730,11 +1731,11 @@ module Db = struct
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok dirspaces -> Abb.Future.return (Ok dirspaces)
+    | Ok dirspaces -> Abbs_future_combinators.return_ok dirspaces
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_applied_dirspaces ~request_id db pull_request =
     let open Abb.Future.Infix_monad in
@@ -1748,11 +1749,11 @@ module Db = struct
           (CCInt64.of_int @@ Api.Repo.id @@ Api.Pull_request.repo pull_request)
           (CCInt64.of_int @@ Api.Pull_request.id pull_request))
     >>= function
-    | Ok dirspaces -> Abb.Future.return (Ok dirspaces)
+    | Ok dirspaces -> Abbs_future_combinators.return_ok dirspaces
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_applied_dirspaces_for_context ~request_id db context =
     let open Abb.Future.Infix_monad in
@@ -1765,11 +1766,11 @@ module Db = struct
           ~f:(fun dir workspace -> { Terrat_dirspace.dir; workspace })
           context)
     >>= function
-    | Ok dirspaces -> Abb.Future.return (Ok dirspaces)
+    | Ok dirspaces -> Abbs_future_combinators.return_ok dirspaces
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_dirspaces_without_valid_plans
       ~request_id
@@ -1797,7 +1798,7 @@ module Db = struct
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_conflicting_work_manifests_in_repo ~request_id db pull_request dirspaces op =
     let run_type =
@@ -1852,32 +1853,30 @@ module Db = struct
             ~f:(query_work_manifest ~request_id db)
             conflicting
           >>= fun wms ->
-          Abb.Future.return
-            (Ok
-               (Some
-                  (Terrat_vcs_provider2.Conflicting_work_manifests.Conflicting
-                     (CCList.filter_map CCFun.id wms))))
+          Abbs_future_combinators.return_ok
+            (Some
+               (Terrat_vcs_provider2.Conflicting_work_manifests.Conflicting
+                  (CCList.filter_map CCFun.id wms)))
       | _, (_ :: _ as maybe_stale) ->
           Abbs_future_combinators.List_result.map
             ~f:(query_work_manifest ~request_id db)
             maybe_stale
           >>= fun wms ->
-          Abb.Future.return
-            (Ok
-               (Some
-                  (Terrat_vcs_provider2.Conflicting_work_manifests.Maybe_stale
-                     (CCList.filter_map CCFun.id wms))))
-      | _, _ -> Abb.Future.return (Ok None)
+          Abbs_future_combinators.return_ok
+            (Some
+               (Terrat_vcs_provider2.Conflicting_work_manifests.Maybe_stale
+                  (CCList.filter_map CCFun.id wms)))
+      | _, _ -> Abbs_future_combinators.return_ok None
     in
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok wms -> Abb.Future.return (Ok wms)
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok wms -> Abbs_future_combinators.return_ok wms
+    | Error `Error -> Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_conflicting_work_manifests_in_repo_for_context ~request_id db context dirspaces op =
     let run_type =
@@ -1930,32 +1929,30 @@ module Db = struct
             ~f:(query_work_manifest ~request_id db)
             conflicting
           >>= fun wms ->
-          Abb.Future.return
-            (Ok
-               (Some
-                  (Terrat_vcs_provider2.Conflicting_work_manifests.Conflicting
-                     (CCList.filter_map CCFun.id wms))))
+          Abbs_future_combinators.return_ok
+            (Some
+               (Terrat_vcs_provider2.Conflicting_work_manifests.Conflicting
+                  (CCList.filter_map CCFun.id wms)))
       | _, (_ :: _ as maybe_stale) ->
           Abbs_future_combinators.List_result.map
             ~f:(query_work_manifest ~request_id db)
             maybe_stale
           >>= fun wms ->
-          Abb.Future.return
-            (Ok
-               (Some
-                  (Terrat_vcs_provider2.Conflicting_work_manifests.Maybe_stale
-                     (CCList.filter_map CCFun.id wms))))
-      | _, _ -> Abb.Future.return (Ok None)
+          Abbs_future_combinators.return_ok
+            (Some
+               (Terrat_vcs_provider2.Conflicting_work_manifests.Maybe_stale
+                  (CCList.filter_map CCFun.id wms)))
+      | _, _ -> Abbs_future_combinators.return_ok None
     in
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok wms -> Abb.Future.return (Ok wms)
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok wms -> Abbs_future_combinators.return_ok wms
+    | Error `Error -> Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_dirspaces_owned_by_other_pull_requests ~request_id db pull_request dirspaces =
     let open Abb.Future.Infix_monad in
@@ -2011,7 +2008,7 @@ module Db = struct
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_missing_drift_scheduled_runs ~request_id db =
     let open Abb.Future.Infix_monad in
@@ -2045,28 +2042,28 @@ module Db = struct
     | Ok _ as ret -> Abb.Future.return ret
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : DRIFT : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let cleanup_repo_configs ~request_id db =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "cleanup_repo_configs") (fun () ->
         Pgsql_io.Prepared_stmt.execute db Sql.cleanup_repo_configs)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let cleanup_flow_states ~request_id db =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_stale_flow_states") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (Sql.delete_stale_flow_states ()))
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let cleanup_plans ~request_id db =
     let open Abb.Future.Infix_monad in
@@ -2076,10 +2073,10 @@ module Db = struct
     | Ok [] -> assert false
     | Ok (count :: _) ->
         Logs.info (fun m -> m "%s : PLAN_CLEANUP : %d" request_id (Int32.to_int count));
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let unlock' db repo = function
     | Unlock_id.Pull_request pull_request_id ->
@@ -2105,10 +2102,10 @@ module Db = struct
     | Ok _ as ret -> Abb.Future.return ret
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_pool.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_plan ~request_id db work_manifest_id dirspace =
     let run =
@@ -2122,7 +2119,7 @@ module Db = struct
             dirspace.Terrat_dirspace.dir
             dirspace.Terrat_dirspace.workspace)
       >>= function
-      | [] -> Abb.Future.return (Ok None)
+      | [] -> Abbs_future_combinators.return_ok None
       | data :: _ ->
           Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_plan") (fun () ->
               Pgsql_io.Prepared_stmt.execute
@@ -2131,7 +2128,7 @@ module Db = struct
                 work_manifest_id
                 dirspace.Terrat_dirspace.dir
                 dirspace.Terrat_dirspace.workspace)
-          >>= fun () -> Abb.Future.return (Ok (Some data))
+          >>= fun () -> Abbs_future_combinators.return_ok (Some data)
     in
     let open Abb.Future.Infix_monad in
     run
@@ -2140,7 +2137,7 @@ module Db = struct
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_plan ~request_id db work_manifest_id dirspace data has_changes =
     let open Abb.Future.Infix_monad in
@@ -2154,22 +2151,22 @@ module Db = struct
           data
           has_changes)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let store_branch_hash ~request_id ~branch_name ~branch_ref repo db =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "store_branch_hash") (fun () ->
         Pgsql_io.Prepared_stmt.execute db Sql.upsert_branch_hash repo branch_name branch_ref)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query_repo_by_id ~request_id db installation_id repo_id =
     let open Abb.Future.Infix_monad in
@@ -2181,23 +2178,23 @@ module Db = struct
           (CCInt64.of_int repo_id)
           (CCInt64.of_int installation_id))
     >>= function
-    | Ok (repo :: _) -> Abb.Future.return (Ok (Some repo))
-    | Ok [] -> Abb.Future.return (Ok None)
+    | Ok (repo :: _) -> Abbs_future_combinators.return_ok (Some repo)
+    | Ok [] -> Abbs_future_combinators.return_ok None
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let delete_repo ~request_id db installation_id repo_id =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_repo") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (Sql.delete_repo ()) repo_id installation_id)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 end
 
 module Apply_requirements = struct
@@ -2240,13 +2237,14 @@ module Apply_requirements = struct
   let match_query ~request_id client repo user =
     let module M = Terrat_base_repo_config_v1.Access_control.Match in
     function
-    | M.User value -> Abb.Future.return (Ok (CCString.equal value @@ Api.User.to_string user))
+    | M.User value ->
+        Abbs_future_combinators.return_ok (CCString.equal value @@ Api.User.to_string user)
     | M.Team value -> (
         let open Abb.Future.Infix_monad in
         Api.is_member_of_team ~request_id ~team:value ~user repo client
         >>= function
-        | Ok res -> Abb.Future.return (Ok res)
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok res -> Abbs_future_combinators.return_ok res
+        | Error _ -> Abbs_future_combinators.return_err `Error)
     | M.Role value -> (
         let open Abb.Future.Infix_monad in
         match CCList.find_idx CCFun.(fst %> CCString.equal value) repo_permission_levels with
@@ -2258,13 +2256,13 @@ module Apply_requirements = struct
                 | Some (idx_role, _) ->
                     (* Test if their actual role has an index less than or
                            equal to the index of the role in the query. *)
-                    Abb.Future.return (Ok (idx_role <= idx))
-                | None -> Abb.Future.return (Ok false))
-            | Ok None -> Abb.Future.return (Ok false)
-            | Error _ -> Abb.Future.return (Error `Error))
+                    Abbs_future_combinators.return_ok (idx_role <= idx)
+                | None -> Abbs_future_combinators.return_ok false)
+            | Ok None -> Abbs_future_combinators.return_ok false
+            | Error _ -> Abbs_future_combinators.return_err `Error)
         | None -> raise (Failure "nyi")
         (* Abb.Future.return (Error (`Invalid_query query)) *))
-    | M.Any -> Abb.Future.return (Ok true)
+    | M.Any -> Abbs_future_combinators.return_ok true
 
   let compute_approved ~request_id client repo approved approved_reviews requested_reviews =
     let module Match_set = CCSet.Make (Terrat_base_repo_config_v1.Access_control.Match) in
@@ -2283,20 +2281,19 @@ module Apply_requirements = struct
                 let user = Api.User.make user in
                 match_query ~request_id client repo user query
                 >>= function
-                | true -> Abb.Future.return (Ok (Some user))
-                | false -> Abb.Future.return (Ok None))
-            | _ -> Abb.Future.return (Ok None))
+                | true -> Abbs_future_combinators.return_ok (Some user)
+                | false -> Abbs_future_combinators.return_ok None)
+            | _ -> Abbs_future_combinators.return_ok None)
           approved_reviews
         >>= fun matching_reviews ->
         (* [query] is something like "user:foo" or "team:bar" and
            [approved_reviews] are the list of reviews for this PR.
            [matching_reviews] are the users that match this query. *)
-        Abb.Future.return
-          (Ok
-             (CCList.fold_left
-                (fun acc user -> Match_map.add_to_list query user acc)
-                acc
-                matching_reviews)))
+        Abbs_future_combinators.return_ok
+          (CCList.fold_left
+             (fun acc user -> Match_map.add_to_list query user acc)
+             acc
+             matching_reviews))
       combined_queries
     >>= fun matching_reviews ->
     (* [matching_reviews] is a map from a query to those users that approved and
@@ -2329,12 +2326,11 @@ module Apply_requirements = struct
           (Bool.to_string any_of_passed));
     (* Considered approved if all "all_of" passes and any "any_of" passes OR
          "all of" and "any of" are empty and the approvals is more than count *)
-    Abb.Future.return
-      (Ok
-         ( all_of_passed && any_of_passed && required_reviews_passed,
-           missing_reviews,
-           missing_any_of,
-           any_of_count ))
+    Abbs_future_combinators.return_ok
+      ( all_of_passed && any_of_passed && required_reviews_passed,
+        missing_reviews,
+        missing_any_of,
+        any_of_count )
 
   let eval ~request_id _config _user client repo_config pull_request dirspace_configs =
     let max_parallel = 20 in
@@ -2526,31 +2522,30 @@ module Apply_requirements = struct
                       (Bool.to_string merged)
                       (Bool.to_string ready_for_review)
                       (Bool.to_string passed));
-                Abb.Future.return (Ok apply_requirements)
+                Abbs_future_combinators.return_ok apply_requirements
             | None ->
                 Logs.info (fun m -> m "%s : NO_APPLY_REQUIREMENTS_MATCHED" request_id);
-                Abb.Future.return
-                  (Ok
-                     {
-                       Result.passed = None;
-                       match_;
-                       apply_after_merge = None;
-                       approved = None;
-                       merge_conflicts = None;
-                       ready_for_review = None;
-                       status_checks = None;
-                       status_checks_failed = [];
-                       approved_reviews = [];
-                       missing_reviews = [];
-                       missing_any_of_count = 0;
-                       any_of_count = 0;
-                       any_of = [];
-                     }))
+                Abbs_future_combinators.return_ok
+                  {
+                    Result.passed = None;
+                    match_;
+                    apply_after_merge = None;
+                    approved = None;
+                    merge_conflicts = None;
+                    ready_for_review = None;
+                    status_checks = None;
+                    status_checks_failed = [];
+                    approved_reviews = [];
+                    missing_reviews = [];
+                    missing_any_of_count = 0;
+                    any_of_count = 0;
+                    any_of = [];
+                  })
           chunk)
       (CCList.chunks (CCInt.max 1 (CCList.length dirspace_configs / max_parallel)) dirspace_configs)
     >>= function
-    | Ok ret -> Abb.Future.return (Ok (CCList.flatten ret))
-    | Error (`Error as ret) -> Abb.Future.return (Error ret)
+    | Ok ret -> Abbs_future_combinators.return_ok (CCList.flatten ret)
+    | Error (`Error as ret) -> Abbs_future_combinators.return_err ret
 end
 
 module Tier = struct
@@ -2608,7 +2603,7 @@ module Tier = struct
       ~f:(fun user created_at -> (user, created_at))
       (CCInt64.of_int @@ Api.Account.id account)
     >>= function
-    | [] -> Abb.Future.return (Ok None)
+    | [] -> Abbs_future_combinators.return_ok None
     | users -> (
         let user = Api.User.to_string user in
         let all_users = Sln_set.String.dedup_list (user :: CCList.map fst users) in
@@ -2627,11 +2622,11 @@ module Tier = struct
                 Logs.info (fun m ->
                     m "%s : TIER_CHECK : user=%s : first_run=%s" request_id user first_run))
               users;
-            Abb.Future.return (Ok (Some { Terrat_tier.Check.users = all_users; limit }))
-        | _ -> Abb.Future.return (Ok None))
+            Abbs_future_combinators.return_ok (Some { Terrat_tier.Check.users = all_users; limit })
+        | _ -> Abbs_future_combinators.return_ok None)
 
   let runs_usage' ~request_id account limit db =
-    if limit = CCInt.max_int then Abb.Future.return (Ok None)
+    if limit = CCInt.max_int then Abbs_future_combinators.return_ok None
     else
       let open Abbs_future_combinators.Infix_result_monad in
       Pgsql_io.Prepared_stmt.fetch
@@ -2645,15 +2640,15 @@ module Tier = struct
           let used = CCInt64.to_int used in
           Logs.info (fun m ->
               m "%s : TIER_CHECK : RUNS_PER_MONTH : used=%d : limit=%d" request_id used limit);
-          Abb.Future.return (Ok (Some { Terrat_tier.Check.used; limit }))
+          Abbs_future_combinators.return_ok (Some { Terrat_tier.Check.used; limit })
 
   let check_runs_per_month ~request_id account limit db =
     let open Abbs_future_combinators.Infix_result_monad in
     runs_usage' ~request_id account limit db
     >>= function
     | Some { Terrat_tier.Check.used; limit } when used >= limit ->
-        Abb.Future.return (Ok (Some { Terrat_tier.Check.used; limit }))
-    | Some _ | None -> Abb.Future.return (Ok None)
+        Abbs_future_combinators.return_ok (Some { Terrat_tier.Check.used; limit })
+    | Some _ | None -> Abbs_future_combinators.return_ok None
 
   let runs_usage ~request_id account db =
     let run =
@@ -2675,7 +2670,7 @@ module Tier = struct
     | Ok _ as res -> Abb.Future.return res
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let check ~request_id user account db =
     let run =
@@ -2695,10 +2690,10 @@ module Tier = struct
           check_runs_per_month ~request_id account runs_per_month db
           >>= fun runs_check ->
           match (users_check, runs_check) with
-          | None, None -> Abb.Future.return (Ok None)
+          | None, None -> Abbs_future_combinators.return_ok None
           | users_per_month, runs_per_month ->
-              Abb.Future.return
-                (Ok (Some { Terrat_tier.Check.tier_name; users_per_month; runs_per_month })))
+              Abbs_future_combinators.return_ok
+                (Some { Terrat_tier.Check.tier_name; users_per_month; runs_per_month }))
     in
     let open Abb.Future.Infix_monad in
     run
@@ -2706,14 +2701,14 @@ module Tier = struct
     | Ok _ as res -> Abb.Future.return res
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 end
 
 module Gate = struct
   let add_approval ~request_id:_ ~token:_ ~approver:_ _pull_request _db =
-    Abb.Future.return (Error (`Premium_feature_err `Gatekeeping))
+    Abbs_future_combinators.return_err (`Premium_feature_err `Gatekeeping)
 
-  let eval ~request_id:_ _ _ _ _ = Abb.Future.return (Ok [])
+  let eval ~request_id:_ _ _ _ _ = Abbs_future_combinators.return_ok []
 end
 
 module Comment = struct
@@ -4035,8 +4030,8 @@ module Comment = struct
           synthesized_config
           work_manifest
         >>= function
-        | Ok comment_id -> Abb.Future.return (Ok comment_id)
-        | Error _ -> Abb.Future.return (Error `Error))
+        | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+        | Error _ -> Abbs_future_combinators.return_err `Error)
     | Msg.Tier_check checks ->
         let module C = Terrat_tier.Check in
         let { C.tier_name; users_per_month; runs_per_month } = checks in
@@ -4126,15 +4121,15 @@ module Repo_config = struct
       <$> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yml")
       <*> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yaml"))
     >>= function
-    | None -> Abb.Future.return (Ok None)
+    | None -> Abbs_future_combinators.return_ok None
     | Some (_, content) when CCString.is_empty (CCString.trim content) ->
-        Abb.Future.return (Ok None)
+        Abbs_future_combinators.return_ok None
     | Some (fname, content) ->
         Abb.Future.return
         @@ CCResult.map_err
              (fun (`Yaml_decode_err err) -> `Yaml_decode_err (fname, err))
              (Jsonu.of_yaml_string content)
-        >>= fun json -> Abb.Future.return (Ok (Some (fname, json)))
+        >>= fun json -> Abbs_future_combinators.return_ok (Some (fname, json))
 
   let repo_config_system_defaults system_defaults =
     (* Access control should be disabled for OSS *)
@@ -4175,8 +4170,8 @@ module Repo_config = struct
       Abbs_future_combinators.List_result.iter ~f:(function
         | Some (fname, json) ->
             wrap_err fname (Abb.Future.return (V1.of_version_1_json json))
-            >>= fun _ -> Abb.Future.return (Ok ())
-        | None -> Abb.Future.return (Ok ()))
+            >>= fun _ -> Abbs_future_combinators.return_ok ()
+        | None -> Abbs_future_combinators.return_ok ())
     in
     let get_json = function
       | None -> `Assoc []
@@ -4240,10 +4235,10 @@ module Repo_config = struct
            functionality and is surprised when it doesn't work. *)
     match V1.to_view final_repo_config with
     | { V1.View.access_control = { V1.Access_control.enabled = true; _ }; _ } ->
-        Abb.Future.return (Error (`Premium_feature_err `Access_control))
+        Abbs_future_combinators.return_err (`Premium_feature_err `Access_control)
     | { V1.View.drift = { V1.Drift.enabled = true; schedules }; _ }
       when Sln_map.String.cardinal schedules > 1 ->
-        Abb.Future.return (Error (`Premium_feature_err `Multiple_drift_schedules))
+        Abbs_future_combinators.return_err (`Premium_feature_err `Multiple_drift_schedules)
     | { V1.View.apply_requirements = { V1.Apply_requirements.checks; _ }; _ }
       when CCList.exists
              (fun {
@@ -4252,21 +4247,22 @@ module Repo_config = struct
                     _;
                   }
                 -> require_completed_reviews)
-             checks -> Abb.Future.return (Error (`Premium_feature_err `Require_completed_reviews))
+             checks ->
+        Abbs_future_combinators.return_err (`Premium_feature_err `Require_completed_reviews)
     | {
      V1.View.notifications =
        { V1.Notifications.summary = { V1.Notifications.Summary.enabled = true }; _ };
      _;
-    } -> Abb.Future.return (Error (`Premium_feature_err `Notifications_summary))
-    | _ -> Abb.Future.return (Ok (provenance, final_repo_config))
+    } -> Abbs_future_combinators.return_err (`Premium_feature_err `Notifications_summary)
+    | _ -> Abbs_future_combinators.return_ok (provenance, final_repo_config)
 end
 
 module Access_control = struct
   (* Access control is an enterprise feature, so always return success on
        any requests. *)
 
-  let query ~request_id:_ _ _ _ _ = Abb.Future.return (Ok true)
-  let is_ci_changed ~request_id:_ _ _ _ = Abb.Future.return (Ok false)
+  let query ~request_id:_ _ _ _ _ = Abbs_future_combinators.return_ok true
+  let is_ci_changed ~request_id:_ _ _ _ = Abbs_future_combinators.return_ok false
 end
 
 module Commit_check = struct
@@ -4452,7 +4448,7 @@ module Work_manifest = struct
         Pipeline_api.(make ~body (Parameters.make ~id:(CCInt.to_string @@ Api.Repo.id repo)))
       >>= fun resp ->
       match Openapi.Response.value resp with
-      | `Created _ -> Abb.Future.return (Ok ())
+      | `Created _ -> Abbs_future_combinators.return_ok ()
       | `Bad_request json
         when CCString.find ~sub:"Identity verification is required in order to run CI jobs"
              @@ Yojson.Safe.to_string json
@@ -4460,7 +4456,8 @@ module Work_manifest = struct
           (* The above is cheap trick to determine if our specific error message
              we care about is somewhere in the JSON error rather than decoding
              it. *)
-          Abb.Future.return (Error (`Failed_to_start_with_msg_err "IDENTITY_VERIFICATION_ERR"))
+          Abbs_future_combinators.return_err
+            (`Failed_to_start_with_msg_err "IDENTITY_VERIFICATION_ERR")
       | `Bad_request json
         when CCString.find
                ~sub:"Given inputs not defined in the `spec` section"
@@ -4468,21 +4465,22 @@ module Work_manifest = struct
              <> -1 ->
           let err_msg = "Given inputs not defined in the `spec` section" in
           Logs.err (fun m -> m "%s : %s : %s" request_id err_msg (Yojson.Safe.to_string json));
-          Abb.Future.return (Error (`Failed_to_start_with_msg_err "GITLAB_INPUTS_MISSING_DEFAULTS"))
+          Abbs_future_combinators.return_err
+            (`Failed_to_start_with_msg_err "GITLAB_INPUTS_MISSING_DEFAULTS")
       | (`Bad_request _ | `Unauthorized _ | `Forbidden _ | `Not_found _) as err ->
-          Abb.Future.return (Error err)
+          Abbs_future_combinators.return_err err
     in
     let open Abb.Future.Infix_monad in
     run
     >>= function
-    | Ok _ -> Abb.Future.return (Ok ())
+    | Ok _ -> Abbs_future_combinators.return_ok ()
     | Error (`Failed_to_start_with_msg_err _) as err -> Abb.Future.return err
     | Error (#Pipeline_api.Responses.t as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pipeline_api.Responses.pp err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
     | Error (#Openapic_abb.call_err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Openapic_abb.pp_call_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_work_manifest_changes ~request_id db work_manifest_id changes =
     let module Tc = Terrat_change in
@@ -4503,11 +4501,11 @@ module Work_manifest = struct
               (CCList.map (fun { Dsf.workflow; _ } -> workflow) changes)))
       (CCList.chunks not_a_bad_chunk_size changes)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_work_manifest_denied_dirspaces ~request_id db work_manifest_id denied_dirspaces =
     let module Ch = Terrat_change in
@@ -4546,11 +4544,11 @@ module Work_manifest = struct
               (CCList.replicate (CCList.length denied_dirspaces) work_manifest_id)))
       (CCList.chunks not_a_bad_chunk_size denied_dirspaces)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let create ~request_id db work_manifest =
     let run =
@@ -4620,17 +4618,16 @@ module Work_manifest = struct
           let work_manifest = { work_manifest with Wm.id; state; created_at; run_id = None } in
           match work_manifest.Wm.target with
           | Terrat_vcs_provider2.Target.Pr pr ->
-              Abb.Future.return
-                (Ok
-                   {
-                     work_manifest with
-                     Wm.target =
-                       Terrat_vcs_provider2.Target.Pr
-                         (Terrat_pull_request.set_diff () @@ Terrat_pull_request.set_checks () pr);
-                   })
+              Abbs_future_combinators.return_ok
+                {
+                  work_manifest with
+                  Wm.target =
+                    Terrat_vcs_provider2.Target.Pr
+                      (Terrat_pull_request.set_diff () @@ Terrat_pull_request.set_checks () pr);
+                }
           | Terrat_vcs_provider2.Target.Drift { repo = _; branch } ->
               Pgsql_io.Prepared_stmt.execute db (Sql.insert_drift_work_manifest ()) id branch
-              >>= fun () -> Abb.Future.return (Ok work_manifest))
+              >>= fun () -> Abbs_future_combinators.return_ok work_manifest)
     in
     let open Abb.Future.Infix_monad in
     run
@@ -4639,8 +4636,8 @@ module Work_manifest = struct
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
-    | Error `Error -> Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let query' = Db.query_work_manifests
   let query = Db.query_work_manifest
@@ -4650,7 +4647,7 @@ module Work_manifest = struct
       let open Abbs_future_combinators.Infix_result_monad in
       Pgsql_io.Prepared_stmt.fetch db (Sql.select_work_manifest_by_run_id ()) ~f:CCFun.id run_id
       >>= function
-      | [] -> Abb.Future.return (Ok None)
+      | [] -> Abbs_future_combinators.return_ok None
       | id :: _ -> query ~request_id db id
     in
     let open Abb.Future.Infix_monad in
@@ -4659,8 +4656,8 @@ module Work_manifest = struct
     | Ok _ as r -> Abb.Future.return r
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
-    | Error `Error -> Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let update_state ~request_id db work_manifest_id state =
     let module Wm = Terrat_work_manifest3 in
@@ -4675,11 +4672,11 @@ module Work_manifest = struct
     Metrics.Psql_query_time.time (Metrics.psql_query_time "update_work_manifest_state") (fun () ->
         Pgsql_io.Prepared_stmt.execute db (sql ()) work_manifest_id)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_run_id ~request_id db work_manifest_id run_id =
     let open Abb.Future.Infix_monad in
@@ -4690,11 +4687,11 @@ module Work_manifest = struct
           work_manifest_id
           (Some run_id))
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_changes ~request_id db work_manifest_id dirspaceflows =
     let module Tc = Terrat_change in
@@ -4715,11 +4712,11 @@ module Work_manifest = struct
               (CCList.map (fun { Dsf.workflow; _ } -> workflow) changes)))
       (CCList.chunks not_a_bad_chunk_size dirspaceflows)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_denied_dirspaces ~request_id db work_manifest_id denied_dirspaces =
     let module Ch = Terrat_change in
@@ -4758,11 +4755,11 @@ module Work_manifest = struct
               (CCList.replicate (CCList.length denied_dirspaces) work_manifest_id)))
       (CCList.chunks not_a_bad_chunk_size denied_dirspaces)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let update_steps ~request_id db work_manifest_id steps =
     let open Abb.Future.Infix_monad in
@@ -4773,11 +4770,11 @@ module Work_manifest = struct
       (Metrics.psql_query_time "update_run_type work_manifest_id")
       (fun () -> Pgsql_io.Prepared_stmt.execute db Sql.update_run_type work_manifest_id run_type)
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
+    | Ok () -> Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let result _rest = raise (Failure "NOT SUPPORTED")
 
@@ -4878,7 +4875,7 @@ module Stacks = struct
       | Ok _ as r -> Abb.Future.return r
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query_stacks ~request_id ~installation_id:_ ~repo_id ~pull_request_id db =
       let open Abb.Future.Infix_monad in
@@ -4889,10 +4886,10 @@ module Stacks = struct
         (CCInt64.of_int repo_id)
         (CCInt64.of_int pull_request_id)
       >>= function
-      | Ok r -> Abb.Future.return (Ok (CCOption.of_list r))
+      | Ok r -> Abbs_future_combinators.return_ok (CCOption.of_list r)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query_dirspace_states ~request_id ~installation_id:_ ~repo_id ~pull_request_id db =
       let open Abb.Future.Infix_monad in
@@ -4910,7 +4907,7 @@ module Stacks = struct
       | Ok _ as r -> Abb.Future.return r
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let enforce_installation_access = enforce_installation_access
   end)
@@ -5287,14 +5284,13 @@ module Job_context = struct
       >>= function
       | [] -> assert false
       | (id, created_at, updated_at) :: _ ->
-          Abb.Future.return
-            (Ok
-               {
-                 Tjc.Context.created_at;
-                 id;
-                 scope = Tjc.Context.Scope.Pull_request pull_request_id;
-                 updated_at;
-               })
+          Abbs_future_combinators.return_ok
+            {
+              Tjc.Context.created_at;
+              id;
+              scope = Tjc.Context.Scope.Pull_request pull_request_id;
+              updated_at;
+            }
     in
     let open Abb.Future.Infix_monad in
     run
@@ -5307,7 +5303,7 @@ module Job_context = struct
               request_id
               Pgsql_io.pp_err
               err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let create_or_get_for_branch ~request_id db _account repo branch =
     let run =
@@ -5321,14 +5317,13 @@ module Job_context = struct
       >>= function
       | [] -> assert false
       | (id, created_at, updated_at) :: _ ->
-          Abb.Future.return
-            (Ok
-               {
-                 Tjc.Context.created_at;
-                 id;
-                 scope = Tjc.Context.Scope.Branch (branch, None);
-                 updated_at;
-               })
+          Abbs_future_combinators.return_ok
+            {
+              Tjc.Context.created_at;
+              id;
+              scope = Tjc.Context.Scope.Branch (branch, None);
+              updated_at;
+            }
     in
     let open Abb.Future.Infix_monad in
     run
@@ -5337,7 +5332,7 @@ module Job_context = struct
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m ->
             m "%s : JOB_CONTEXT : CREATE_OR_GET_FOR_BRANCH : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   let query ~request_id db id =
     let open Abb.Future.Infix_monad in
@@ -5348,10 +5343,10 @@ module Job_context = struct
         { Terrat_job_context.Context.created_at; id; scope; updated_at })
       id
     >>= function
-    | Ok r -> Abb.Future.return (Ok (CCOption.of_list r))
+    | Ok r -> Abbs_future_combinators.return_ok (CCOption.of_list r)
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : CONTEXT : QUERY : %a" request_id Pgsql_io.pp_err err);
-        Abb.Future.return (Error `Error)
+        Abbs_future_combinators.return_err `Error
 
   module Job = struct
     let query_context = query
@@ -5370,18 +5365,17 @@ module Job_context = struct
         >>= function
         | [] -> assert false
         | (id, created_at, _updated_at) :: _ ->
-            Abb.Future.return
-              (Ok
-                 {
-                   Tjc.Job.completed_at = None;
-                   context;
-                   created_at;
-                   id;
-                   initiator;
-                   state = Tjc.Job.State.Running;
-                   type_;
-                   updated_at = created_at;
-                 })
+            Abbs_future_combinators.return_ok
+              {
+                Tjc.Job.completed_at = None;
+                context;
+                created_at;
+                id;
+                initiator;
+                state = Tjc.Job.State.Running;
+                type_;
+                updated_at = created_at;
+              }
       in
       let open Abb.Future.Infix_monad in
       run
@@ -5389,7 +5383,7 @@ module Job_context = struct
       | Ok _ as r -> Abb.Future.return r
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : JOB : CREATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query ~request_id db ~job_id =
       let run =
@@ -5401,35 +5395,34 @@ module Job_context = struct
             (id, context_id, type_, state, initiator, created_at, updated_at, completed_at))
           job_id
         >>= function
-        | [] -> Abb.Future.return (Ok None)
+        | [] -> Abbs_future_combinators.return_ok None
         | (id, context_id, type_, state, initiator, created_at, updated_at, completed_at) :: _ -> (
             query_context ~request_id db context_id
             >>= function
             | None -> assert false
             | Some context ->
                 let module J = Terrat_job_context.Job in
-                Abb.Future.return
-                  (Ok
-                     (Some
-                        {
-                          J.completed_at;
-                          context;
-                          created_at;
-                          id;
-                          initiator;
-                          state;
-                          type_;
-                          updated_at;
-                        })))
+                Abbs_future_combinators.return_ok
+                  (Some
+                     {
+                       J.completed_at;
+                       context;
+                       created_at;
+                       id;
+                       initiator;
+                       state;
+                       type_;
+                       updated_at;
+                     }))
       in
       let open Abb.Future.Infix_monad in
       run
       >>= function
       | Ok _ as r -> Abb.Future.return r
-      | Error `Error -> Abb.Future.return (Error `Error)
+      | Error `Error -> Abbs_future_combinators.return_err `Error
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : JOB : QUERY : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query_all_by_context_id ~request_id:_ _db ~context_id:_ () = raise (Failure "nyi")
     let query_pending_by_context_id ~request_id:_ _db ~context_id:_ () = raise (Failure "nyi")
@@ -5444,53 +5437,52 @@ module Job_context = struct
             (id, context_id, type_, state, initiator, created_at, updated_at, completed_at))
           work_manifest_id
         >>= function
-        | [] -> Abb.Future.return (Ok None)
+        | [] -> Abbs_future_combinators.return_ok None
         | (id, context_id, type_, state, initiator, created_at, updated_at, completed_at) :: _ -> (
             query_context ~request_id db context_id
             >>= function
             | None -> assert false
             | Some context ->
                 let module J = Terrat_job_context.Job in
-                Abb.Future.return
-                  (Ok
-                     (Some
-                        {
-                          J.completed_at;
-                          context;
-                          created_at;
-                          id;
-                          initiator;
-                          state;
-                          type_;
-                          updated_at;
-                        })))
+                Abbs_future_combinators.return_ok
+                  (Some
+                     {
+                       J.completed_at;
+                       context;
+                       created_at;
+                       id;
+                       initiator;
+                       state;
+                       type_;
+                       updated_at;
+                     }))
       in
       let open Abb.Future.Infix_monad in
       run
       >>= function
       | Ok _ as r -> Abb.Future.return r
-      | Error `Error -> Abb.Future.return (Error `Error)
+      | Error `Error -> Abbs_future_combinators.return_err `Error
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : JOB : QUERY : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let update_state ~request_id db ~job_id state =
       let open Abb.Future.Infix_monad in
       Pgsql_io.Prepared_stmt.execute db Sql.update_job_state job_id state
       >>= function
-      | Ok () -> Abb.Future.return (Ok ())
+      | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : JOB : UPDATE_STATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let add_work_manifest ~request_id db ~job_id ~work_manifest_id () =
       let open Abb.Future.Infix_monad in
       Pgsql_io.Prepared_stmt.execute db Sql.upsert_job_work_manifest job_id work_manifest_id
       >>= function
-      | Ok () -> Abb.Future.return (Ok ())
+      | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : JOB : ADD_WORK_MANIFEST : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query_work_manifests ~request_id db ~job_id () =
       let run =
@@ -5502,11 +5494,11 @@ module Job_context = struct
       run
       >>= function
       | Ok _ as r -> Abb.Future.return r
-      | Error `Error -> Abb.Future.return (Error `Error)
+      | Error `Error -> Abbs_future_combinators.return_err `Error
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m ->
               m "%s : JOB : QUERY_WORK_MANIFESTS : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
   end
 
   module Compute_node = struct
@@ -5521,11 +5513,11 @@ module Job_context = struct
       >>= function
       | Ok [] -> assert false
       | Ok ((state, created_at, updated_at) :: _) ->
-          Abb.Future.return
-            (Ok { Tjc.Compute_node.id; state; capabilities; created_at; updated_at })
+          Abbs_future_combinators.return_ok
+            { Tjc.Compute_node.id; state; capabilities; created_at; updated_at }
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : COMPUTE_NODE : CREATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query ~request_id ~compute_node_id db =
       let open Abb.Future.Infix_monad in
@@ -5536,11 +5528,11 @@ module Job_context = struct
           { Tjc.Compute_node.id; state; capabilities; created_at; updated_at })
         compute_node_id
       >>= function
-      | Ok [] -> Abb.Future.return (Ok None)
-      | Ok (compute_node :: _) -> Abb.Future.return (Ok (Some compute_node))
+      | Ok [] -> Abbs_future_combinators.return_ok None
+      | Ok (compute_node :: _) -> Abbs_future_combinators.return_ok (Some compute_node)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : COMPUTE_NODE : CREATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let query_work ~request_id ~compute_node_id db =
       let open Abb.Future.Infix_monad in
@@ -5551,20 +5543,20 @@ module Job_context = struct
           { Tjc.Compute_node_work.compute_node_id; created_at; state; work; work_manifest })
         compute_node_id
       >>= function
-      | Ok r -> Abb.Future.return (Ok (CCOption.of_list r))
+      | Ok r -> Abbs_future_combinators.return_ok (CCOption.of_list r)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : COMPUTE_NODE : QUERY_WORK : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let update_state ~request_id ~compute_node_id db state =
       let open Abb.Future.Infix_monad in
       Pgsql_io.Prepared_stmt.execute db Sql.update_compute_node_state compute_node_id state
       >>= function
-      | Ok () -> Abb.Future.return (Ok ())
+      | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m ->
               m "%s : COMPUTE_NODE : UPDATE_STATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
 
     let set_work ~request_id ~compute_node_id ~work_manifest db work =
       let open Abb.Future.Infix_monad in
@@ -5575,10 +5567,10 @@ module Job_context = struct
         work_manifest
         work
       >>= function
-      | Ok () -> Abb.Future.return (Ok ())
+      | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m ->
               m "%s : COMPUTE_NODE : UPDATE_STATE : %a" request_id Pgsql_io.pp_err err);
-          Abb.Future.return (Error `Error)
+          Abbs_future_combinators.return_err `Error
   end
 end

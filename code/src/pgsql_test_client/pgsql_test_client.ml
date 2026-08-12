@@ -156,7 +156,8 @@ let test_fetch_row =
         >>= fun () ->
         Pgsql_io.Prepared_stmt.destroy insert_stmt
         >>= fun () ->
-        Pgsql_io.Prepared_stmt.destroy fetch_stmt >>= fun () -> Abb.Future.return (Ok acc)
+        Pgsql_io.Prepared_stmt.destroy fetch_stmt
+        >>= fun () -> Abbs_future_combinators.return_ok acc
       in
       with_conn f
       >>= function
@@ -195,7 +196,8 @@ let test_fetch_all_rows =
         >>= fun cursor ->
         Pgsql_io.Cursor.fetch cursor
         >>= fun acc ->
-        Pgsql_io.Prepared_stmt.destroy fetch_stmt >>= fun () -> Abb.Future.return (Ok acc)
+        Pgsql_io.Prepared_stmt.destroy fetch_stmt
+        >>= fun () -> Abbs_future_combinators.return_ok acc
       in
       with_conn f
       >>= function
@@ -281,7 +283,8 @@ let test_with_cursor =
         >>= fun cursor ->
         Pgsql_io.Cursor.with_cursor cursor ~f:Pgsql_io.Cursor.fetch
         >>= fun acc ->
-        Pgsql_io.Prepared_stmt.destroy fetch_stmt >>= fun () -> Abb.Future.return (Ok acc)
+        Pgsql_io.Prepared_stmt.destroy fetch_stmt
+        >>= fun () -> Abbs_future_combinators.return_ok acc
       in
       with_conn f
       >>= function
@@ -413,7 +416,7 @@ let test_stmt_fetch =
         Pgsql_io.Prepared_stmt.execute conn insert_sql "Test" 26
         >>= fun () ->
         Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:(fun name age -> (name, age))
-        >>= fun acc -> Abb.Future.return (Ok acc)
+        >>= fun acc -> Abbs_future_combinators.return_ok acc
       in
       with_conn f
       >>= function
@@ -496,11 +499,11 @@ let test_integrity_recover =
             >>= fun () ->
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy McTestface" (Int32.of_int 36))
         >>= function
-        | Ok () -> Abb.Future.return (Ok `Ok)
+        | Ok () -> Abbs_future_combinators.return_ok `Ok
         | Error (`Unique_violation_err _) | Error (`Deadlock_detected _) ->
             let open Abbs_future_combinators.Infix_result_monad in
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy RecoverFace" (Int32.of_int 36)
-            >>= fun () -> Abb.Future.return (Ok `Integrity)
+            >>= fun () -> Abbs_future_combinators.return_ok `Integrity
         | Error _ as err -> Abb.Future.return err
       in
       let check_err r1 r2 =
@@ -562,14 +565,14 @@ let test_rollback =
         Pgsql_io.tx conn ~f:(fun () ->
             let open Abbs_future_combinators.Infix_result_monad in
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy McTestface" (Int32.of_int 36)
-            >>= fun () -> Abb.Future.return (Error `Foo))
+            >>= fun () -> Abbs_future_combinators.return_err `Foo)
         >>= fun _ ->
         let open Abbs_future_combinators.Infix_result_monad in
         Pgsql_io.tx conn ~f:(fun () ->
             Pgsql_io.Prepared_stmt.fetch conn select_sql ~f:(fun name age -> (name, age)))
         >>= fun r ->
         Oth.Assert.eq ~eq:( = ) ~pp:(pp_list (pp_pair pp_string pp_int32)) [] r;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -646,7 +649,7 @@ let test_copy_to =
           ~pp:(pp_list (pp_pair pp_string pp_int))
           [ ("Alice", 30); ("Bob", 25); ("Charlie\ttab", 40) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -736,7 +739,7 @@ let test_copy_to_bytea =
           ~pp:(pp_list (pp_pair pp_int (pp_option pp_string)))
           [ (1, Some "\x00\x01\x02\xff"); (2, None); (3, Some "\xde\xad\xbe\xef") ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -773,7 +776,7 @@ let test_text_special_chars =
           ]
         in
         let rec insert = function
-          | [] -> Abb.Future.return (Ok ())
+          | [] -> Abbs_future_combinators.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -787,7 +790,7 @@ let test_text_special_chars =
             Oth.Assert.eq ~eq:String.equal ~pp:pp_string expected_data actual_data)
           cases
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -853,7 +856,7 @@ let test_copy_to_special_chars =
             Oth.Assert.eq ~eq:String.equal ~pp:pp_string expected_data actual_data)
           cases
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -890,7 +893,7 @@ let test_text_empty_vs_null =
           ~pp:(pp_list (pp_pair pp_int (pp_option pp_string)))
           [ (1, Some ""); (2, None) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -934,7 +937,7 @@ let test_integer_bounds =
           ~pp:(pp_list (pp_triple pp_int pp_int32 pp_int64))
           [ (-32768, Int32.min_int, Int64.min_int); (32767, Int32.max_int, Int64.max_int) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -983,7 +986,7 @@ let test_copy_to_integer_bounds =
           ~pp:(pp_list (pp_triple pp_int pp_int32 pp_int64))
           [ (-32768, Int32.min_int, Int64.min_int); (32767, Int32.max_int, Int64.max_int) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1044,7 +1047,7 @@ let test_float_special_values =
                 Oth.Assert.eq ~eq:Float.equal ~pp:pp_float Float.max_float d
             | _ -> Oth.Assert.false_ "unexpected row id")
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1114,7 +1117,7 @@ let test_copy_to_jsonb =
           ~pp:Yojson.Safe.pp
           (`Assoc [ ("nested", `Assoc [ ("a", `Bool true) ]); ("b", `Null) ])
           parsed3;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1149,7 +1152,7 @@ let test_json_round_trip =
         let _, data = List.hd results in
         let data_json = Yojson.Safe.from_string data in
         Oth.Assert.eq ~eq:( = ) ~pp:Yojson.Safe.pp json_val data_json;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1198,7 +1201,7 @@ let test_json_cross_type =
         let j, jb = List.hd results_jsonb in
         Oth.Assert.eq ~eq:( = ) ~pp:Yojson.Safe.pp json_val j;
         Oth.Assert.eq ~eq:( = ) ~pp:Yojson.Safe.pp json_val jb;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1232,7 +1235,7 @@ let test_bytea_large =
         Oth.Assert.eq ~eq:( = ) ~pp:pp_int 1 (List.length results);
         let _, fetched = List.hd results in
         Oth.Assert.eq ~eq:String.equal ~pp:pp_string data_str fetched;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1263,7 +1266,7 @@ let test_query_dangerous_values =
         >>= fun () ->
         let cases = [ (1l, "'; DROP TABLE foo; --"); (2l, "Robert'); DROP TABLE foo;--") ] in
         let rec insert = function
-          | [] -> Abb.Future.return (Ok ())
+          | [] -> Abbs_future_combinators.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -1277,7 +1280,7 @@ let test_query_dangerous_values =
             Oth.Assert.eq ~eq:String.equal ~pp:pp_string expected_data actual_data)
           cases
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1316,7 +1319,7 @@ let test_copy_to_bytea_large =
         Pgsql_io.Prepared_stmt.fetch conn fetch_sum_sql ~f:Fun.id
         >>= fun results ->
         Oth.Assert.eq ~eq:( = ) ~pp:(pp_list pp_int64) [ Int64.of_int (n * 1024) ] results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1344,7 +1347,7 @@ let test_copy_to_single_row =
         Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:(fun id name -> (Int32.to_int id, name))
         >>= fun results ->
         Oth.Assert.eq ~eq:( = ) ~pp:(pp_list (pp_pair pp_int pp_string)) [ (1, "only") ] results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1371,7 +1374,7 @@ let test_copy_to_empty =
         Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:Fun.id
         >>= fun results ->
         Oth.Assert.eq ~eq:( = ) ~pp:(pp_list pp_int32) [ 0l ] results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1416,7 +1419,7 @@ let test_copy_to_bytea_with_trailer_bytes =
             (3, Some "abc\xff\xff\x00\x01\xff\xff");
           ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1478,7 +1481,7 @@ let test_copy_to_all_nulls =
                   (pp_option pp_int32)))
           [ (None, None, None, None); (Some 1l, None, None, None) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1525,7 +1528,7 @@ let test_copy_to_many_columns =
           ~pp:(pp_list (pp_pair pp_int32 pp_int32))
           [ (50l, Int32.of_int expected_sum) ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1605,7 +1608,7 @@ let test_copy_to_mixed_types =
             (3, Some "bob", Some "ffff", Some 9999999999L, None);
           ]
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1728,7 +1731,7 @@ let test_ret_u_all_types =
         Oth.Assert.eq ~eq:Uuidm.equal ~pp:Uuidm.pp test_uuid u;
         Oth.Assert.eq ~eq:( = ) ~pp:Yojson.Safe.pp (`Assoc [ ("a", `Int 1) ]) j;
         Oth.Assert.eq ~eq:( = ) ~pp:Yojson.Safe.pp (`Assoc [ ("b", `Int 2) ]) jb;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1757,7 +1760,7 @@ let test_bytea_var_ret =
         let all_bytes = String.init 256 Char.chr in
         let cases = [ (1l, "\x00\x01\x02\xff\xfe"); (2l, "\xff\xff"); (3l, all_bytes) ] in
         let rec insert = function
-          | [] -> Abb.Future.return (Ok ())
+          | [] -> Abbs_future_combinators.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -1771,7 +1774,7 @@ let test_bytea_var_ret =
             Oth.Assert.eq ~eq:String.equal ~pp:pp_string expected_data actual_data)
           cases
           results;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1799,7 +1802,7 @@ let test_bigint_column_smallint_ret =
         >>= fun results ->
         let v = List.hd results in
         Oth.Assert.eq ~eq:( = ) ~pp:pp_int 42 v;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1826,7 +1829,7 @@ let test_bigint_column_smallint_b_ret_fails =
         let open Abb.Future.Infix_monad in
         Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:(fun v -> v)
         >>= function
-        | Error (`Bad_result _) -> Abb.Future.return (Ok ())
+        | Error (`Bad_result _) -> Abbs_future_combinators.return_ok ()
         | Ok _ -> Oth.Assert.false_ "Expected Bad_result error but got Ok"
         | Error err ->
             Oth.Assert.false_
@@ -1885,7 +1888,7 @@ let test_ret_b_all_types =
         Oth.Assert.eq ~eq:( = ) ~pp:pp_int64 999999L bi;
         Oth.Assert.eq ~eq:( = ) ~pp:pp_bool true b;
         Oth.Assert.eq ~eq:String.equal ~pp:pp_string "hello" t;
-        Abb.Future.return (Ok ())
+        Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -1906,7 +1909,7 @@ let test_boundary_sweep =
       let open Abb.Future.Infix_monad in
       let f conn =
         let rec sweep n =
-          if n > 8175 then Abb.Future.return (Ok ())
+          if n > 8175 then Abbs_future_combinators.return_ok ()
           else
             let fetch_sql =
               Pgsql_io.Typed_sql.(sql // Ret.text /^ Printf.sprintf "SELECT repeat('x', %d)" n)
@@ -1958,13 +1961,13 @@ let test_in_tx_commit_desync =
                Pgsql_io.Prepared_stmt.execute conn commit_sql
                >>= fun () ->
                Pgsql_io.Prepared_stmt.fetch conn bad_sql ~f:(fun n -> Int32.to_int n)
-               >>= fun _ -> Abb.Future.return (Ok ())))
+               >>= fun _ -> Abbs_future_combinators.return_ok ()))
         >>= (function
         | `Ok (Ok ()) | `Ok (Error _) -> Abb.Future.return ()
         | `Timeout ->
             Oth.Assert.false_
               "HANG : error_response stuck waiting for a ReadyForQuery that never comes")
-        >>= fun () -> Abb.Future.return (Ok ())
+        >>= fun () -> Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -2027,7 +2030,8 @@ let test_bad_result_dirty_conn =
                  (fun _ -> Abb.Future.return ())
                  (Pgsql_io.Prepared_stmt.fetch conn good_fetch ~f:(fun _v -> failwith "decode boom"))
                >>= fun () -> Pgsql_io.Prepared_stmt.fetch conn good_fetch ~f:(fun v -> v)))
-        >>= fun res2 -> assert_reuse_ok "raise" res2 >>= fun () -> Abb.Future.return (Ok ())
+        >>= fun res2 ->
+        assert_reuse_ok "raise" res2 >>= fun () -> Abbs_future_combinators.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -2046,7 +2050,7 @@ let wait_notification conn =
     ~timeout:(Abb.Sys.sleep 10.0)
     (Pgsql_io.wait_for_notification conn)
   >>= function
-  | `Ok (Ok n) -> Abb.Future.return (Ok n)
+  | `Ok (Ok n) -> Abbs_future_combinators.return_ok n
   | `Ok (Error _ as e) -> Abb.Future.return e
   | `Timeout -> Oth.Assert.false_ "timed out waiting for notification"
 
@@ -2093,7 +2097,7 @@ let test_get_notification =
            (which succeeds once a read has enqueued more than it popped) and falling
            back to a blocking wait. *)
         let rec drain acc n =
-          if n = 0 then Abb.Future.return (Ok (CCList.rev acc))
+          if n = 0 then Abbs_future_combinators.return_ok (CCList.rev acc)
           else
             match Pgsql_io.get_notification conn with
             | Some notif -> drain (notif :: acc) (n - 1)
@@ -2103,7 +2107,7 @@ let test_get_notification =
         >>= fun notifs ->
         (* Queue fully drained. *)
         let empty_after = Pgsql_io.get_notification conn in
-        Abb.Future.return (Ok (empty_before, notifs, empty_after))
+        Abbs_future_combinators.return_ok (empty_before, notifs, empty_after)
       in
       with_conn f
       >>= function
@@ -2135,9 +2139,9 @@ let test_notification_during_fetch =
           ~f:(fun n -> n)
         >>= fun rows ->
         (match Pgsql_io.get_notification conn with
-          | Some n -> Abb.Future.return (Ok n)
+          | Some n -> Abbs_future_combinators.return_ok n
           | None -> wait_notification conn)
-        >>= fun n -> Abb.Future.return (Ok (rows, n))
+        >>= fun n -> Abbs_future_combinators.return_ok (rows, n)
       in
       with_conn f
       >>= function
@@ -2165,7 +2169,7 @@ let test_unlisten_stops_delivery =
           conn
           Pgsql_io.Typed_sql.(sql // Ret.integer /^ "SELECT 1")
           ~f:(fun n -> n)
-        >>= fun _ -> Abb.Future.return (Ok (Pgsql_io.get_notification conn))
+        >>= fun _ -> Abbs_future_combinators.return_ok (Pgsql_io.get_notification conn)
       in
       with_conn f
       >>= function
@@ -2206,7 +2210,7 @@ let test_wait_abort_leaves_conn_valid =
         >>= fun rows ->
         notify_from_new_conn ~channel:"sg_abort" ~payload:"after" ()
         >>= fun () ->
-        wait_notification conn >>= fun n -> Abb.Future.return (Ok (timed_out, rows, n))
+        wait_notification conn >>= fun n -> Abbs_future_combinators.return_ok (timed_out, rows, n)
       in
       with_conn f
       >>= function
@@ -2236,7 +2240,7 @@ let test_abort_during_delivery_no_loss =
         >>= fun () ->
         with_conn (fun conn_b ->
             let rec loop i =
-              if i > iterations then Abb.Future.return (Ok ())
+              if i > iterations then Abbs_future_combinators.return_ok ()
               else
                 let open Abbs_future_combinators.Infix_result_monad in
                 let payload = Printf.sprintf "p%d" i in
@@ -2250,7 +2254,7 @@ let test_abort_during_delivery_no_loss =
                 >>= fun raced ->
                 let open Abbs_future_combinators.Infix_result_monad in
                 (match raced with
-                  | `Ok (Ok n) -> Abb.Future.return (Ok n)
+                  | `Ok (Ok n) -> Abbs_future_combinators.return_ok n
                   | `Ok (Error _ as e) -> Abb.Future.return e
                   (* Aborted -- possibly mid-arrival.  The notification must not be
                    lost: a bounded blocking wait must still return it. *)
@@ -2383,7 +2387,7 @@ let test_large_jsonb_fetch =
         >>= function
         | Error err ->
             Logs.err (fun m -> m "CREATE_ERR : %s" (Pgsql_io.show_err err));
-            Abb.Future.return (Ok ())
+            Abbs_future_combinators.return_ok ()
         | Ok () ->
             let cn = uuid "43df20b3-eb5e-4c00-b1ef-f094d6641087" in
             let wm = uuid "43df20b3-eb5e-4c00-b1ef-f094d6641087" in
@@ -2391,7 +2395,7 @@ let test_large_jsonb_fetch =
             let rec sweep idx = function
               | [] ->
                   Logs.info (fun m -> m "SWEEP_DONE : no hang reproduced");
-                  Abb.Future.return (Ok ())
+                  Abbs_future_combinators.return_ok ()
               | filler :: rest -> (
                   Logs.info (fun m -> m "ITER_START : idx=%d : filler=%d bytes" idx filler);
                   (* upsert + read-back-own-uncommitted-write inside one tx,
@@ -2408,7 +2412,7 @@ let test_large_jsonb_fetch =
                            select_sql
                            ~f:(fun _created state _work wm -> (state, wm))
                            cn
-                         >>= fun rows -> Abb.Future.return (Ok (List.length rows))))
+                         >>= fun rows -> Abbs_future_combinators.return_ok (List.length rows)))
                   >>= function
                   | `Ok (Ok n) ->
                       Logs.info (fun m ->
@@ -2421,14 +2425,14 @@ let test_large_jsonb_fetch =
                             idx
                             filler
                             (Pgsql_io.show_err err));
-                      Abb.Future.return (Ok ())
+                      Abbs_future_combinators.return_ok ()
                   | `Timeout ->
                       Logs.err (fun m ->
                           m
                             "READBACK_HANG : idx=%d : filler=%d : *** 25s+ STALL REPRODUCED ***"
                             idx
                             filler);
-                      Abb.Future.return (Ok ()))
+                      Abbs_future_combinators.return_ok ())
             in
             sweep 0 sizes
       in
@@ -2524,6 +2528,6 @@ let () =
   Logs.set_level ~all:true (Some Logs.Debug);
   Oth_abb.run
     ~file:__FILE__
-    ~setup:(fun () -> Abb.Future.return (Ok ()))
+    ~setup:(fun () -> Abbs_future_combinators.return_ok ())
     ~teardown:(fun () -> Abb.Future.return ())
     (fun () -> test)

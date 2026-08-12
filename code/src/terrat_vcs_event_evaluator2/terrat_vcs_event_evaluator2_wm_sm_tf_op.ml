@@ -33,20 +33,20 @@ struct
     let open Abb.Future.Infix_monad in
     f msg
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   (* Wrapper so that when we call [create_commit_checks] the error type lines up.  Creating no
      checks is a no-op: performing it would dirty the commit checks, forcing anyone that reads them
      afterwards to fetch them again for no benefit. *)
   let create_commit_checks' f branch_ref = function
-    | [] -> Abb.Future.return (Ok ())
+    | [] -> Abbs_future_combinators.return_ok ()
     | checks -> (
         let open Abb.Future.Infix_monad in
         f branch_ref checks
         >>= function
-        | Ok () -> Abb.Future.return (Ok ())
-        | Error `Error -> Abb.Future.return (Error `Error))
+        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Error `Error -> Abbs_future_combinators.return_err `Error)
 
   let match_tag_queries ~accessor ~changes queries =
     CCList.map
@@ -299,7 +299,7 @@ struct
         else []
       in
       create_commit_checks' create_commit_checks ref_ (missing_apply_check @ missing_commit_checks)
-    else Abb.Future.return (Ok ())
+    else Abbs_future_combinators.return_ok ()
 
   let changed_dirspaces config changes =
     let module Tcm = Terrat_change_match3 in
@@ -458,16 +458,15 @@ struct
               (fun m log_id time -> m "%s : WORK_MANIFEST : CREATE : time=%f" log_id time)
               (fun () -> S.Work_manifest.create ~request_id:(Builder.log_id s) db work_manifest))
         >>= fun work_manifest ->
-        Abb.Future.return
-          (Ok
-             ( work_manifest,
-               op_commit_checks
-                 (Builder.State.config s)
-                 account
-                 repo
-                 work_manifest
-                 "Queued"
-                 Terrat_commit_check.Status.Queued )))
+        Abbs_future_combinators.return_ok
+          ( work_manifest,
+            op_commit_checks
+              (Builder.State.config s)
+              account
+              repo
+              work_manifest
+              "Queued"
+              Terrat_commit_check.Status.Queued ))
       dirspaceflows_by_run_params
     >>= fun work_manifests_and_checks ->
     let work_manifests = CCList.map fst work_manifests_and_checks in
@@ -496,7 +495,7 @@ struct
       (CCList.flatten matches.Keys.Matches.all_matches)
       (Terrat_base_repo_config_v1.apply_requirements repo_config)
       commit_checks
-    >>= fun () -> Abb.Future.return (Ok work_manifests)
+    >>= fun () -> Abbs_future_combinators.return_ok work_manifests
 
   module Plan = struct
     let eq base_ref' branch_ref' { Wm.base_ref; branch_ref; steps; _ } =
@@ -532,7 +531,7 @@ struct
         "Running"
         Status.Running
       >>= fun () ->
-      Abb.Future.return (Ok ())
+      Abbs_future_combinators.return_ok ()
       >>= fun () ->
       let { Wm.base_ref = _; branch_ref = _; changes; target; _ } = work_manifest in
       let run_kind =
@@ -596,7 +595,7 @@ struct
               capabilities = [ "tenv" ];
             })
       in
-      Abb.Future.return (Ok response)
+      Abbs_future_combinators.return_ok response
 
     let fail work_manifest s { Bs.Fetcher.fetch } =
       let open Irm in
@@ -694,7 +693,8 @@ struct
                     repo_config)
               >>= fun repo_config ->
               Abb.Future.return (Terrat_change_match3.synthesize_config ~index repo_config)
-              >>= fun synthesized_config -> Abb.Future.return (Ok (repo_config, synthesized_config))
+              >>= fun synthesized_config ->
+              Abbs_future_combinators.return_ok (repo_config, synthesized_config)
             in
             run
             >>= fun (repo_config, synthesized_config) ->
@@ -726,8 +726,8 @@ struct
                            synthesized_config;
                            work_manifest;
                          })))
-            >>= fun () -> Abb.Future.return (Ok ())
-          else Abb.Future.return (Ok ())
+            >>= fun () -> Abbs_future_combinators.return_ok ()
+          else Abbs_future_combinators.return_ok ()
       | Wmr.Work_manifest_tf_operation_result result ->
           let open Irm in
           let work_manifest_result = S.Work_manifest.result result in
@@ -763,8 +763,8 @@ struct
               branch_ref
               work_manifest
               work_manifest_result
-            >>= fun () -> Abb.Future.return (Ok ())
-          else Abb.Future.return (Ok ())
+            >>= fun () -> Abbs_future_combinators.return_ok ()
+          else Abbs_future_combinators.return_ok ()
       | Wmr.Work_manifest_index_result _ -> assert false
       | Wmr.Work_manifest_build_config_result _ -> assert false
       | Wmr.Work_manifest_build_result_failure _ -> assert false
@@ -804,9 +804,9 @@ struct
               | Terrat_pull_request.State.Merged _ ->
                   fetch Keys.publish_comment
                   >>= fun publish_comment -> publish_comment' publish_comment Msg.Autoapply_running
-              | _ -> Abb.Future.return (Ok ()))
-          | _ -> Abb.Future.return (Ok ()))
-      | _ -> Abb.Future.return (Ok ())
+              | _ -> Abbs_future_combinators.return_ok ())
+          | _ -> Abbs_future_combinators.return_ok ())
+      | _ -> Abbs_future_combinators.return_ok ()
 
     let create ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
       let open Irm in
@@ -893,7 +893,7 @@ struct
               capabilities = [ "tenv" ];
             })
       in
-      Abb.Future.return (Ok response)
+      Abbs_future_combinators.return_ok response
 
     let fail work_manifest s { Bs.Fetcher.fetch } =
       let open Irm in

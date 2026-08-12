@@ -51,15 +51,15 @@ struct
     let open Abb.Future.Infix_monad in
     f msg
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let create_commit_checks' f branch_ref checks =
     let open Abb.Future.Infix_monad in
     f branch_ref checks
     >>= function
-    | Ok () -> Abb.Future.return (Ok ())
-    | Error `Error -> Abb.Future.return (Error `Error)
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   let eq base_ref' branch_ref' { Wm.base_ref; branch_ref; steps; _ } =
     base_ref = S.Api.Ref.to_string base_ref'
@@ -125,7 +125,7 @@ struct
         fetch Keys.create_commit_checks
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
-        >>= fun () -> Abb.Future.return (Ok [ work_manifest ])
+        >>= fun () -> Abbs_future_combinators.return_ok [ work_manifest ]
     | Some _ ->
         fetch Keys.commit_checks
         >>= fun commit_checks ->
@@ -147,7 +147,7 @@ struct
         fetch Keys.create_commit_checks
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref unfinished_checks
-        >>= fun () -> Abb.Future.return (Ok [])
+        >>= fun () -> Abbs_future_combinators.return_ok []
 
   let initiate ~branch ({ Wm.id; _ } as work_manifest) s { Bs.Fetcher.fetch } =
     let open Irm in
@@ -218,7 +218,7 @@ struct
       Terrat_api_components.Work_manifest.Work_manifest_build_config
         { B.base_ref = S.Api.Ref.to_string dest_branch_name; token; type_ = `Build_config; config }
     in
-    Abb.Future.return (Ok response)
+    Abbs_future_combinators.return_ok response
 
   let fail ~branch work_manifest s { Bs.Fetcher.fetch } =
     let open Irm in
@@ -310,10 +310,10 @@ struct
             create_commit_checks' create_commit_checks branch_ref [ check ]
         | Error (#Terrat_base_repo_config_v1.of_version_1_err as err) ->
             let open Abbs_future_combinators.Infix_result_monad in
-            fail (Msg.Build_config_err err) >>= fun () -> Abb.Future.return (Ok ())
+            fail (Msg.Build_config_err err) >>= fun () -> Abbs_future_combinators.return_ok ()
         | Error (`Repo_config_schema_err _ as err) ->
             let open Abbs_future_combinators.Infix_result_monad in
-            fail (Msg.Build_config_err err) >>= fun () -> Abb.Future.return (Ok ()))
+            fail (Msg.Build_config_err err) >>= fun () -> Abbs_future_combinators.return_ok ())
     | Wmr.Work_manifest_build_result_failure { Bf.msg } -> fail (Msg.Build_config_failure msg)
     | Wmr.Work_manifest_build_tree_result _ -> assert false
     | Terrat_api_components_work_manifest_result.Work_manifest_tf_operation_result _ -> assert false

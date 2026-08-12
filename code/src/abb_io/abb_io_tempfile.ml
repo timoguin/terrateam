@@ -10,7 +10,7 @@ module Make (Abb : Abb_intf.S) = struct
         (fun () -> f fname)
         ~finally:(fun () ->
           if keep_if () then Abb.Future.return () else Fut_comb.ignore (Abb.File.unlink fname))
-    with Sys_error str -> Abb.Future.return (Error (`Temp_file_error str))
+    with Sys_error str -> Fut_comb.return_err (`Temp_file_error str)
 
   let rec rm_rf dir_name =
     let open Abb.Future.Infix_monad in
@@ -21,7 +21,7 @@ module Make (Abb : Abb_intf.S) = struct
           ~f:(fun fname ->
             Abb.File.unlink (Filename.concat dir_name fname)
             >>= function
-            | Ok () -> Abb.Future.return (Ok ())
+            | Ok () -> Fut_comb.return_ok ()
             | Error `E_is_dir -> rm_rf (Filename.concat dir_name fname)
             | ( Error `E_not_dir
               | Error `E_loop
@@ -45,7 +45,7 @@ module Make (Abb : Abb_intf.S) = struct
   let with_dirname ?temp_dir ?(keep_if = fun () -> false) ~prefix ~suffix f =
     let temp_dir = CCOption.get_or ~default:(Filename.get_temp_dir_name ()) temp_dir in
     let rec try_create = function
-      | 0 -> Abb.Future.return (Error `Temp_dir_error)
+      | 0 -> Fut_comb.return_err `Temp_dir_error
       | n -> (
           let open Abb.Future.Infix_monad in
           let dir_name = temp_file_name temp_dir prefix suffix in
@@ -65,7 +65,7 @@ module Make (Abb : Abb_intf.S) = struct
           | Error `E_io
           | Error `E_name_too_long
           | Error `E_no_entity
-          | Error `E_access -> Abb.Future.return (Error `Temp_dir_error))
+          | Error `E_access -> Fut_comb.return_err `Temp_dir_error)
     in
     try_create num_tries
 end

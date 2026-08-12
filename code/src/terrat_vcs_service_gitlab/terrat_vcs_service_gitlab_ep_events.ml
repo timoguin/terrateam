@@ -110,7 +110,7 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
         let user = P.Api.User.make user_username in
         let branch = P.Api.Ref.of_string default_branch in
         Evaluator2.push ~request_id ~config ~storage ~exec ~account ~repo ~branch ~user ()
-    | E.Push_event _ -> Abb.Future.return (Ok ())
+    | E.Push_event _ -> Abbs_future_combinators.return_ok ()
     | E.Merge_request_comment_event
         {
           Mrce.project = { Pr.id = repo_id; path_with_namespace; _ };
@@ -146,8 +146,8 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
               ~pull_request_id
               ~user
               (Evaluator2.Pull_request_event.Comment { comment_id; comment })
-        | Error _ -> Abb.Future.return (Ok ()))
-    | E.Merge_request_comment_event _ -> Abb.Future.return (Ok ())
+        | Error _ -> Abbs_future_combinators.return_ok ())
+    | E.Merge_request_comment_event _ -> Abbs_future_combinators.return_ok ()
     | E.Merge_request_event
         {
           Mre.project = { Pr.id = repo_id; path_with_namespace; _ };
@@ -219,7 +219,7 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
               ~user
               Evaluator2.Pull_request_event.Close
         | _ -> raise (Failure "nyi"))
-    | E.Pipeline_event _ -> Abb.Future.return (Ok ())
+    | E.Pipeline_event _ -> Abbs_future_combinators.return_ok ()
     | E.Job_event
         {
           Je.build_id = run_id;
@@ -239,7 +239,7 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
           ~repo
           ~run_id:(CCInt.to_string run_id)
           ()
-    | E.Job_event _ -> Abb.Future.return (Ok ())
+    | E.Job_event _ -> Abbs_future_combinators.return_ok ()
 
   let post' config storage exec webhook_secret ctx =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -250,7 +250,7 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
           ~f:(fun id state -> (id, state))
           webhook_secret)
     >>= function
-    | [] -> Abb.Future.return (Error `Installation_not_found)
+    | [] -> Abbs_future_combinators.return_err `Installation_not_found
     | (installation_id, "pending") :: _ ->
         Logs.info (fun m ->
             m "%s : EVENT : PING : installation_id=%Ld" (Brtl_ctx.token ctx) installation_id);

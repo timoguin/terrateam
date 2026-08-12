@@ -9,10 +9,10 @@ let get _config _storage services =
             | Terrat_vcs_service.Service ((module M), service) -> (
                 M.Service.get_user service (Terrat_user.id user)
                 >>= function
-                | Some _ -> Abb.Future.return (Ok (Some (M.Service.name service)))
-                | None -> Abb.Future.return (Ok None)))
+                | Some _ -> Abbs_future_combinators.return_ok (Some (M.Service.name service))
+                | None -> Abbs_future_combinators.return_ok None))
           services
-        >>= fun vcs -> Abb.Future.return (Ok (CCList.filter_map CCFun.id vcs))
+        >>= fun vcs -> Abbs_future_combinators.return_ok (CCList.filter_map CCFun.id vcs)
       in
       let open Abb.Future.Infix_monad in
       run
@@ -23,10 +23,11 @@ let get _config _storage services =
             |> Terrat_api_components.User.to_yojson
             |> Yojson.Safe.to_string
           in
-          Abb.Future.return (Ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx))
+          Abbs_future_combinators.return_ok
+            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
       | Error `Error ->
           Logs.err (fun m -> m "GITHUB_CALLBACK : %a : FAIL" Uuidm.pp (Terrat_user.id user));
-          Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+          Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
       | Error (#Pgsql_pool.err as err) ->
           Logs.err (fun m ->
               m
@@ -35,7 +36,7 @@ let get _config _storage services =
                 (Terrat_user.id user)
                 Pgsql_pool.pp_err
                 err);
-          Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx))
+          Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m ->
               m
@@ -44,4 +45,4 @@ let get _config _storage services =
                 (Terrat_user.id user)
                 Pgsql_io.pp_err
                 err);
-          Abb.Future.return (Error (Brtl_ctx.set_response `Internal_server_error ctx)))
+          Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))

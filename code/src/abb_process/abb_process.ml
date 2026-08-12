@@ -25,7 +25,7 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
       let open Fut_comb.Infix_result_monad in
       Abb.File.read file ~buf:bytes ~pos:0 ~len
       >>= function
-      | 0 -> Abb.File.close file >>= fun _ -> Abb.Future.return (Ok (Buffer.contents buffer))
+      | 0 -> Abb.File.close file >>= fun _ -> Fut_comb.return_ok (Buffer.contents buffer)
       | n ->
           Buffer.add_subbytes buffer bytes 0 n;
           read_data buffer file bytes
@@ -58,8 +58,8 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
                   [ { buf = Bytes.of_string input; pos = 0; len = String.length input } ]
               >>= fun n ->
               assert (n = String.length input);
-              Abb.Future.return (Ok ())
-          | None -> Abb.Future.return (Ok ()))
+              Fut_comb.return_ok ()
+          | None -> Fut_comb.return_ok ())
         >>= fun () ->
         Abb.File.close stdin_w
         >>= fun () ->
@@ -78,9 +78,8 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
     let open Abb.Future.Infix_monad in
     output ?input process
     >>= function
-    | Ok (stdout, stderr, Abb_intf.Process.Exit_code.Exited 0) ->
-        Abb.Future.return (Ok (stdout, stderr))
+    | Ok (stdout, stderr, Abb_intf.Process.Exit_code.Exited 0) -> Fut_comb.return_ok (stdout, stderr)
     | Ok (stdout, stderr, exit_code) ->
-        Abb.Future.return (Error (`Run_error (process, stdout, stderr, exit_code)))
-    | Error err -> Abb.Future.return (Error err)
+        Fut_comb.return_err (`Run_error (process, stdout, stderr, exit_code))
+    | Error err -> Fut_comb.return_err err
 end
