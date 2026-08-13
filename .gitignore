@@ -1,6 +1,7 @@
 # Build output
 _build
 docs/dist/
+code/src/pricing_service/pricing-service
 code/build/
 
 # Generated types
@@ -18,6 +19,7 @@ pnpm-debug.log*
 # Environment variables
 .env
 .env.production
+.envrc.priv
 
 # macOS-specific files
 .DS_Store
@@ -30,9 +32,12 @@ pnpm-debug.log*
 
 # Python cache
 *__pycache__.*
+*.pyc
 
-# Dune-generated merlin config
-code/.merlin
+# Rust build artifacts (cargo runs from each *-rs/ dir via dune rules)
+code/src/json_of_yaml-rs/target/
+code/src/jsonschema-rs/target/
+code/src/yaml_of_json-rs/target/
 
 # Iris UI build artifacts (npm runs in source tree; api.json is a tracked symlink)
 code/src/iris/dist
@@ -42,3 +47,32 @@ code/src/iris/src/lib/api-types-generated.ts
 
 # Vercel
 .vercel
+
+# Stategraph local runtime files
+.stategraph-*
+
+# Claude Code session lock file (per-session state, not source)
+.claude/scheduled_tasks.lock
+
+# Demo Terraform artifacts
+./stategraph/demo/**/.terraform/
+./stategraph/demo/**/.terraform.lock.hcl
+./stategraph/demo/**/terraform.tfstate
+./stategraph/demo/**/terraform.tfstate.backup
+./stategraph/demo/**/*.zip
+./stategraph/demo/.env
+
+# Tap files from tests
+*.tap
+
+# Generated copybara files
+scripts/monorepo/copy.bara.sky
+scripts/monorepo/copy.bara.sky.bak
+
+# Customer diagnostics dumps and derived analysis (see scripts/diagnostics_analysis/).
+# Anchored to the repo root so the cli_help_regression test fixture is unaffected.
+# Work output belongs in $SG_DIAG_WORKDIR (default /tmp/sg-diagnostics), never here.
+/diagnostics.txt
+/diagnostics-analysis.md
+/facts.md
+/facts.json
