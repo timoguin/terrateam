@@ -100,7 +100,18 @@ jobs:
           target: ${{ matrix.target }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
+            GIT_SHA=${{ github.sha }}
           tags: ghcr.io/terrateamio/${{ matrix.target }}:${{ env.VERSION_TAG }}-${{ matrix.arch }}
+
+      - name: Verify the shipped binary was built from this commit
+        if: matrix.target == 'terrat-oss' || matrix.target == 'terrat-ee'
+        env:
+          IMAGE: ghcr.io/terrateamio/${{ matrix.target }}:${{ env.VERSION_TAG }}-${{ matrix.arch }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh "$IMAGE" -c "grep -q \"$BUILD_SHA\" /usr/local/bin/terrat" \
+            || { echo "Binary does not contain the release SHA: stale or hybrid build"; exit 1; }
 
       - name: Extract ttm binary (${{ matrix.arch }})
         if: matrix.target == 'ttm'
