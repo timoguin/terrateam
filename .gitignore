@@ -2,7 +2,6 @@
 _build
 docs/dist/
 code/src/pricing_service/pricing-service
-code/build/
 
 # Generated types
 docs/.astro/
