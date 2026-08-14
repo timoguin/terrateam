@@ -7,7 +7,6 @@ let three_minutes = Duration.(to_f (of_min 3))
 let terrateam_workflow_name = "Terrateam Workflow"
 let terrateam_workflow_path = ".github/workflows/terrateam.yml"
 let installation_expiration_sec = three_minutes
-let call_timeout = Duration.(to_f (of_sec 10))
 
 module Metrics = struct
   module Call_retry_wait_histograph = Prmths.Histogram (struct
@@ -203,7 +202,7 @@ let create config auth =
   Githubc2_abb.create
     ~base_url:(Terrat_config.Github.api_base_url config)
     ~user_agent:"Terrateam"
-    ~call_timeout
+    ~call_timeout:(Terrat_config.Github.call_timeout config)
     auth
 
 let with_client config auth f =

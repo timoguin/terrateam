@@ -12,6 +12,7 @@ struct
   module Logs = (val Logs.src_log src : Logs.LOG)
   module Wm = Terrat_work_manifest3
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
+  module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
 
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
@@ -22,13 +23,7 @@ struct
     Terrat_work_manifest3.Existing.t
   [@@deriving show]
 
-  (* Wrapper so that when we call [publish_comment] the error type lines up *)
-  let publish_comment' f msg =
-    let open Abb.Future.Infix_monad in
-    f msg
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+  let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
   let create_token installation_id work_manifest_id db =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -51,7 +46,7 @@ struct
     | Ok _ as r -> Abb.Future.return r
     | Error (#Terrat_user.Token.to_token_err as err) ->
         Logs.err (fun m -> m "%s : CREATE_TOKEN : %a" log_id Terrat_user.Token.pp_to_token_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_future_combinators.return_err (`Msg_err "CREATE_TOKEN")
 
   let match_tag_queries ~accessor ~changes queries =
     CCList.map
@@ -199,12 +194,13 @@ struct
               ())
           wms)
 
-  let too_many_aborts wms =
-    unreasonable_number_of_aborts
-    < CCList.length
-      @@ CCList.filter
-           (fun { Terrat_work_manifest3.state; _ } -> state = Terrat_work_manifest3.State.Aborted)
-           wms
+  let num_aborts wms =
+    CCList.length
+    @@ CCList.filter
+         (fun { Terrat_work_manifest3.state; _ } -> state = Terrat_work_manifest3.State.Aborted)
+         wms
+
+  let too_many_aborts wms = unreasonable_number_of_aborts < num_aborts wms
 
   let all_wms_completed =
     CCList.for_all (function
@@ -229,11 +225,18 @@ struct
         publish_comment'
           publish_comment
           (Terrat_vcs_provider2.Msg.Work_manifest_run_failed { run_id })
+    | `Result_handling_err ->
+        (* The evaluation that failed has already published its own message. *)
+        Abbs_future_combinators.return_ok ()
     | `Error ->
+        (* Dispatching the work manifest failed, so nothing has run and nothing
+           else has spoken to the user. *)
         let open Irm in
         fetch Keys.publish_comment
         >>= fun publish_comment ->
-        publish_comment' publish_comment Terrat_vcs_provider2.Msg.Unexpected_temporary_err
+        publish_comment'
+          publish_comment
+          Terrat_vcs_provider2.Msg.(Operation_failed `Work_manifest_start_err)
 
   let run
       ~name
@@ -310,7 +313,7 @@ struct
         >>= function
         | wms when too_many_aborts wms ->
             Logs.info (fun m -> m "%s : WM : TOO_MANY_ABORTS" (Builder.log_id s));
-            Abbs_future_combinators.return_err `Error
+            Abbs_future_combinators.return_err (`Compute_aborted_err (num_aborts wms))
         | wms -> (
             match rem_aborted @@ CCList.filter eq wms with
             | [] -> (

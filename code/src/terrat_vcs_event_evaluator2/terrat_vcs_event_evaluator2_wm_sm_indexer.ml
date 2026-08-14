@@ -9,6 +9,7 @@ struct
 
   module Logs = (val Logs.src_log src : Logs.LOG)
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
+  module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
 
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
@@ -46,21 +47,12 @@ struct
         >>= fun () -> S.Db.store_index ~request_id:(Builder.log_id s) db work_manifest_id index)
 
   module Wmr = Terrat_api_components.Work_manifest_result
+  module Bf = Terrat_api_components.Work_manifest_build_result_failure
 
-  (* Wrapper so that when we call [publish_comment] the error type lines up *)
-  let publish_comment' f msg =
-    let open Abb.Future.Infix_monad in
-    f msg
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+  let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
   let create_commit_checks' f branch_ref checks =
-    let open Abb.Future.Infix_monad in
-    f branch_ref checks
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    Tasks_base.create_commit_checks' f branch_ref checks
 
   let eq base_ref' branch_ref' { Wm.base_ref; branch_ref; steps; _ } =
     base_ref = S.Api.Ref.to_string base_ref'
@@ -253,11 +245,7 @@ struct
         (status_name ~branch ~branch_name)
     in
     fetch Keys.create_commit_checks
-    >>= fun create_commit_checks ->
-    create_commit_checks' create_commit_checks branch_ref [ check ]
-    >>= fun () ->
-    fetch Keys.publish_comment
-    >>= fun publish_comment -> publish_comment' publish_comment Msg.Unexpected_temporary_err
+    >>= fun create_commit_checks -> create_commit_checks' create_commit_checks branch_ref [ check ]
 
   let result ~branch work_manifest result s { Bs.Fetcher.fetch } =
     let open Irm in
@@ -287,11 +275,44 @@ struct
         fetch Keys.create_commit_checks
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
+    | Wmr.Work_manifest_build_result_failure { Bf.msg } ->
+        (* The indexer legitimately reports a build failure, so handle it the
+           way the other builders do rather than treating it as impossible. *)
+        Logs.err (fun m -> m "%s : INDEX_FAILED : %s" (Builder.log_id s) msg);
+        fetch Keys.account
+        >>= fun account ->
+        fetch Keys.repo
+        >>= fun repo ->
+        fetch Keys.branch_ref
+        >>= fun branch_ref ->
+        fetch Keys.branch_name
+        >>= fun branch_name ->
+        let module Status = Terrat_commit_check.Status in
+        let check =
+          S.Commit_check.make_str
+            ~config:(Builder.State.config s)
+            ~description:"Failed"
+            ~status:Status.Failed
+            ~work_manifest
+            ~repo
+            ~account
+            (status_name ~branch ~branch_name)
+        in
+        fetch Keys.create_commit_checks
+        >>= fun create_commit_checks ->
+        create_commit_checks' create_commit_checks branch_ref [ check ]
+        >>= fun () ->
+        fetch Keys.publish_comment
+        >>= fun publish_comment ->
+        publish_comment' publish_comment (Msg.Index_complete (false, []))
+        >>= fun () ->
+        (* No index was built, so stop rather than mark the work manifest
+           completed. *)
+        Abbs_future_combinators.return_err `Silent_failure
     | Wmr.Work_manifest_tf_operation_result _ -> assert false
     | Wmr.Work_manifest_tf_operation_result2 _ -> assert false
     | Wmr.Work_manifest_build_config_result _ -> assert false
     | Wmr.Work_manifest_build_tree_result _ -> assert false
-    | Wmr.Work_manifest_build_result_failure _ -> assert false
 
   let run ~dest_branch_ref ~branch_ref ~branch ~name =
     Wm_sm.run

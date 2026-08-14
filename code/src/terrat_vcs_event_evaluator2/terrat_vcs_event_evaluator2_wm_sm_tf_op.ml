@@ -12,6 +12,7 @@ struct
 
   module Logs = (val Logs.src_log src : Logs.LOG)
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
+  module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
 
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
@@ -27,26 +28,10 @@ struct
   (* If the number of dirspaces are over this arbitrary threshold, do not create
    dirspace checks. *)
   let dirspace_check_threshold = 50
+  let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
-  (* Wrapper so that when we call [publish_comment] the error type lines up *)
-  let publish_comment' f msg =
-    let open Abb.Future.Infix_monad in
-    f msg
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
-
-  (* Wrapper so that when we call [create_commit_checks] the error type lines up.  Creating no
-     checks is a no-op: performing it would dirty the commit checks, forcing anyone that reads them
-     afterwards to fetch them again for no benefit. *)
-  let create_commit_checks' f branch_ref = function
-    | [] -> Abbs_future_combinators.return_ok ()
-    | checks -> (
-        let open Abb.Future.Infix_monad in
-        f branch_ref checks
-        >>= function
-        | Ok () -> Abbs_future_combinators.return_ok ()
-        | Error `Error -> Abbs_future_combinators.return_err `Error)
+  let create_commit_checks' f branch_ref checks =
+    Tasks_base.create_commit_checks' f branch_ref checks
 
   let match_tag_queries ~accessor ~changes queries =
     CCList.map
@@ -915,9 +900,6 @@ struct
         work_manifest
         "Failed"
         Status.Failed
-      >>= fun () ->
-      fetch Keys.publish_comment
-      >>= fun publish_comment -> publish_comment' publish_comment Msg.Unexpected_temporary_err
 
     let result = Plan.result
 

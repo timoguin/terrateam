@@ -3754,6 +3754,45 @@ module Comment = struct
           "MISSING_PLANS"
           Tmpl.missing_plans
           kv
+    | Msg.Operation_failed reason ->
+        let msg_type, tmpl, extra =
+          match reason with
+          | `Branch_not_found_err branch ->
+              ( "OPERATION_FAILED_BRANCH_NOT_FOUND",
+                Tmpl.operation_failed_branch_not_found,
+                [ ("branch", `String branch) ] )
+          | `Compute_aborted_err num_aborts ->
+              ( "OPERATION_FAILED_COMPUTE_ABORTED",
+                Tmpl.operation_failed_compute_aborted,
+                [ ("num_aborts", `Int num_aborts) ] )
+          | `Db_err -> ("OPERATION_FAILED_DB_ERR", Tmpl.operation_failed_db_err, [])
+          | `Internal_err tag ->
+              ( "OPERATION_FAILED_INTERNAL_ERR",
+                Tmpl.operation_failed_internal_err,
+                [ ("tag", `String tag) ] )
+          | `Vcs_api_err operation ->
+              ( "OPERATION_FAILED_VCS_API_ERR",
+                Tmpl.operation_failed_vcs_api_err,
+                [ ("operation", `String operation) ] )
+          | `Work_manifest_start_err ->
+              ( "OPERATION_FAILED_WORK_MANIFEST_START_ERR",
+                Tmpl.operation_failed_work_manifest_start_err,
+                [] )
+        in
+        Logs.info (fun m ->
+            m
+              "%s : OPERATION_FAILED : %a"
+              request_id
+              Terrat_vcs_provider2.Msg.pp_operation_failed_reason
+              reason);
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             msg_type
+             tmpl
+             (`Assoc (("request_id", `String request_id) :: extra))
     | Msg.Plan_all_changes_applied ->
         let kv = Snabela.Kv.(Map.of_list []) in
         Gcm_api.apply_template_and_publish
@@ -4127,15 +4166,6 @@ module Comment = struct
           pull_request
           "TIER_CHECK"
           Tmpl.tier_check
-          kv
-    | Msg.Unexpected_temporary_err ->
-        let kv = Snabela.Kv.(Map.of_list []) in
-        Gcm_api.apply_template_and_publish
-          ~request_id
-          client
-          pull_request
-          "UNEXPECTED_TEMPORARY_ERR"
-          Tmpl.unexpected_temporary_err
           kv
     | Msg.Unlock_success ->
         let kv = Snabela.Kv.(Map.of_list []) in

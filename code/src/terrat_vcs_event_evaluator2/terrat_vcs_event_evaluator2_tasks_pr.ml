@@ -300,19 +300,10 @@ struct
     let run = Tasks_base.run
 
     (* Wrapper so that when we call [publish_comment] the error type lines up *)
-    let publish_comment' f msg =
-      let open Abb.Future.Infix_monad in
-      f msg
-      >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
-      | Error `Error -> Abbs_future_combinators.return_err `Error
+    let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
     let create_commit_checks' f branch_ref checks =
-      let open Abb.Future.Infix_monad in
-      f branch_ref checks
-      >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
-      | Error `Error -> Abbs_future_combinators.return_err `Error
+      Tasks_base.create_commit_checks' f branch_ref checks
 
     let publish_comment =
       run ~name:"publish_comment" (fun s { Bs.Fetcher.fetch } ->
@@ -417,7 +408,9 @@ struct
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo dest_branch_name)
           >>= function
           | Some ref_ -> Abbs_future_combinators.return_ok ref_
-          | None -> Abbs_future_combinators.return_err `Error)
+          | None ->
+              Abbs_future_combinators.return_err
+                (`Branch_not_found_err (S.Api.Ref.to_string dest_branch_name)))
 
     let working_branch_ref =
       run ~name:"working_branch_ref" (fun _s { Bs.Fetcher.fetch } ->
@@ -501,11 +494,10 @@ struct
           Logs.info (fun m -> m "%s : FETCHING_INDEX" (Builder.log_id s));
           Builder.run_db s ~f:(fun db -> query_index s db account branch_ref)
           >>= function
-          | Some { I.success; failures; _ } -> (
+          | Some { I.success; failures; _ } ->
               (* TODO: Construct include base branch index information as well, if it was generated *)
               fetch Keys.publish_comment
               >>= fun publish_comment ->
-              let open Abb.Future.Infix_monad in
               publish_comment'
                 publish_comment
                 (Msg.Index_complete
@@ -513,9 +505,6 @@ struct
                      CCList.map
                        (fun { I.Failure.file; line_num; error } -> (file, line_num, error))
                        failures ))
-              >>= function
-              | Ok () -> Abbs_future_combinators.return_ok ()
-              | Error `Error -> Abbs_future_combinators.return_err `Error)
           | None ->
               Logs.info (fun m -> m "%s : INDEX_NOT_FOUND" (Builder.log_id s));
               Abbs_future_combinators.return_ok ())
@@ -681,7 +670,7 @@ struct
                      repo_tree)
             | None ->
                 Logs.err (fun m -> m "%s : EXPECTED_REPO_TREE" (Builder.log_id s));
-                Abbs_future_combinators.return_err `Error)
+                Abbs_future_combinators.return_err (`Msg_err "EXPECTED_REPO_TREE"))
           else Abbs_future_combinators.return_ok diff)
 
     let store_pull_request =
@@ -1437,25 +1426,13 @@ struct
           >>= function
           | Ok _ as r -> Abb.Future.return r
           | Error err ->
-              let msg =
-                match err with
-                | #Terrat_base_repo_config_v1.of_version_1_err as err ->
-                    Some (Msg.Repo_config_err err)
-                | #Terrat_change_match3.synthesize_config_err as err ->
-                    Some (Msg.Synthesize_config_err err)
-                | `Json_decode_err (fname, err) | `Yaml_decode_err (fname, err) ->
-                    Some (Msg.Repo_config_parse_failure (fname, err))
-                | `Repo_config_schema_err (fname, err) ->
-                    Some (Msg.Repo_config_schema_err (fname, err))
-                | `Premium_feature_err feature -> Some (Msg.Premium_feature_err feature)
-                | `Config_merge_err details -> Some (Msg.Repo_config_merge_err details)
-                | #Terrat_vcs_provider2.fetch_repo_config_with_provenance_err ->
-                    Some Msg.Unexpected_temporary_err
-                | #Builder.err -> None
-              in
-              let open Irm in
-              CCOption.map_or ~default:(Abbs_future_combinators.return_ok ()) maybe_publish_msg msg
-              >>= fun () -> Abbs_future_combinators.return_err err)
+              (* Publish best effort: failing to comment must not replace the
+                 error that actually stopped the operation. *)
+              CCOption.map_or
+                ~default:(Abbs_future_combinators.return_ok ())
+                maybe_publish_msg
+                (Tasks_base.msg_of_err err)
+              >>= fun _ -> Abbs_future_combinators.return_err err)
 
     let can_run_apply =
       run ~name:"can_run_apply" (fun s { Bs.Fetcher.fetch } ->
@@ -1505,25 +1482,13 @@ struct
           >>= function
           | Ok _ as r -> Abb.Future.return r
           | Error err ->
-              let msg =
-                match err with
-                | #Terrat_base_repo_config_v1.of_version_1_err as err ->
-                    Some (Msg.Repo_config_err err)
-                | #Terrat_change_match3.synthesize_config_err as err ->
-                    Some (Msg.Synthesize_config_err err)
-                | `Json_decode_err (fname, err) | `Yaml_decode_err (fname, err) ->
-                    Some (Msg.Repo_config_parse_failure (fname, err))
-                | `Repo_config_schema_err (fname, err) ->
-                    Some (Msg.Repo_config_schema_err (fname, err))
-                | `Premium_feature_err feature -> Some (Msg.Premium_feature_err feature)
-                | `Config_merge_err details -> Some (Msg.Repo_config_merge_err details)
-                | #Terrat_vcs_provider2.fetch_repo_config_with_provenance_err ->
-                    Some Msg.Unexpected_temporary_err
-                | #Builder.err -> None
-              in
-              let open Irm in
-              CCOption.map_or ~default:(Abbs_future_combinators.return_ok ()) maybe_publish_msg msg
-              >>= fun () -> Abbs_future_combinators.return_err err)
+              (* Publish best effort: failing to comment must not replace the
+                 error that actually stopped the operation. *)
+              CCOption.map_or
+                ~default:(Abbs_future_combinators.return_ok ())
+                maybe_publish_msg
+                (Tasks_base.msg_of_err err)
+              >>= fun _ -> Abbs_future_combinators.return_err err)
 
     let get_context_for_pull_request =
       run ~name:"get_context_for_pull_request" (fun s { Bs.Fetcher.fetch } ->

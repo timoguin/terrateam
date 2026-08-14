@@ -14,13 +14,13 @@ module Make
     S.Db.t ->
     (string, [> Terrat_user.Token.to_token_err ]) result Abb.Future.t
 
-  (** Same as [create_token] but logs the error and turns it into a generic failure. *)
+  (** Same as [create_token] but logs the error and turns it into an internal failure. *)
   val create_token' :
     log_id:string ->
     S.Api.Account.Id.t ->
     Uuidm.t ->
     S.Db.t ->
-    (string, [> `Error ]) result Abb.Future.t
+    (string, [> `Msg_err of string ]) result Abb.Future.t
 
   val match_tag_queries :
     accessor:('a -> Terrat_tag_query.t) ->

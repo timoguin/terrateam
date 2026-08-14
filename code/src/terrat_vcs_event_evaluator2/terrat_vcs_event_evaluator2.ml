@@ -832,7 +832,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     ~config
                     ~db
                     ~exec
-                    (Keys.Work_manifest_event.Fail { work_manifest; error = `Error }))
+                    (Keys.Work_manifest_event.Fail { work_manifest; error = `Result_handling_err }))
               >>= fun _ -> Abb.Future.return err)
       | `Legacy ->
           let open Abb.Future.Infix_monad in

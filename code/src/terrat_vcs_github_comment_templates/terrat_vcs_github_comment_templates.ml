@@ -77,6 +77,18 @@ module Tmpl = struct
     jinja [%blob "tmpl/synthesize_config_err_stack_not_found.tmpl"]
 
   let str_template_err_missing_var = jinja [%blob "tmpl/str_template_err_missing_var.tmpl"]
+
+  let operation_failed_branch_not_found =
+    jinja [%blob "tmpl/operation_failed_branch_not_found.tmpl"]
+
+  let operation_failed_compute_aborted = jinja [%blob "tmpl/operation_failed_compute_aborted.tmpl"]
+  let operation_failed_db_err = jinja [%blob "tmpl/operation_failed_db_err.tmpl"]
+  let operation_failed_internal_err = jinja [%blob "tmpl/operation_failed_internal_err.tmpl"]
+  let operation_failed_vcs_api_err = jinja [%blob "tmpl/operation_failed_vcs_api_err.tmpl"]
+
+  let operation_failed_work_manifest_start_err =
+    jinja [%blob "tmpl/operation_failed_work_manifest_start_err.tmpl"]
+
   let maybe_stale_work_manifests = read [%blob "tmpl/maybe_stale_work_manifests.tmpl"]
   let repo_config_parse_failure = read [%blob "tmpl/repo_config_parse_failure.tmpl"]
   let repo_config_schema_err = read [%blob "tmpl/repo_config_schema_err.tmpl"]
@@ -111,7 +123,6 @@ module Tmpl = struct
   let tag_query_error = read [%blob "tmpl/tag_query_error.tmpl"]
   let account_expired_err = read [%blob "tmpl/account_expired_err.tmpl"]
   let repo_config = read [%blob "tmpl/repo_config.tmpl"]
-  let unexpected_temporary_err = read [%blob "tmpl/unexpected_temporary_err.tmpl"]
   let work_manifest_run_failed = jinja [%blob "tmpl/work_manifest_run_failed.tmpl"]
 
   let failed_to_start_workflow_with_msg =

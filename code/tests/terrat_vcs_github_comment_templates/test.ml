@@ -144,9 +144,70 @@ let test_matches_in_later_layer =
             "terrateam plan";
           ])
 
+(* Every [Operation_failed] template renders the request id, because it is the
+   only handle support has on the failure. *)
+let test_operation_failed_branch_not_found =
+  Oth.test ~name:"Operation failed branch not found" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_branch_not_found
+          (`Assoc [ ("request_id", `String "req-123"); ("branch", `String "release/v2") ])
+      in
+      Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "release/v2" ])
+
+let test_operation_failed_compute_aborted =
+  Oth.test ~name:"Operation failed compute aborted" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_compute_aborted
+          (`Assoc [ ("request_id", `String "req-123"); ("num_aborts", `Int 11) ])
+      in
+      Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "11" ])
+
+let test_operation_failed_db_err =
+  Oth.test ~name:"Operation failed db err" (fun _ ->
+      let body =
+        render Tmpl.operation_failed_db_err (`Assoc [ ("request_id", `String "req-123") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"req-123")
+
+let test_operation_failed_internal_err =
+  Oth.test ~name:"Operation failed internal err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_internal_err
+          (`Assoc [ ("request_id", `String "req-123"); ("tag", `String "EXPECTED_REPO_TREE") ])
+      in
+      Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "EXPECTED_REPO_TREE" ])
+
+let test_operation_failed_vcs_api_err =
+  Oth.test ~name:"Operation failed vcs api err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_vcs_api_err
+          (`Assoc
+             [ ("request_id", `String "req-123"); ("operation", `String "CREATE_COMMIT_CHECKS") ])
+      in
+      Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "CREATE_COMMIT_CHECKS" ])
+
+let test_operation_failed_work_manifest_start_err =
+  Oth.test ~name:"Operation failed work manifest start err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_work_manifest_start_err
+          (`Assoc [ ("request_id", `String "req-123") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"req-123")
+
 let test =
   Oth.parallel
     [
+      test_operation_failed_branch_not_found;
+      test_operation_failed_compute_aborted;
+      test_operation_failed_db_err;
+      test_operation_failed_internal_err;
+      test_operation_failed_vcs_api_err;
+      test_operation_failed_work_manifest_start_err;
       test_matches_in_later_layer;
       test_tag_query_dropped_dirspaces;
       test_apply_no_warning;
