@@ -22,6 +22,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     | Pgsql_pool.err
     | Str_template.err
     | P2.gate_add_approval_err
+      (* A failure the user has already been told about.  Publishing anything
+         further would be noise, or would fail for the same reason. *)
+    | `Silent_failure (* The VCS has no sha for this branch: it was deleted or renamed. *)
+    | `Branch_not_found_err of string (* A VCS API call failed.  The payload names the call. *)
+    | `Vcs_api_err of string (* Gave up after this many work manifests aborted without a result. *)
+    | `Compute_aborted_err of int
     ]
   [@@deriving show]
 
@@ -449,16 +455,17 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   (* Actions *)
 
-  let publish_comment :
-      (( S.Api.Account.t,
-         S.Db.t,
-         (unit, unit) S.Api.Pull_request.t,
-         ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) P2.Target.t,
-         S.Apply_requirements.Result.t,
-         S.Api.Config.t )
-       P2.Msg.t ->
-      (unit, [ `Error ]) result Abb.Future.t)
-      Key.t =
+  (* The message type [publish_comment] accepts, fully applied. *)
+  type msg =
+    ( S.Api.Account.t,
+      S.Db.t,
+      (unit, unit) S.Api.Pull_request.t,
+      ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) P2.Target.t,
+      S.Apply_requirements.Result.t,
+      S.Api.Config.t )
+    P2.Msg.t
+
+  let publish_comment : (msg -> (unit, [ `Error ]) result Abb.Future.t) Key.t =
     Hmap.Key.create "publish_comment"
 
   let create_commit_checks :

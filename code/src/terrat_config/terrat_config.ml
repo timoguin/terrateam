@@ -1,5 +1,6 @@
 let default_telemetry_uri = Uri.of_string "https://telemetry.terrateam.io"
 let default_terrateam_web_base_url = Uri.of_string "https://app.terrateam.io"
+let default_vcs_call_timeout = 20.0
 
 module Github = struct
   let default_github_api_base_url = Uri.of_string "https://api.github.com"
@@ -22,6 +23,7 @@ module Github = struct
     app_id : string;
     app_pem : (Mirage_crypto_pk.Rsa.priv[@opaque]);
     app_url : Uri.t;
+    call_timeout : float;
     web_base_url : Uri.t;
     webhook_secret : (string[@opaque]) option;
     workflow_path_override : string option;
@@ -35,6 +37,7 @@ module Github = struct
   let app_id t = t.app_id
   let app_pem t = t.app_pem
   let app_url t = t.app_url
+  let call_timeout t = t.call_timeout
   let web_base_url t = t.web_base_url
   let webhook_secret t = t.webhook_secret
   let workflow_path_override t = t.workflow_path_override
@@ -50,6 +53,7 @@ module Gitlab = struct
     api_base_url : Uri.t;
     app_id : string;
     app_secret : (string[@opaque]);
+    call_timeout : float;
     web_base_url : Uri.t;
   }
   [@@deriving show]
@@ -59,6 +63,7 @@ module Gitlab = struct
   let api_base_url t = t.api_base_url
   let app_id t = t.app_id
   let app_secret t = t.app_secret
+  let call_timeout t = t.call_timeout
   let web_base_url t = t.web_base_url
 end
 
@@ -128,6 +133,11 @@ let of_opt fail = function
 
 let env_str key = of_opt (`Key_error key) (Sys.getenv_opt key)
 
+let vcs_call_timeout () =
+  match Sys.getenv_opt "TERRAT_VCS_CALL_TIMEOUT" with
+  | None | Some "" -> Ok default_vcs_call_timeout
+  | Some timeout -> of_opt (`Key_error "TERRAT_VCS_CALL_TIMEOUT") (CCFloat.of_string_opt timeout)
+
 let infracost () =
   let infracost_pricing_api_endpoint = Sys.getenv_opt "INFRACOST_PRICING_API_ENDPOINT" in
   let infracost_api_key = Sys.getenv_opt "SELF_HOSTED_INFRACOST_API_KEY" in
@@ -171,6 +181,8 @@ let load_github () =
           Uri.of_string
           (Sys.getenv_opt "GITHUB_APP_URL")
       in
+      vcs_call_timeout ()
+      >>= fun call_timeout ->
       let workflow_path_override = Sys.getenv_opt "GITHUB_WORKFLOW_PATH_OVERRIDE" in
       let action_dynamic_title =
         CCOption.map_or
@@ -198,6 +210,7 @@ let load_github () =
              app_id;
              app_pem;
              app_url;
+             call_timeout;
              web_base_url;
              webhook_secret;
              workflow_path_override;
@@ -220,8 +233,11 @@ let load_gitlab () =
       in
       env_str "GITLAB_ACCESS_TOKEN"
       >>= fun access_token ->
+      vcs_call_timeout ()
+      >>= fun call_timeout ->
       (* #899 TODO Access Token will be removed once migration is over *)
-      Ok (Some { Gitlab.access_token; api_base_url; app_id; app_secret; web_base_url })
+      Ok
+        (Some { Gitlab.access_token; api_base_url; app_id; app_secret; call_timeout; web_base_url })
 
 let load_gc () =
   let dynamic_gc' () =

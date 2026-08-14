@@ -9,6 +9,7 @@ struct
 
   module Logs = (val Logs.src_log src : Logs.LOG)
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
+  module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
 
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
@@ -51,20 +52,10 @@ struct
   module Bt = Terrat_api_components.Work_manifest_build_tree_result
   module Bf = Terrat_api_components.Work_manifest_build_result_failure
 
-  (* Wrapper so that when we call [publish_comment] the error type lines up *)
-  let publish_comment' f msg =
-    let open Abb.Future.Infix_monad in
-    f msg
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+  let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
   let create_commit_checks' f branch_ref checks =
-    let open Abb.Future.Infix_monad in
-    f branch_ref checks
-    >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    Tasks_base.create_commit_checks' f branch_ref checks
 
   let eq base_ref' branch_ref' { Wm.base_ref; branch_ref; steps; _ } =
     base_ref = S.Api.Ref.to_string base_ref'
@@ -227,11 +218,7 @@ struct
         (status_name ~branch ~branch_name)
     in
     fetch Keys.create_commit_checks
-    >>= fun create_commit_checks ->
-    create_commit_checks' create_commit_checks branch_ref [ check ]
-    >>= fun () ->
-    fetch Keys.publish_comment
-    >>= fun publish_comment -> publish_comment' publish_comment Msg.Unexpected_temporary_err
+    >>= fun create_commit_checks -> create_commit_checks' create_commit_checks branch_ref [ check ]
 
   let result ~branch ~branch_ref work_manifest result s { Bs.Fetcher.fetch } =
     let open Irm in
@@ -291,7 +278,13 @@ struct
         create_commit_checks' create_commit_checks branch_ref [ check ]
         >>= fun () ->
         fetch Keys.publish_comment
-        >>= fun publish_comment -> publish_comment' publish_comment (Msg.Build_tree_failure msg)
+        >>= fun publish_comment ->
+        publish_comment' publish_comment (Msg.Build_tree_failure msg)
+        >>= fun () ->
+        (* The tree was not built.  Stop here rather than return [Ok], which
+           marks the work manifest completed and sends whoever wanted the tree
+           looking for one that does not exist. *)
+        Abbs_future_combinators.return_err `Silent_failure
     | Wmr.Work_manifest_build_config_result _ -> assert false
     | Terrat_api_components_work_manifest_result.Work_manifest_tf_operation_result _ -> assert false
     | Terrat_api_components_work_manifest_result.Work_manifest_tf_operation_result2 _ ->

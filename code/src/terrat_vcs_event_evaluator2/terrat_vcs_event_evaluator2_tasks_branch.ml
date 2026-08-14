@@ -52,7 +52,9 @@ struct
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo branch_name)
           >>= function
           | Some ref_ -> Abbs_future_combinators.return_ok ref_
-          | None -> Abbs_future_combinators.return_err `Error)
+          | None ->
+              Abbs_future_combinators.return_err
+                (`Branch_not_found_err (S.Api.Ref.to_string branch_name)))
 
     (* Is this the right choice?  Returning the branch anme if the dest branch
        name doesn't exist?  For now, yes.  We eventually want to have better
@@ -93,7 +95,9 @@ struct
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo dest_branch_name)
           >>= function
           | Some ref_ -> Abbs_future_combinators.return_ok ref_
-          | None -> Abbs_future_combinators.return_err `Error)
+          | None ->
+              Abbs_future_combinators.return_err
+                (`Branch_not_found_err (S.Api.Ref.to_string dest_branch_name)))
 
     let working_dest_branch_ref =
       run ~name:"working_dest_branch_ref" (fun _ { Bs.Fetcher.fetch } -> fetch Keys.dest_branch_ref)

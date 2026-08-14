@@ -16,6 +16,7 @@ module Github : sig
   val app_id : t -> string
   val app_pem : t -> Mirage_crypto_pk.Rsa.priv
   val app_url : t -> Uri.t
+  val call_timeout : t -> float
   val web_base_url : t -> Uri.t
   val webhook_secret : t -> string option
   val workflow_path_override : t -> string option
@@ -29,6 +30,7 @@ module Gitlab : sig
   val api_base_url : t -> Uri.t
   val app_id : t -> string
   val app_secret : t -> string
+  val call_timeout : t -> float
   val web_base_url : t -> Uri.t
 end
 

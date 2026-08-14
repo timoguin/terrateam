@@ -39,6 +39,9 @@ type run_work_manifest_err =
   | `Failed_to_start
   | `Missing_workflow
   | `Job_failed of string
+    (* Handling a work manifest result failed.  Whoever produced this has
+       already told the user, so do not comment again. *)
+  | `Result_handling_err
   | `Error
   ]
 
@@ -114,6 +117,20 @@ module Msg = struct
     | `Unlock of Terrat_base_repo_config_v1.Access_control.Match_list.t
     ]
 
+  (* Why an operation stopped, when the cause is Terrateam or its infrastructure
+     rather than something in the user's configuration.  The request id is
+     deliberately not carried here: [publish_comment] already takes
+     [~request_id] and the templates render it from there. *)
+  type operation_failed_reason =
+    [ `Branch_not_found_err of string  (** Branch the VCS has no sha for *)
+    | `Compute_aborted_err of int  (** How many runs aborted without a result *)
+    | `Db_err
+    | `Internal_err of string  (** Short tag naming the invariant that broke *)
+    | `Vcs_api_err of string  (** Short tag naming the API call that failed *)
+    | `Work_manifest_start_err
+    ]
+  [@@deriving show]
+
   type ('account, 'db, 'pull_request, 'target, 'apply_requirements, 'config) t =
     | Access_control_denied of (string * access_control_denied)
     | Account_expired
@@ -138,6 +155,7 @@ module Msg = struct
     | Matches_in_later_layer of Terrat_change.Dirspace.t list
     | Mismatched_refs
     | Missing_plans of Terrat_change.Dirspace.t list
+    | Operation_failed of operation_failed_reason
     | Plan_all_changes_applied
     | Plan_no_matching_dirspaces of Terrat_tag_query.t
     | Premium_feature_err of premium_features
@@ -171,7 +189,6 @@ module Msg = struct
         dirspaces : Terrat_change.Dirspace.t list;
       }
     | Tier_check of Terrat_tier.Check.t
-    | Unexpected_temporary_err
     | Unlock_success
     | Work_manifest_run_failed of { run_id : string }
 

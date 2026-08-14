@@ -282,20 +282,10 @@ struct
                     time)
                 (fun () -> S.Db.query_account_status ~request_id:(Builder.log_id s) db account)))
 
-    (* Wrapper so that when we call [publish_comment] the error type lines up *)
-    let publish_comment' f msg =
-      let open Abb.Future.Infix_monad in
-      f msg
-      >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
-      | Error `Error -> Abbs_future_combinators.return_err `Error
+    let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
     let create_commit_checks' f branch_ref checks =
-      let open Abb.Future.Infix_monad in
-      f branch_ref checks
-      >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
-      | Error `Error -> Abbs_future_combinators.return_err `Error
+      Tasks_base.create_commit_checks' f branch_ref checks
 
     let missing_autoplan_matches' f matches =
       let open Abb.Future.Infix_monad in
@@ -431,7 +421,9 @@ struct
               S.Api.fetch_branch_sha ~request_id:(Builder.log_id s) client repo default_branch)
           >>= function
           | Some branch_sha -> Abbs_future_combinators.return_ok branch_sha
-          | None -> Abbs_future_combinators.return_err `Error)
+          | None ->
+              Abbs_future_combinators.return_err
+                (`Branch_not_found_err (S.Api.Ref.to_string default_branch)))
 
     let matches =
       run ~name:"matches" (fun s { Bs.Fetcher.fetch } ->
@@ -837,7 +829,7 @@ struct
               Abbs_future_combinators.return_ok (CCList.map (fun { I.path; _ } -> path) tree)
           | None ->
               Logs.err (fun m -> m "%s : EXPECTED_BUILT_REPO_TREE" (Builder.log_id s));
-              Abbs_future_combinators.return_err `Error)
+              Abbs_future_combinators.return_err (`Msg_err "EXPECTED_BUILT_REPO_TREE"))
 
     let built_repo_config_branch_wm_completed =
       run ~name:"built_repo_config_branch_wm_completed" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
@@ -1063,7 +1055,7 @@ struct
               Abbs_future_combinators.return_ok (CCList.map (fun { I.path; _ } -> path) tree)
           | None ->
               Logs.err (fun m -> m "%s : EXPECTED_BUILT_REPO_TREE_DEST_BRANCH" (Builder.log_id s));
-              Abbs_future_combinators.return_err `Error)
+              Abbs_future_combinators.return_err (`Msg_err "EXPECTED_BUILT_REPO_TREE_DEST_BRANCH"))
 
     let built_repo_config_dest_branch_wm_completed =
       run
@@ -1705,7 +1697,7 @@ struct
               | Some { I.index; _ } -> Abbs_future_combinators.return_ok index
               | None ->
                   Logs.err (fun m -> m "%s : EXPECTED_BUILT_INDEX_DEST_BRANCH" (Builder.log_id s));
-                  Abbs_future_combinators.return_err `Error))
+                  Abbs_future_combinators.return_err (`Msg_err "EXPECTED_BUILT_INDEX_DEST_BRANCH")))
 
     let repo_index_dest_branch =
       run ~name:"repo_index_dest_branch" (fun _s { Bs.Fetcher.fetch } ->
@@ -2137,7 +2129,7 @@ struct
                         (Builder.log_id s)
                         (S.Api.Ref.to_string base_branch_name));
                   fetch Keys.publish_dest_branch_no_match
-                  >>= fun () -> Abbs_future_combinators.return_err `Error
+                  >>= fun () -> Abbs_future_combinators.return_err `Noop
               | T.Gate_approval _ | T.Help | T.Index | T.Repo_config | T.Unlock _ | T.Push ->
                   assert false)
           | Error `No_matching_source_branch -> (
@@ -2227,15 +2219,8 @@ struct
           >>= fun branch_ref ->
           fetch Keys.working_branch_name
           >>= fun branch ->
-          let open Abb.Future.Infix_monad in
           Tf_op_wm.Plan.run ~dest_branch_ref ~branch_ref ~branch ~name:"plan_wm" s fetcher
-          >>= function
-          | Ok _wms -> maybe_finalize_when_all_applied s fetcher
-          | Error (#Str_template.err as err) ->
-              let open Irm in
-              fetch Keys.publish_comment
-              >>= fun publish_comment -> publish_comment' publish_comment (Msg.Str_template_err err)
-          | Error err -> Abbs_future_combinators.return_err err)
+          >>= fun _wms -> maybe_finalize_when_all_applied s fetcher)
 
     let run_apply =
       run ~name:"run_apply" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
@@ -2733,25 +2718,13 @@ struct
           >>= function
           | Ok _ as r -> Abb.Future.return r
           | Error err ->
-              let msg =
-                match err with
-                | #Terrat_base_repo_config_v1.of_version_1_err as err ->
-                    Some (Msg.Repo_config_err err)
-                | #Terrat_change_match3.synthesize_config_err as err ->
-                    Some (Msg.Synthesize_config_err err)
-                | `Json_decode_err (fname, err) | `Yaml_decode_err (fname, err) ->
-                    Some (Msg.Repo_config_parse_failure (fname, err))
-                | `Repo_config_schema_err (fname, err) ->
-                    Some (Msg.Repo_config_schema_err (fname, err))
-                | `Premium_feature_err feature -> Some (Msg.Premium_feature_err feature)
-                | `Config_merge_err details -> Some (Msg.Repo_config_merge_err details)
-                | #Terrat_vcs_provider2.fetch_repo_config_with_provenance_err ->
-                    Some Msg.Unexpected_temporary_err
-                | #Builder.err -> None
-              in
-              let open Irm in
-              CCOption.map_or ~default:(Abbs_future_combinators.return_ok ()) maybe_publish_msg msg
-              >>= fun () -> Abbs_future_combinators.return_err err)
+              (* Publish best effort: failing to comment must not replace the
+                 error that actually stopped the operation. *)
+              CCOption.map_or
+                ~default:(Abbs_future_combinators.return_ok ())
+                maybe_publish_msg
+                (Tasks_base.msg_of_err err)
+              >>= fun _ -> Abbs_future_combinators.return_err err)
 
     let eval_work_manifest_failure =
       let module Wm = Terrat_work_manifest3 in

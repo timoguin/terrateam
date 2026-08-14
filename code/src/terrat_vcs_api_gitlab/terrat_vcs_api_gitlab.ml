@@ -390,6 +390,7 @@ let create_client ~request_id config account db =
       let gitlab_client =
         Openapic_abb.create
           ~user_agent:"Terrateam"
+          ~call_timeout:(Terrat_config.Gitlab.call_timeout vcs_config)
           ~base_url:(Terrat_config.Gitlab.api_base_url vcs_config)
           (`Bearer access_token)
       in

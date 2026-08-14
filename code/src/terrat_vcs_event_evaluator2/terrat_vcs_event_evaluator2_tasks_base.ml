@@ -11,6 +11,8 @@ module Metrics = struct
     Task_exec_duration.v_label ~label_name:"task" ~help ~namespace ~subsystem "exec_duration"
 end
 
+module Msg = Terrat_vcs_provider2.Msg
+
 module Make
     (S : Terrat_vcs_provider2.S)
     (Keys : module type of Terrat_vcs_event_evaluator2_targets.Make (S)) =
@@ -66,6 +68,62 @@ struct
                  name
                  (CCString.concat ", " path));
            f (Builder.State.set_path path s) fetcher)
+
+  (* Publishing a comment is the last thing we can do for a user.  If it fails,
+     the failure is [`Silent_failure]: retrying the publish from an error
+     handler would fail for the same reason and, if it did not, would publish a
+     second comment. *)
+  let publish_comment' f msg =
+    let open Abb.Future.Infix_monad in
+    f msg
+    >>= function
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Silent_failure
+
+  (* Commit checks are not the user's only channel, so unlike [publish_comment']
+     a failure here is worth a comment of its own.
+
+     Creating no checks is a no-op: performing it would dirty the commit checks,
+     forcing anyone that reads them afterwards to fetch them again for no
+     benefit. *)
+  let create_commit_checks' f branch_ref = function
+    | [] -> Abbs_future_combinators.return_ok ()
+    | checks -> (
+        let open Abb.Future.Infix_monad in
+        f branch_ref checks
+        >>= function
+        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Error `Error -> Abbs_future_combinators.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
+
+  (* The comment, if any, a user should see for an evaluation error.  [None]
+     means say nothing: either nothing went wrong ([`Noop], [`Suspend_eval]) or
+     everything worth saying has already been said ([`Silent_failure]).
+
+     Every constructor is listed rather than falling back on a [#Builder.err]
+     catch-all, so that adding a member to [Keys.err] fails the build until
+     someone decides what the user is told. *)
+  let msg_of_err : Builder.err -> Keys.msg option = function
+    | #Terrat_base_repo_config_v1.of_version_1_err as err -> Some (Msg.Repo_config_err err)
+    | #Terrat_change_match3.synthesize_config_err as err -> Some (Msg.Synthesize_config_err err)
+    | #Str_template.err as err -> Some (Msg.Str_template_err err)
+    | `Json_decode_err (fname, err) | `Yaml_decode_err (fname, err) ->
+        Some (Msg.Repo_config_parse_failure (fname, err))
+    | `Repo_config_schema_err (fname, err) -> Some (Msg.Repo_config_schema_err (fname, err))
+    | `Premium_feature_err feature -> Some (Msg.Premium_feature_err feature)
+    | `Config_merge_err details -> Some (Msg.Repo_config_merge_err details)
+    | `Branch_not_found_err branch -> Some (Msg.Operation_failed (`Branch_not_found_err branch))
+    | `Compute_aborted_err num_aborts ->
+        Some (Msg.Operation_failed (`Compute_aborted_err num_aborts))
+    | `Vcs_api_err operation -> Some (Msg.Operation_failed (`Vcs_api_err operation))
+    | `Closed | #Pgsql_io.err | #Pgsql_pool.err -> Some (Msg.Operation_failed `Db_err)
+    | `Missing_dep_err tag | `Msg_err tag | `Unexpected_err tag ->
+        Some (Msg.Operation_failed (`Internal_err tag))
+    | `No_matching_token_err token ->
+        Some (Msg.Operation_failed (`Internal_err ("GATE_TOKEN:" ^ token)))
+    | `Work_manifest_err id ->
+        Some (Msg.Operation_failed (`Internal_err ("WORK_MANIFEST:" ^ Uuidm.to_string id)))
+    | `Error -> Some (Msg.Operation_failed (`Internal_err "UNKNOWN"))
+    | `Noop | `Suspend_eval _ | `Silent_failure -> None
 
   let forward_std_keys s store = store |> Builder.State.forward_store_value Keys.pull_request s
 end

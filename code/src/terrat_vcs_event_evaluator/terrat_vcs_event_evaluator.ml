@@ -1074,6 +1074,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               | `Failed_to_start
               | `Missing_workflow
               | `Job_failed of string
+              | `Result_handling_err
               | `Error
               ]
           | Plan_store of {
@@ -3035,7 +3036,17 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         changes
 
     let publish_run_failure request_id client user pull_request = function
-      | `Error -> publish_msg request_id client user pull_request Msg.Unexpected_temporary_err
+      | `Error ->
+          publish_msg
+            request_id
+            client
+            user
+            pull_request
+            Msg.(Operation_failed (`Internal_err "WORK_MANIFEST_RUN"))
+      | `Result_handling_err ->
+          (* Only produced by the v2 evaluator, where whoever failed has already
+             published its own message. *)
+          Abbs_future_combinators.return_ok ()
       | `Job_failed run_id ->
           publish_msg request_id client user pull_request (Msg.Work_manifest_run_failed { run_id })
       | (`Failed_to_start_with_msg_err _ | `Missing_workflow | `Failed_to_start) as err ->
@@ -7065,7 +7076,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             Abb.Future.return (`Yield { state with State.output = Some State.Io.O.Reset_ctx })
         | Error `Error ->
             Logs.info (fun m -> m "%s" state.State.request_id);
-            H.maybe_publish_msg ctx state Msg.Unexpected_temporary_err
+            H.maybe_publish_msg ctx state Msg.(Operation_failed (`Internal_err "UNKNOWN"))
             >>= fun () -> Abb.Future.return (`Failure `Error)
         | Error (#Terrat_change_match3.synthesize_config_err as err) ->
             Logs.info (fun m ->
@@ -7107,7 +7118,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   state.State.request_id
                   Terrat_vcs_provider2.pp_fetch_repo_config_with_provenance_err
                   err);
-            H.maybe_publish_msg ctx state Msg.Unexpected_temporary_err
+            H.maybe_publish_msg ctx state Msg.(Operation_failed (`Internal_err "REPO_CONFIG"))
             >>= fun () -> Abb.Future.return (`Failure `Error)
         | Error (`Ref_mismatch_err state) ->
             H.maybe_publish_msg ctx state Msg.Mismatched_refs
@@ -7115,7 +7126,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         | Error (#Terrat_vcs_provider2.gate_add_approval_err as err) ->
             Logs.info (fun m ->
                 m "%s : %a" state.State.request_id Terrat_vcs_provider2.pp_gate_add_approval_err err);
-            H.maybe_publish_msg ctx state Msg.Unexpected_temporary_err
+            H.maybe_publish_msg ctx state Msg.(Operation_failed (`Internal_err "GATE_APPROVAL"))
             >>= fun () -> Abb.Future.return (`Failure `Error)
         | Error (#Str_template.err as err) ->
             Logs.info (fun m -> m "%s : %a" state.State.request_id Str_template.pp_err err);
