@@ -27,7 +27,7 @@
 ARG BASE_IMAGE
 
 # Optional base setup stage if BASE_IMAGE is not provided
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS build-base
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS build-base
 
 # [[[cog emit("apk-base") ]]]
 RUN apk add --no-cache \
@@ -131,7 +131,7 @@ RUN mv /build-cache ./_build && \
 
 # [[[cog emit("terrat-images") ]]]
 # Final code-indexer image
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS code-indexer
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS code-indexer
 RUN addgroup -S terrat && adduser -S -G terrat terrat
 COPY --from=terrat-build /tmp/mono/_build/default/code/src/terrat_code_indexer/terrat_code_indexer.exe /usr/local/bin/terrat_code_indexer
 USER terrat
@@ -139,13 +139,13 @@ WORKDIR /mnt
 ENTRYPOINT ["/usr/local/bin/terrat_code_indexer"]
 
 # Final ttm image
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS ttm
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS ttm
 COPY --from=terrat-build /tmp/mono/_build/default/code/src/ttm/ttm.exe /usr/local/bin/ttm
 WORKDIR /mnt
 ENTRYPOINT ["/usr/local/bin/ttm"]
 
 # Shared runtime base for the terrat-ee / terrat-oss server images
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS terrat-final-base
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS terrat-final-base
 RUN apk add --no-cache \
     bash \
     ca-certificates \
