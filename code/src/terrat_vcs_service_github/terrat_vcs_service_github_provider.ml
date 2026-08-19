@@ -4415,6 +4415,10 @@ module Repo_config = struct
         | Some (fname, _) -> Some fname
         | None -> None)
     in
+    (* Merge one configuration layer on top of another. Lists are joined with
+       [`Prepend_dedup]: an entry the override already carries is not taken from the base as
+       well, so a hook or a workflow declared both in the repository configuration and in the
+       output of the config builder is kept once. *)
     let merge ~base v =
       CCResult.map_err
         (fun (`Type_mismatch_err err) ->
@@ -4430,7 +4434,7 @@ module Repo_config = struct
                    (CCOption.get_or ~default:"" (get_fname base))
                    (CCOption.get_or ~default:"" (get_fname v)),
                  r ))
-           (Jsonu.merge ~base:(get_json base) (get_json v)))
+           (Jsonu.merge ~list:`Prepend_dedup ~base:(get_json base) (get_json v)))
     in
     let system_defaults =
       Some

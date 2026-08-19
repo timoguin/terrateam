@@ -215,6 +215,65 @@ let test_layer_echo_duplicates =
               `Assoc [ ("type", `String "drift_create_issue") ];
             ]))
 
+let test_list_dedup_modes =
+  Oth.test ~name:"Test list `Prepend_dedup and `Append_dedup" (fun _ ->
+      let base = `List [ `Int 1; `Int 2 ] in
+      let override = `List [ `Int 2; `Int 3 ] in
+      (* `Prepend_dedup: every item of the override, then the items of the base that the override
+         does not already carry. *)
+      Oth.Assert.true_
+        "Jsonu.merge ~list:`Prepend_dedup ~base override = Ok (`List [ `Int 2; `Int 3; `Int 1 ])"
+        (Jsonu.merge ~list:`Prepend_dedup ~base override = Ok (`List [ `Int 2; `Int 3; `Int 1 ]));
+      (* `Append_dedup: every item of the base, then the items of the override that the base does
+         not already carry. *)
+      Oth.Assert.true_
+        "Jsonu.merge ~list:`Append_dedup ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3 ])"
+        (Jsonu.merge ~list:`Append_dedup ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3 ]));
+      (* Neither mode deduplicates a list against itself. *)
+      Oth.Assert.true_
+        "Jsonu.merge ~list:`Prepend_dedup ~base:(`List []) (`List [ `Int 1; `Int 1 ]) = Ok (`List \
+         [ `Int 1; `Int 1 ])"
+        (Jsonu.merge ~list:`Prepend_dedup ~base:(`List []) (`List [ `Int 1; `Int 1 ])
+        = Ok (`List [ `Int 1; `Int 1 ]));
+      ())
+
+let test_list_dedup_object_key_order =
+  Oth.test ~name:"Test list dedup ignores object key order" (fun _ ->
+      let hook keys = `Assoc keys in
+      let base = `List [ hook [ ("type", `String "run"); ("cmd", `String "echo") ] ] in
+      let override = `List [ hook [ ("cmd", `String "echo"); ("type", `String "run") ] ] in
+      (* The same hook, written with its keys in the other order, is the same item. *)
+      Oth.Assert.true_
+        "Jsonu.merge ~list:`Prepend_dedup ~base override = Ok override"
+        (Jsonu.merge ~list:`Prepend_dedup ~base override = Ok override);
+      Oth.Assert.true_
+        "Jsonu.merge ~list:`Append_dedup ~base override = Ok base"
+        (Jsonu.merge ~list:`Append_dedup ~base override = Ok base);
+      ())
+
+(* The shape of #1789: the config builder emits the same post hook the repository configuration
+   declares, and the two layers are merged. With a dedup mode the hook survives once. *)
+let test_layer_echo_dedup =
+  Oth.test ~name:"Test identical layers dedup lists" (fun _ ->
+      let config =
+        `Assoc
+          [
+            ("when_modified", `Assoc [ ("autoplan", `Bool true) ]);
+            ( "hooks",
+              `Assoc
+                [
+                  ( "plan",
+                    `Assoc [ ("post", `List [ `Assoc [ ("type", `String "drift_create_issue") ] ]) ]
+                  );
+                ] );
+          ]
+      in
+      let merged = CCResult.get_exn (Jsonu.merge ~list:`Prepend_dedup ~base:config config) in
+      let post = Yojson.Safe.Util.(member "post" (member "plan" (member "hooks" merged))) in
+      Oth.Assert.true_
+        "post hook list has one entry"
+        (post = `List [ `Assoc [ ("type", `String "drift_create_issue") ] ]))
+
 let test =
   Oth.parallel
     [
@@ -228,6 +287,9 @@ let test =
       test_list_append_mode;
       test_both_params;
       test_layer_echo_duplicates;
+      test_list_dedup_modes;
+      test_list_dedup_object_key_order;
+      test_layer_echo_dedup;
     ]
 
 let () =

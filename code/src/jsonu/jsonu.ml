@@ -13,6 +13,11 @@ let of_yaml_string yaml_str =
   | Ok json_str -> Ok (Yojson.Safe.from_string json_str)
   | Error err -> Error (`Yaml_decode_err err)
 
+(* The items of [l] that are not in [r]. [Yojson.Safe.equal] sorts object keys,
+   so two entries that spell the same object in a different order are the same
+   item. *)
+let difference l r = CCList.filter (fun v -> not (CCList.mem ~eq:Yojson.Safe.equal v r)) l
+
 let rec merge' ~null_is_identity ~list ~base override =
   match (base, override) with
   | `Bool _, (`Bool _ as v)
@@ -25,7 +30,9 @@ let rec merge' ~null_is_identity ~list ~base override =
   | `List b, `List o -> (
       match list with
       | `Prepend -> Ok (`List (CCList.append o b))
-      | `Append -> Ok (`List (CCList.append b o)))
+      | `Append -> Ok (`List (CCList.append b o))
+      | `Prepend_dedup -> Ok (`List (CCList.append o (difference b o)))
+      | `Append_dedup -> Ok (`List (CCList.append b (difference o b))))
   | (`Assoc b as base), `Assoc o ->
       let open CCResult.Infix in
       CCResult.fold_l
