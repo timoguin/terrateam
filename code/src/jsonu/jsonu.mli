@@ -12,10 +12,15 @@ val of_yaml_string : string -> (Yojson.Safe.t, [> of_yaml_string_err ]) result
     - If a key is in [base] and [override] and has a scalar type, the value from [override] is
       taken.
 
-    - If a key is in [base] and [override] and it is a list, the two lists are concatenated as
-      directed by [~list]: [`Prepend] (the default) puts the items from [override] before the items
-      in [base]; [`Append] puts them after. Concatenation never deduplicates, so the same entry
-      arriving from two merged layers appears twice in the result.
+    - If a key is in [base] and [override] and it is a list, the two lists are joined as directed by
+      [~list]: [`Prepend] (the default) puts the items from [override] before the items in [base];
+      [`Append] puts them after. Both keep every item, so the same entry arriving from two merged
+      layers appears twice in the result. [`Prepend_dedup] and [`Append_dedup] join the same way but
+      drop the repeated items: [`Prepend_dedup] keeps every item of [override] and drops the items
+      of [base] that are already in [override]; [`Append_dedup] keeps every item of [base] and drops
+      the items of [override] that are already in [base]. Two items are the same when they are equal
+      as JSON, where the order of the keys of an object does not count. Neither mode deduplicates a
+      list against itself.
 
     - If a key is in [base] and [override] and it is a dictionary, [merge] is recursively applied.
 
@@ -31,7 +36,7 @@ val of_yaml_string : string -> (Yojson.Safe.t, [> of_yaml_string_err ]) result
     Note that no deep merging of lists is performed. *)
 val merge :
   ?null_is_identity:bool ->
-  ?list:[ `Prepend | `Append ] ->
+  ?list:[ `Prepend | `Append | `Prepend_dedup | `Append_dedup ] ->
   base:Yojson.Safe.t ->
   Yojson.Safe.t ->
   (Yojson.Safe.t, [> merge_err ]) result
