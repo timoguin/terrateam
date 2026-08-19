@@ -233,29 +233,42 @@ module Tag = struct
     in
     drop_prefix parts
 
+  (* A tag expression is a disjunction of conjunctions: space separates alternatives, comma joins
+     tags that must all be present. *)
   let of_env_opt env_name =
     match Sys.getenv_opt env_name with
     | Some s when CCString.length (CCString.trim s) > 0 ->
-        let tags_list =
+        let groups =
           s
           |> CCString.trim
           |> CCString.Split.list_cpy ~by:" "
-          |> CCList.filter (fun s -> not (CCString.is_empty s))
+          |> CCList.filter_map (fun group ->
+              match
+                group
+                |> CCString.split_on_char ','
+                |> CCList.filter (fun s -> not (CCString.is_empty s))
+              with
+              | [] -> None
+              | tags -> Some (Set.of_list tags))
         in
-        Some (Set.of_list tags_list)
+        if CCList.is_empty groups then None else Some groups
     | Some _ | None -> None
+
+  (** Whether [~tags] satisfies any one of [groups]: a group matches when every tag in it is carried
+      by the test. *)
+  let matches_any ~groups tag_set = CCList.exists (fun group -> Set.subset group tag_set) groups
 
   let should_run ~include_tags ~exclude_tags ~tags =
     let tag_set = Set.of_list tags in
     let included =
       match include_tags with
       | None -> true
-      | Some inc -> not (Set.is_empty (Set.inter tag_set inc))
+      | Some inc -> matches_any ~groups:inc tag_set
     in
     let excluded =
       match exclude_tags with
       | None -> false
-      | Some exc -> not (Set.is_empty (Set.inter tag_set exc))
+      | Some exc -> matches_any ~groups:exc tag_set
     in
     included && not excluded
 
