@@ -144,7 +144,13 @@ end
 
 (** Tag-filtering helpers shared by the runner and by callers that want to predict the runner's
     selection (e.g. to skip an expensive per-phase setup when every test of that phase is filtered
-    out). *)
+    out).
+
+    [OTH_TAGS] and [OTH_EXCLUDE_TAGS] each hold a tag expression: a space-separated list of
+    alternatives, where each alternative is a comma-separated list of tags that must {i all} be
+    present. So [OTH_TAGS="foo,bar baz,zoom"] selects the tests tagged ([foo] and [bar]) or ([baz]
+    and [zoom]), and the comma-free [OTH_TAGS="foo bar"] keeps its familiar meaning of [foo] or
+    [bar]. Exclude takes priority over include. *)
 module Tag : sig
   (** Whether a test carrying [tags] would run under the current [OTH_TAGS] / [OTH_EXCLUDE_TAGS]
       environment -- exactly the filter the runner applies to each test. Combine with
