@@ -63,27 +63,23 @@ module Dirspace_config = struct
       }
 end
 
+(* Does [dependency] declare a [depends_on] that [dependent] answers?  The
+   [modified_by] relation is not tested here: [collect_dependents] follows it
+   through [modifies_lookup], which reaches every dirspace it names rather than
+   only those the topology already joins. *)
 let match_dependency ~dependent ~dependency =
   let module Wm = R.When_modified in
   let module Depends_on = R.Depends_on in
-  let module S = R.Stacks.Stack in
-  let module Rules = R.Stacks.Rules in
-  let { Dirspace_config.dirspace; tags; stack_name; _ } = dependent in
-  let {
-    Dirspace_config.dirspace = working_dirspace;
-    when_modified = { Wm.depends_on; _ };
-    stack_config = { S.rules = { Rules.modified_by; _ }; _ };
-    _;
-  } =
+  let { Dirspace_config.dirspace; tags; _ } = dependent in
+  let { Dirspace_config.dirspace = working_dirspace; when_modified = { Wm.depends_on; _ }; _ } =
     dependency
   in
-  CCList.mem ~eq:CCString.equal stack_name modified_by
-  || CCOption.map_or
-       ~default:false
-       (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
-         let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
-         Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
-       depends_on
+  CCOption.map_or
+    ~default:false
+    (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
+      let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
+      Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
+    depends_on
 
 let match_plan_after_dependency ~dependent ~dependency =
   let module Wm = R.When_modified in
@@ -109,93 +105,134 @@ let match_plan_after_dependency ~dependent ~dependency =
 
 (* [matches] are those dirspace configs that we have identified from the diff.
    [dirspaces] is all dirspaces in the configuration file.  [topology] maps a
-   dirspace to every dirspace that depends on it.  From this we produce every
-   dirspace that is modified or should be considered modified based on the
-   "modified_by" configuration. *)
-let rec collect_depends_on_dependents topology dirspaces matches =
-  CCList.flat_map
-    (fun ({ Dirspace_config.dirspace; stack_name = _; _ } as dirspace_config) ->
-      dirspace_config
-      :: collect_depends_on_dependents
-           topology
-           dirspaces
-           (CCList.filter_map
-              (fun ds ->
-                let open CCOption.Infix in
-                Dirspace_map.get ds dirspaces
-                >>= fun dependency ->
-                if match_dependency ~dependent:dirspace_config ~dependency then Some dependency
-                else None)
-              (Dirspace_map.get_or ~default:[] dirspace topology)))
-    matches
+   dirspace to every dirspace that depends on it.  [modifies_lookup] maps a
+   stack name to every dirspace config whose stack declares [modified_by]
+   against it.  From this we produce every dirspace that is modified or should
+   be considered modified.
 
-let rec collect_modified_by_dependents ~path modifies_lookup dirspaces matches =
-  CCList.flat_map
-    (fun ({ Dirspace_config.dirspace = _; stack_name; _ } as dirspace_config) ->
-      if not (CCList.mem ~eq:CCString.equal stack_name path) then
-        dirspace_config
-        :: collect_modified_by_dependents
-             ~path:(stack_name :: path)
-             modifies_lookup
-             dirspaces
-             (Sln_map.String.get_or ~default:[] stack_name modifies_lookup)
-      else [])
-    matches
+   Both relations are followed in ONE walk.  Following them in turn instead
+   would lose a dirspace that declares [depends_on] against something that
+   [modified_by] brought in, because the [depends_on] step would already be
+   over by then.
 
-let group_independent_dirspaces topology dirspace_configs =
-  CCList.rev
-    (CCListLabels.fold_left
-       ~f:(fun acc ({ Dirspace_config.dirspace; _ } as dirspace_config) ->
-         match acc with
-         | [] -> [ [ dirspace_config ] ]
-         | dirspace_configs :: rest ->
-             let dependents =
-               Dirspace_set.of_list
-                 (CCList.flat_map
-                    (fun { Dirspace_config.dirspace; _ } ->
-                      Dirspace_map.get_or ~default:[] dirspace topology)
-                    dirspace_configs)
-             in
-             if Dirspace_set.mem dirspace dependents then [ dirspace_config ] :: acc
-             else (dirspace_config :: dirspace_configs) :: rest)
-       ~init:[]
-       dirspace_configs)
-
-let sort topology dirspaces matches =
-  let topo =
-    CCList.map
-      (fun ({ Dirspace_config.dirspace; _ } as dependent) ->
-        ( dirspace,
-          CCList.filter_map (fun ds ->
-              let open CCOption.Infix in
-              Dirspace_map.get ds dirspaces
-              >>= fun dependency ->
-              if match_plan_after_dependency ~dependent ~dependency then Some ds else None)
-          @@ Dirspace_map.get_or ~default:[] dirspace topology ))
+   Walk each dirspace one time, not each path to it.  Whether a dirspace is
+   collected depends on the edge we arrive by, but what it expands to depends
+   only on itself, so a dirspace we have already expanded can be skipped.
+   Without [seen] this walks every path, and the number of paths through a
+   diamond doubles with each level.  [seen] also ends a [modified_by] cycle,
+   which nothing in the configuration forbids -- [assert_no_stack_cycle] covers
+   nested stacks, [plan_after] and [apply_after], but not [modified_by]. *)
+let collect_dependents topology modifies_lookup dirspaces matches =
+  let rec go acc matches =
+    CCListLabels.fold_left
+      ~f:(fun
+          ((seen, dirspace_configs) as unchanged)
+          ({ Dirspace_config.dirspace; stack_name; _ } as dirspace_config)
+        ->
+        if Dirspace_set.mem dirspace seen then unchanged
+        else
+          go
+            (Dirspace_set.add dirspace seen, dirspace_config :: dirspace_configs)
+            (CCList.filter_map
+               (fun ds ->
+                 let open CCOption.Infix in
+                 Dirspace_map.get ds dirspaces
+                 >>= fun dependency ->
+                 if match_dependency ~dependent:dirspace_config ~dependency then Some dependency
+                 else None)
+               (Dirspace_map.get_or ~default:[] dirspace topology)
+            @ Sln_map.String.get_or ~default:[] stack_name modifies_lookup))
+      ~init:acc
       matches
   in
-  let match_set =
-    Dirspace_set.of_list @@ CCList.map (fun { Dirspace_config.dirspace; _ } -> dirspace) matches
+  CCList.rev @@ snd @@ go (Dirspace_set.empty, []) matches
+
+(* [topo] maps a dirspace to those dirspaces that must wait for it.
+   [dirspaces] is every matched dirspace, with no duplicates.
+
+   Layer zero is every dirspace with no dependency of its own.  A dirspace
+   leaves the frontier only when its last dependency has left, so the round it
+   leaves in is [1 + max] of the layers of its dependencies.  That is the
+   earliest layer its dependencies permit.
+
+   This is Kahn's algorithm, run one frontier at a time.  Each dirspace is
+   visited one time and each edge is relaxed one time, so the cost is
+   [O((V + E) log V)] for [V] dirspaces and [E] edges. *)
+let layers_of_topology topo dirspaces =
+  let in_degree =
+    Dirspace_map.fold
+      (fun _ dependents acc ->
+        CCListLabels.fold_left
+          ~f:(fun acc dependent ->
+            Dirspace_map.add dependent (1 + Dirspace_map.get_or ~default:0 dependent acc) acc)
+          ~init:acc
+          dependents)
+      topo
+      Dirspace_map.empty
   in
-  match Tsort.sort topo with
-  | Tsort.Sorted sorted ->
-      (* The topology as we defined it is (dependency -> dependents) which means our
-         sort is going to come back in the opposite order we want to execute it.
+  let rec go acc in_degree = function
+    | [] -> CCList.rev acc
+    | frontier ->
+        let in_degree, next =
+          CCListLabels.fold_left
+            ~f:(fun acc dirspace ->
+              CCListLabels.fold_left
+                ~f:(fun (in_degree, next) dependent ->
+                  let n = Dirspace_map.get_or ~default:0 dependent in_degree - 1 in
+                  (Dirspace_map.add dependent n in_degree, if n = 0 then dependent :: next else next))
+                ~init:acc
+                (Dirspace_map.get_or ~default:[] dirspace topo))
+            ~init:(in_degree, [])
+            frontier
+        in
+        go (frontier :: acc) in_degree (CCList.rev next)
+  in
+  go
+    []
+    in_degree
+    (CCList.filter (fun ds -> Dirspace_map.get_or ~default:0 ds in_degree = 0) dirspaces)
 
-         Additionally, we want to group things that can be executed in parallel together,
-         so we need to group successive elements that are part of the same layer.
-
-         What does it mean to be part of the same layer?  It means an element is
-         not a dependent of any of the elements that proceded it in the list. *)
-      let topo = Dirspace_map.of_list topo in
-      sorted
-      |> CCList.filter CCFun.(flip Dirspace_set.mem match_set)
-      |> CCList.rev
-      |> CCList.map (CCFun.flip Dirspace_map.find dirspaces)
-      |> group_independent_dirspaces topo
-  | Tsort.ErrorCycle _ ->
-      (* This should be detected in the synthesize step *)
-      assert false
+let sort topology dirspaces matches =
+  (* The in-degree count needs each dirspace one time.  A duplicate would
+     inflate the in-degree of everything that waits on it, and those dirspaces
+     would never leave the frontier. *)
+  let matches =
+    CCList.rev
+    @@ snd
+    @@ CCListLabels.fold_left
+         ~f:(fun ((seen, acc) as unchanged) { Dirspace_config.dirspace; _ } ->
+           if Dirspace_set.mem dirspace seen then unchanged
+           else (Dirspace_set.add dirspace seen, dirspace :: acc))
+         ~init:(Dirspace_set.empty, [])
+         matches
+  in
+  let match_set = Dirspace_set.of_list matches in
+  (* The topology as we defined it is (dependency -> dependents).  Keep only
+     those edges whose ends are both in the match set: a dependent that is not
+     itself running imposes no order on anything. *)
+  let topo =
+    Dirspace_map.of_list
+    @@ CCList.map
+         (fun dirspace ->
+           let dependent = Dirspace_map.find dirspace dirspaces in
+           ( dirspace,
+             CCList.filter_map (fun ds ->
+                 let open CCOption.Infix in
+                 Dirspace_map.get ds dirspaces
+                 >>= fun dependency ->
+                 if
+                   Dirspace_set.mem ds match_set
+                   && match_plan_after_dependency ~dependent ~dependency
+                 then Some ds
+                 else None)
+             @@ Dirspace_map.get_or ~default:[] dirspace topology ))
+         matches
+  in
+  let layers = layers_of_topology topo matches in
+  (* Every match is in exactly one layer.  A missing one means a cycle, and that
+     should be detected in the synthesize step. *)
+  if CCList.length (CCList.flatten layers) <> CCList.length matches then assert false;
+  CCList.map (CCList.map (CCFun.flip Dirspace_map.find dirspaces)) layers
 
 module Config = struct
   type t = {
@@ -758,8 +795,7 @@ let match_diff_list ?(force_matches = []) config diff_list =
     Dirspace_set.of_list (CCList.map (fun { Dirspace_config.dirspace; _ } -> dirspace) real_matches)
   in
   real_matches
-  |> collect_depends_on_dependents config.Config.topology config.Config.dirspaces
-  |> collect_modified_by_dependents ~path:[] modifies_lookup config.Config.dirspaces
+  |> collect_dependents config.Config.topology modifies_lookup config.Config.dirspaces
   |> sort config.Config.topology config.Config.dirspaces
   |> prune_no_change_dirspaces real_change_set
 

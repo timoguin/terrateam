@@ -199,6 +199,59 @@ let test_operation_failed_work_manifest_start_err =
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"req-123")
 
+(* The bad-glob comment.  [pattern] is the glob as written in the repository
+   configuration and [glob] is what it expands to; the template says so only
+   when the two differ, because repeating an unsubstituted glob back at the
+   reader tells them nothing. *)
+let bad_glob_kv ~location ~pattern ~glob ~error =
+  `Assoc
+    [
+      ("location", `String location);
+      ("pattern", `String pattern);
+      ("glob", `String glob);
+      ("error", `String error);
+    ]
+
+let test_bad_glob_err_unsubstituted =
+  Oth.test ~name:"Bad glob, nothing substituted" (fun _ ->
+      let body =
+        render
+          Tmpl.repo_config_err_bad_glob_err
+          (bad_glob_kv
+             ~location:{|dirs."**"|}
+             ~pattern:"**"
+             ~glob:"**"
+             ~error:"Ambiguous ** pattern not allowed unless surrounded by one or more slashes")
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "Could not parse the glob `**`"; {|`dirs."**"`|}; "Ambiguous ** pattern" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"which expands to";
+      ())
+
+let test_bad_glob_err_substituted =
+  Oth.test ~name:"Bad glob, ${DIR} substituted" (fun _ ->
+      let body =
+        render
+          Tmpl.repo_config_err_bad_glob_err
+          (bad_glob_kv
+             ~location:{|dirs."a+b".workspaces."default".when_modified.file_patterns|}
+             ~pattern:"${DIR}/*.tf"
+             ~glob:"a+b/*.tf"
+             ~error:"Unexpected character '+' in glob pattern")
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            "Could not parse the glob `a+b/*.tf`";
+            {|`dirs."a+b".workspaces."default".when_modified.file_patterns`|};
+            "written as `${DIR}/*.tf`";
+            "which expands to `a+b/*.tf`";
+            "Unexpected character '+' in glob pattern";
+          ];
+      ())
+
 let test =
   Oth.parallel
     [
@@ -215,6 +268,8 @@ let test =
       test_apply_warning_without_suggestion;
       test_plan_no_warning;
       test_plan_warning_with_suggestion;
+      test_bad_glob_err_unsubstituted;
+      test_bad_glob_err_substituted;
     ]
 
 let () =

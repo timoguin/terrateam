@@ -783,6 +783,49 @@ module File_pattern_list = struct
   type t = File_pattern.t list [@@deriving show, yojson, eq]
 end
 
+(* A glob in the repository configuration that the glob parser rejected.
+
+   [pattern] is the glob as written in the configuration, [glob] is what it
+   expands to.  The two differ because [derive] substitutes [${DIR}] and
+   [${WORKSPACE}] before parsing, so the string the parser rejected is often not
+   a string anybody typed.  [location] names where in the configuration the glob
+   came from, which is what makes a log line diagnosable without the
+   configuration in hand. *)
+module Bad_glob = struct
+  type t = {
+    location : string;
+    pattern : string;
+    glob : string;
+    err : string;
+  }
+  [@@deriving show]
+
+  let of_glob_parse_err ~location ?pattern = function
+    | `Glob_parse_err (glob, err) ->
+        { location; pattern = CCOption.get_or ~default:glob pattern; glob; err }
+
+  (* Every [location] a glob can come from, spelled in one place so that what a
+     log line says and what the pull request comment says cannot drift apart.
+     Each one is the path to the offending value in the configuration, so the
+     reader can go straight to it. *)
+  module Location = struct
+    let dirs_key dir = Printf.sprintf "dirs.%S" dir
+
+    let dir_when_modified ~section ~dir ~name =
+      Printf.sprintf "dirs.%S.%s.%S.when_modified.file_patterns" dir section name
+
+    let when_modified_of_dir dir =
+      Printf.sprintf "the top level when_modified.file_patterns, expanded for the directory %S" dir
+  end
+end
+
+(* [File_pattern.make] with its error tagged with where the glob came from.
+   Every glob the configuration builds goes through this. *)
+let make_file_pattern ~location ?pattern glob =
+  CCResult.map_err
+    (fun err -> `Bad_glob_err (Bad_glob.of_glob_parse_err ~location ?pattern err))
+    (File_pattern.make glob)
+
 module Depends_on = struct
   type t = {
     tag_query : Tag_query.t;
@@ -1266,9 +1309,11 @@ end
 type raw
 type derived
 type 'a t = View.t
+type derive_err = [ `Bad_glob_err of Bad_glob.t ] [@@deriving show]
 
 type of_version_1_err =
-  [ `Access_control_ci_config_update_match_parse_err of string
+  [ derive_err
+  | `Access_control_ci_config_update_match_parse_err of string
   | `Access_control_file_match_parse_err of string * string
   | `Access_control_policy_apply_autoapprove_match_parse_err of string
   | `Access_control_policy_apply_force_match_parse_err of string
@@ -2240,6 +2285,13 @@ let of_version_1_dirs default_when_modified { V1.Dirs.additional; _ } =
              workspaces;
            } )
        ->
+      (* A [dirs] key containing a [*] is a glob: [derive] parses it to expand
+         the section over the repository.  Reject one the glob parser cannot
+         parse here, where the key can still be reported exactly as written. *)
+      (if CCString.contains dir '*' then
+         make_file_pattern ~location:(Bad_glob.Location.dirs_key dir) dir >>= fun _ -> Ok ()
+       else Ok ())
+      >>= fun () ->
       map_opt (of_version_1_dirs_when_modified default_when_modified) when_modified
       >>= fun when_modified ->
       let when_modified = CCOption.or_ ~else_:default_when_modified when_modified in
@@ -3766,7 +3818,7 @@ let escape_glob s =
     s;
   Buffer.contents b
 
-let update_file_patterns index module_paths dirname workspacename file_patterns =
+let update_file_patterns ~location index module_paths dirname workspacename file_patterns =
   let sub, by =
     match dirname with
     | "." ->
@@ -3777,7 +3829,7 @@ let update_file_patterns index module_paths dirname workspacename file_patterns 
         ("${DIR}/", "")
     | dirname -> ("${DIR}", escape_glob dirname)
   in
-  if Sln_set.String.mem dirname module_paths then []
+  if Sln_set.String.mem dirname module_paths then Ok []
   else
     let file_patterns =
       match Sln_map.String.find_opt dirname index.Index.deps with
@@ -3790,15 +3842,16 @@ let update_file_patterns index module_paths dirname workspacename file_patterns 
           @ CCList.map File_pattern.file_pattern file_patterns
       | None -> CCList.map File_pattern.file_pattern file_patterns
     in
-    CCList.map
+    CCResult.map_l
       (fun pat ->
-        CCResult.get_exn
-          (File_pattern.make
-             (process_relative_path
-                (CCString.replace
-                   ~sub:"${WORKSPACE}"
-                   ~by:(escape_glob workspacename)
-                   (CCString.replace ~sub ~by pat)))))
+        make_file_pattern
+          ~location
+          ~pattern:pat
+          (process_relative_path
+             (CCString.replace
+                ~sub:"${WORKSPACE}"
+                ~by:(escape_glob workspacename)
+                (CCString.replace ~sub ~by pat))))
       file_patterns
 
 (* Unique a sorted, guaranteed to keep the first element *)
@@ -3808,36 +3861,39 @@ let[@tail_mod_cons] rec uniq_succ ~eq = function
   | x :: xs -> x :: uniq_succ ~eq xs
 
 let derive ~ctx ~index ~file_list repo_config =
+  let open CCResult.Infix in
   let update_dir_config ~global_tags ~module_paths ~index dirname config =
-    let update_workspace tag_prefix name tags workspace_config =
+    let update_workspace section name tags workspace_config =
       let tags =
-        [ "dir:" ^ dirname; tag_prefix ^ ":" ^ name ] @ tags @ workspace_config.Dirs.Workspace.tags
+        [ "dir:" ^ dirname; section ^ ":" ^ name ] @ tags @ workspace_config.Dirs.Workspace.tags
       in
       let when_modified = workspace_config.Dirs.Workspace.when_modified in
-      let file_patterns =
-        update_file_patterns
-          index
-          module_paths
-          dirname
-          name
-          when_modified.When_modified.file_patterns
-      in
+      update_file_patterns
+        ~location:(Bad_glob.Location.dir_when_modified ~section:(section ^ "s") ~dir:dirname ~name)
+        index
+        module_paths
+        dirname
+        name
+        when_modified.When_modified.file_patterns
+      >>= fun file_patterns ->
       let when_modified = { when_modified with When_modified.file_patterns } in
-      { Dirs.Workspace.tags = Terrat_tag_set.(to_list (of_list tags)); when_modified }
+      Ok { Dirs.Workspace.tags = Terrat_tag_set.(to_list (of_list tags)); when_modified }
+    in
+    (* [Sln_map.String] has no result-aware [mapi], so go through the assoc list
+       the way [of_version_1_dirs] does. *)
+    let update_workspaces section tags workspaces =
+      CCResult.map_l
+        (fun (name, workspace_config) ->
+          update_workspace section name tags workspace_config
+          >>= fun workspace_config -> Ok (name, workspace_config))
+        (Sln_map.String.to_list workspaces)
+      >>= fun workspaces -> Ok (Sln_map.String.of_list workspaces)
     in
     let tags = Terrat_tag_set.(to_list (of_list (global_tags @ config.Dirs.Dir.tags))) in
-    let workspaces =
-      Sln_map.String.mapi
-        (fun workspace workspace_config ->
-          update_workspace "workspace" workspace tags workspace_config)
-        config.Dirs.Dir.workspaces
-    in
-    let stacks =
-      Sln_map.String.mapi
-        (fun stack stack_config -> update_workspace "stack" stack tags stack_config)
-        config.Dirs.Dir.stacks
-    in
-    { config with Dirs.Dir.tags; workspaces; stacks }
+    update_workspaces "workspace" tags config.Dirs.Dir.workspaces
+    >>= fun workspaces ->
+    update_workspaces "stack" tags config.Dirs.Dir.stacks
+    >>= fun stacks -> Ok { config with Dirs.Dir.tags; workspaces; stacks }
   in
   let symlinks = build_symlinks index.Index.symlinks in
   let file_list = CCList.flat_map (map_symlink_file_path symlinks) file_list in
@@ -3855,17 +3911,18 @@ let derive ~ctx ~index ~file_list repo_config =
   let dirs = repo_config.View.dirs in
   let default_when_modified = repo_config.View.when_modified in
   (* A glob dir is defined by its key in the [dirs] section having an asterisk in it. *)
-  let glob_dirs =
-    dirs
-    |> Sln_map.String.to_list
-    (* We sort the dirs section by longest-first (in terms of number of
-       characters).  The heuristic is that a longer directory specification is a
-       more specific and thus, to be preferred in the search. *)
-    |> CCList.sort (fun (d1, _) (d2, _) -> CCInt.compare (CCString.length d2) (CCString.length d1))
-    (* Any dir with '*' is considered a glob, for example foo/bar/* *)
-    |> CCList.filter (fun (d, _) -> CCString.contains d '*')
-    |> CCList.map (fun (d, config) -> (CCResult.get_exn (File_pattern.make d), config))
-  in
+  dirs
+  |> Sln_map.String.to_list
+  (* We sort the dirs section by longest-first (in terms of number of
+     characters).  The heuristic is that a longer directory specification is a
+     more specific and thus, to be preferred in the search. *)
+  |> CCList.sort (fun (d1, _) (d2, _) -> CCInt.compare (CCString.length d2) (CCString.length d1))
+  (* Any dir with '*' is considered a glob, for example foo/bar/* *)
+  |> CCList.filter (fun (d, _) -> CCString.contains d '*')
+  |> CCResult.map_l (fun (d, config) ->
+      make_file_pattern ~location:(Bad_glob.Location.dirs_key d) d
+      >>= fun file_pattern -> Ok (file_pattern, config))
+  >>= fun glob_dirs ->
   (* And conversely, non glob dirs are those without an asterisk. *)
   let non_glob_dirs =
     dirs |> Sln_map.String.to_list |> CCList.filter (fun (d, _) -> not (CCString.contains d '*'))
@@ -3905,60 +3962,69 @@ let derive ~ctx ~index ~file_list repo_config =
      [dirs] section of the config.  But we also need to create dir entries for
      all of those files that match the global [when_modified] configuration. *)
   let specified_dirs = Sln_map.String.of_list (non_glob_dirs @ glob_dir_matches) in
-  let remaining_dirs =
-    let make_dir_map file_list =
-      CCList.fold_left
-        (fun acc fname ->
-          let dirname = Filename.dirname fname in
-          Sln_map.String.add_to_list dirname fname acc)
-        Sln_map.String.empty
-        file_list
-    in
-    let test =
-      let module Wm = When_modified in
-      let all_dir_match_patterns =
-        (* All patterns start with "${DIR}" because we can do an optimization for file
+  (let make_dir_map file_list =
+     CCList.fold_left
+       (fun acc fname ->
+         let dirname = Filename.dirname fname in
+         Sln_map.String.add_to_list dirname fname acc)
+       Sln_map.String.empty
+       file_list
+   in
+   let test =
+     let module Wm = When_modified in
+     let all_dir_match_patterns =
+       (* All patterns start with "${DIR}" because we can do an optimization for file
            checking. *)
-        CCList.for_all CCFun.(File_pattern.file_pattern %> CCString.prefix ~pre:"${DIR}/")
-      in
-      if all_dir_match_patterns default_when_modified.Wm.file_patterns then fun (dirname, fnames) ->
-        let dirname = if CCString.equal "." dirname then "" else dirname ^ "/" in
-        let file_patterns =
-          CCList.map
-            CCFun.(
-              File_pattern.to_string
-              %> CCString.replace ~sub:"${DIR}/" ~by:(escape_glob dirname)
-              %> File_pattern.make
-              %> CCResult.get_exn)
-            default_when_modified.When_modified.file_patterns
-        in
-        CCList.exists
-          (fun fname -> CCList.exists CCFun.(flip File_pattern.is_match fname) file_patterns)
-          fnames
-      else CCFun.const true
-    in
-    file_list
-    |> CCList.filter (fun fname ->
-        let dirname = Filename.dirname fname in
-        not (Sln_map.String.mem dirname specified_dirs))
-    |> make_dir_map
-    |> Sln_map.String.to_list
-    |> CCList.filter test
-    |> CCList.map (fun (dirname, _) ->
-        let dir = Dirs.Dir.make () in
-        let dir =
-          {
-            dir with
-            Dirs.Dir.workspaces =
-              Sln_map.String.map
-                (fun config -> { config with Dirs.Workspace.when_modified = default_when_modified })
-                dir.Dirs.Dir.workspaces;
-          }
-        in
-        (dirname, dir))
-    |> Sln_map.String.of_list
-  in
-  let dirs = Sln_map.String.union (fun _ _ _ -> assert false) specified_dirs remaining_dirs in
+       CCList.for_all CCFun.(File_pattern.file_pattern %> CCString.prefix ~pre:"${DIR}/")
+     in
+     if all_dir_match_patterns default_when_modified.Wm.file_patterns then fun (dirname, fnames) ->
+       let prefix = if CCString.equal "." dirname then "" else dirname ^ "/" in
+       CCResult.map_l
+         (fun file_pattern ->
+           let pattern = File_pattern.to_string file_pattern in
+           make_file_pattern
+             ~location:(Bad_glob.Location.when_modified_of_dir dirname)
+             ~pattern
+             (CCString.replace ~sub:"${DIR}/" ~by:(escape_glob prefix) pattern))
+         default_when_modified.When_modified.file_patterns
+       >>= fun file_patterns ->
+       Ok
+         (CCList.exists
+            (fun fname -> CCList.exists CCFun.(flip File_pattern.is_match fname) file_patterns)
+            fnames)
+     else fun _ -> Ok true
+   in
+   file_list
+   |> CCList.filter (fun fname ->
+       let dirname = Filename.dirname fname in
+       not (Sln_map.String.mem dirname specified_dirs))
+   |> make_dir_map
+   |> Sln_map.String.to_list
+   |> CCResult.map_l (fun entry -> test entry >>= fun keep -> Ok (entry, keep))
+   >>= fun entries ->
+   entries
+   |> CCList.filter_map (fun ((dirname, _), keep) ->
+       if keep then
+         let dir = Dirs.Dir.make () in
+         let dir =
+           {
+             dir with
+             Dirs.Dir.workspaces =
+               Sln_map.String.map
+                 (fun config ->
+                   { config with Dirs.Workspace.when_modified = default_when_modified })
+                 dir.Dirs.Dir.workspaces;
+           }
+         in
+         Some (dirname, dir)
+       else None)
+   |> Sln_map.String.of_list
+   |> CCResult.return)
+  >>= fun remaining_dirs ->
+  (* An explicitly specified dir always beats one synthesized from a glob or
+     from the global [when_modified].  The two maps cannot overlap anyway:
+     [remaining_dirs] is built only from dirs absent from [specified_dirs]. *)
+  let dirs = Sln_map.String.override ~by:specified_dirs remaining_dirs in
   (* Now that we have all of our dirs expanded, we also want to fill out the
      other information, such as module paths and any tags. *)
   let module_paths =
@@ -3975,18 +4041,16 @@ let derive ~ctx ~index ~file_list repo_config =
          [])
   in
   let existing_dirs = Sln_set.String.of_list @@ CCList.map Filename.dirname file_list in
-  let dirs =
-    Sln_map.String.filter_map
-      (fun dirname config ->
-        (* It's possible that someone configured a directory that doesn't actually
-           exist, but its file patterns matched something that does exist.  Filter
-           those directories out *)
-        if Sln_set.String.mem dirname existing_dirs then
-          Some (update_dir_config ~global_tags ~module_paths ~index dirname config)
-        else None)
-      dirs
-  in
-  { repo_config with View.dirs }
+  dirs
+  |> Sln_map.String.to_list
+  (* It's possible that someone configured a directory that doesn't actually
+     exist, but its file patterns matched something that does exist.  Filter
+     those directories out *)
+  |> CCList.filter (fun (dirname, _) -> Sln_set.String.mem dirname existing_dirs)
+  |> CCResult.map_l (fun (dirname, config) ->
+      update_dir_config ~global_tags ~module_paths ~index dirname config
+      >>= fun config -> Ok (dirname, config))
+  >>= fun dirs -> Ok { repo_config with View.dirs = Sln_map.String.of_list dirs }
 
 let access_control t = t.View.access_control
 let apply_requirements t = t.View.apply_requirements

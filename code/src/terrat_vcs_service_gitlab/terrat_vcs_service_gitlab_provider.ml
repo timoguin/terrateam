@@ -2931,6 +2931,24 @@ module Comment = struct
           "APPLY_REQUIREMENTS_CHECK_TAG_QUERY_ERR"
           Tmpl.repo_config_err_apply_requirements_check_tag_query_err
           kv
+    | `Bad_glob_err { Terrat_base_repo_config_v1.Bad_glob.location; pattern; glob; err } ->
+        let kv =
+          `Assoc
+            [
+              ("location", `String location);
+              ("pattern", `String pattern);
+              ("glob", `String glob);
+              ("error", `String err);
+            ]
+        in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "BAD_GLOB_ERR"
+             Tmpl.repo_config_err_bad_glob_err
+             kv
     | `Depends_on_err (q, err) ->
         let kv = Snabela.Kv.(Map.of_list [ ("query", string q); ("error", string err) ]) in
         Gcm_api.apply_template_and_publish
