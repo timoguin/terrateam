@@ -468,7 +468,12 @@ struct
                     pull_request
                     (CCList.map (fun { Dc.dirspace; _ } -> dirspace) matches))
               >>= fun dirspaces ->
-              let dirspaces = Terrat_data.Dirspace_set.of_list dirspaces in
+              let dirspaces =
+                Terrat_data.Dirspace_set.of_list
+                @@ CCList.map
+                     (fun { Terrat_vcs_provider2.Missing_plan.dirspace; _ } -> dirspace)
+                     dirspaces
+              in
               Abbs_future_combinators.return_ok
                 (CCList.filter
                    (fun { Dc.dirspace; _ } -> Terrat_data.Dirspace_set.mem dirspace dirspaces)
