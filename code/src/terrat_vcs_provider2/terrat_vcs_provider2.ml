@@ -106,6 +106,24 @@ module Gate_eval = struct
   [@@deriving show]
 end
 
+(* A dirspace with no valid plan, and which of the three things the query
+   distinguishes put it there.  Reporting the dirspace alone leaves an operator
+   who watched their plan succeed with no way to tell that another pull request
+   moved underneath them. *)
+module Missing_plan = struct
+  type reason =
+    | Never_planned
+    | Invalidated_by_pull_request of int
+    | Last_run_failed
+  [@@deriving show]
+
+  type t = {
+    dirspace : Terrat_change.Dirspace.t;
+    reason : reason;
+  }
+  [@@deriving show]
+end
+
 module Msg = struct
   type access_control_denied =
     [ `All_dirspaces of Terrat_access_control2.R.Deny.t list
@@ -154,7 +172,7 @@ module Msg = struct
     | Maybe_stale_work_manifests of ('account, 'target) Terrat_work_manifest3.Existing.t list
     | Matches_in_later_layer of Terrat_change.Dirspace.t list
     | Mismatched_refs
-    | Missing_plans of Terrat_change.Dirspace.t list
+    | Missing_plans of Missing_plan.t list
     | Operation_failed of operation_failed_reason
     | Plan_all_changes_applied
     | Plan_no_matching_dirspaces of Terrat_tag_query.t
@@ -400,7 +418,7 @@ module type S = sig
       t ->
       ('diff, 'checks) Api.Pull_request.t ->
       Terrat_change.Dirspace.t list ->
-      (Terrat_change.Dirspace.t list, [> `Error ]) result Abb.Future.t
+      (Missing_plan.t list, [> `Error ]) result Abb.Future.t
 
     val query_conflicting_work_manifests_in_repo :
       request_id:string ->

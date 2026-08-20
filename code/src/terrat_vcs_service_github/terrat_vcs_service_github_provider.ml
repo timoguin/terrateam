@@ -542,6 +542,12 @@ module Db = struct
         //
         (* workspace *)
         Ret.text
+        //
+        (* reason *)
+        Ret.text
+        //
+        (* pull number that invalidated the plan *)
+        Ret.(option bigint)
         /^ read [%blob "sql/select_dirspaces_without_valid_plans.sql"]
         /% Var.bigint "repository"
         /% Var.bigint "pull_number"
@@ -1831,7 +1837,19 @@ module Db = struct
       (fun () ->
         Pgsql_io.Prepared_stmt.fetch
           db
-          ~f:(fun dir workspace -> Terrat_change.Dirspace.{ dir; workspace })
+          ~f:(fun dir workspace reason pull_number ->
+            let module Mp = Terrat_vcs_provider2.Missing_plan in
+            let reason =
+              match (reason, pull_number) with
+              | "invalidated", Some pull_number ->
+                  Mp.Invalidated_by_pull_request (CCInt64.to_int pull_number)
+              | "last_run_failed", _ -> Mp.Last_run_failed
+              (* [never_planned], and [invalidated] with no pull number to name,
+                 which the query should not produce but which must not be a
+                 crash if it ever does. *)
+              | _, _ -> Mp.Never_planned
+            in
+            { Mp.dirspace = Terrat_change.Dirspace.{ dir; workspace }; reason })
           Sql.select_dirspaces_without_valid_plans
           (CCInt64.of_int @@ Api.Repo.id @@ Api.Pull_request.repo pull_request)
           (CCInt64.of_int @@ Api.Pull_request.id pull_request)
@@ -3888,6 +3906,7 @@ module Comment = struct
              Tmpl.mismatched_refs
              kv
     | Msg.Missing_plans dirspaces ->
+        let module Mp = Terrat_vcs_provider2.Missing_plan in
         let kv =
           Snabela.Kv.(
             Map.of_list
@@ -3895,14 +3914,45 @@ module Comment = struct
                 ( "dirspaces",
                   list
                     (CCList.map
-                       (fun Terrat_change.Dirspace.{ dir; workspace } ->
-                         Map.of_list [ ("dir", string dir); ("workspace", string workspace) ])
+                       (fun { Mp.dirspace = Terrat_change.Dirspace.{ dir; workspace }; reason } ->
+                         (* Every row carries all three flags because the
+                            template tests each one, and a key missing from the
+                            map is an error rather than a false. *)
+                         let never_planned = reason = Mp.Never_planned in
+                         let last_run_failed = reason = Mp.Last_run_failed in
+                         let invalidated_by =
+                           match reason with
+                           | Mp.Invalidated_by_pull_request pull_number -> Some pull_number
+                           | Mp.Never_planned | Mp.Last_run_failed -> None
+                         in
+                         Map.of_list
+                           [
+                             ("dir", string dir);
+                             ("workspace", string workspace);
+                             ("never_planned", bool never_planned);
+                             ("last_run_failed", bool last_run_failed);
+                             ("invalidated", bool (CCOption.is_some invalidated_by));
+                             ("invalidated_by", int (CCOption.get_or ~default:0 invalidated_by));
+                           ])
+                       dirspaces) );
+                ( "any_invalidated",
+                  bool
+                    (CCList.exists
+                       (function
+                         | { Mp.reason = Mp.Invalidated_by_pull_request _; _ } -> true
+                         | { Mp.reason = Mp.Never_planned | Mp.Last_run_failed; _ } -> false)
                        dirspaces) );
               ])
         in
         CCList.iter
-          (fun Terrat_change.Dirspace.{ dir; workspace } ->
-            Logs.info (fun m -> m "%s : MISSING_PLANS : %s : %s" request_id dir workspace))
+          (fun { Mp.dirspace = Terrat_change.Dirspace.{ dir; workspace }; reason } ->
+            Logs.info (fun m ->
+                m
+                  "%s : MISSING_PLANS : %s : %s : %s"
+                  request_id
+                  dir
+                  workspace
+                  (Mp.show_reason reason)))
           dirspaces;
         Abbs_future_combinators.Result.ignore
         @@ Gcm_api.apply_template_and_publish

@@ -2,10 +2,10 @@
 
 Cannot perform apply due to missing plans for the following directory and workspaces:
 
-| Dir | Workspace |
-| --- | --------- |
+| Dir | Workspace | Reason |
+| --- | --------- | ------ |
 @#dirspaces-@
-| `@dir@` | `@workspace@` |
+| `@dir@` | `@workspace@` | @?never_planned-@Never planned on this ref@-/never_planned@@?invalidated-@Plan superseded by #@invalidated_by@, which applied or merged an overlapping directory afterwards@-/invalidated@@?last_run_failed-@The last run for this directory failed@-/last_run_failed@ |
 @/dirspaces-@
 
 Plans are necessary to perform an apply.  In order to create all plans necessary to apply this change, comment the following:
@@ -13,3 +13,7 @@ Plans are necessary to perform an apply.  In order to create all plans necessary
 ```
 terrateam plan
 ```
+
+@?any_invalidated-@
+A plan that was superseded has to be created again: the other pull request changed the state this plan was built against, so it is no longer valid to apply.
+@-/any_invalidated@

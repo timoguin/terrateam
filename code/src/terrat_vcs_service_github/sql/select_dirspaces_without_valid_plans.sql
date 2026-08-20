@@ -63,7 +63,15 @@ latest_dirspace_work_manifests as (
 )
 select
     ds.path,
-    ds.workspace
+    ds.workspace,
+-- The three arms below are the three arms of the where clause, in the same
+-- order, so the reason reported is the one that actually excluded the row.
+    case
+        when ldswm.id is null then 'never_planned'
+        when ldswm.pull_number is distinct from $pull_number then 'invalidated'
+        else 'last_run_failed'
+    end,
+    ldswm.pull_number
 from dirspaces as ds
 left join latest_dirspace_work_manifests as ldswm
     on ldswm.path = ds.path

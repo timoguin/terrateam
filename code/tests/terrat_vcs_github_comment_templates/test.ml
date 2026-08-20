@@ -252,6 +252,68 @@ let test_bad_glob_err_substituted =
           ];
       ())
 
+(* The payload [Msg.Missing_plans] builds, one row per reason.  Snabela errors on
+   a key a template asks for and the map does not carry, so the provider emits
+   all three flags on every row and this pins that. *)
+let missing_plans_kv rows =
+  Snabela.Kv.(
+    Map.of_list
+      [
+        ( "dirspaces",
+          list
+            (CCList.map
+               (fun (dir, workspace, never_planned, invalidated, invalidated_by, last_run_failed) ->
+                 Map.of_list
+                   [
+                     ("dir", string dir);
+                     ("workspace", string workspace);
+                     ("never_planned", bool never_planned);
+                     ("last_run_failed", bool last_run_failed);
+                     ("invalidated", bool invalidated);
+                     ("invalidated_by", int invalidated_by);
+                   ])
+               rows) );
+        ( "any_invalidated",
+          bool (CCList.exists (fun (_, _, _, invalidated, _, _) -> invalidated) rows) );
+      ])
+
+let render_missing_plans rows =
+  match Snabela.apply Tmpl.missing_plans (missing_plans_kv rows) with
+  | Ok body -> body
+  | Error (#Snabela.err as err) -> failwith (Snabela.show_err err)
+
+let test_missing_plans_never_planned =
+  Oth.test ~name:"Missing plans: never planned" (fun _ ->
+      let body = render_missing_plans [ ("foo", "default", true, false, 0, false) ] in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Never planned on this ref";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"superseded")
+
+let test_missing_plans_invalidated =
+  Oth.test ~name:"Missing plans: invalidated names the pull request" (fun _ ->
+      let body = render_missing_plans [ ("foo", "default", false, true, 849, false) ] in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #849";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Never planned")
+
+let test_missing_plans_last_run_failed =
+  Oth.test ~name:"Missing plans: last run failed" (fun _ ->
+      let body = render_missing_plans [ ("foo", "default", false, false, 0, true) ] in
+      Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"superseded")
+
+let test_missing_plans_mixed_reasons =
+  Oth.test ~name:"Missing plans: every reason renders in one table" (fun _ ->
+      let body =
+        render_missing_plans
+          [
+            ("a", "default", true, false, 0, false);
+            ("b", "default", false, true, 12, false);
+            ("c", "default", false, false, 0, true);
+          ]
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Never planned on this ref";
+      Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #12";
+      Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed")
+
 let test =
   Oth.parallel
     [
@@ -270,6 +332,10 @@ let test =
       test_plan_warning_with_suggestion;
       test_bad_glob_err_unsubstituted;
       test_bad_glob_err_substituted;
+      test_missing_plans_never_planned;
+      test_missing_plans_invalidated;
+      test_missing_plans_last_run_failed;
+      test_missing_plans_mixed_reasons;
     ]
 
 let () =
