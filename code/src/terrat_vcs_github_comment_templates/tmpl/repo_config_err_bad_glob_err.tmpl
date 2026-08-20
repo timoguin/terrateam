@@ -1,0 +1,27 @@
+# Repository Configuration Error
+
+## What is the error?
+
+Could not parse the glob `{{ glob }}`.
+
+It comes from `{{ location }}` in the repository configuration.
+{%- if pattern != glob %}
+
+There it is written as `{{ pattern }}`, which expands to `{{ glob }}`.
+{%- endif %}
+
+Parsing failed with the error:
+
+```
+{{ error }}
+```
+
+## What to do?
+
+Characters other than `0-9`, `A-Z`, `a-z`, `_`, `-`, `.`, and ` ` must be escaped with `\`.  For example, the glob `prod/@vars/*.tf` must be written `prod/\@vars/*.tf`.
+
+A `**` is allowed only next to a `/`, so `**/*` and `modules/**` are valid but `**` on its own is not.
+
+If you are using `${DIR}` or `${WORKSPACE}`, they must be written with the `{` and `}`.
+
+See the [documentation](https://terrateam.io/docs/configuration-reference/when-modified/#file-patterns) for file globs.

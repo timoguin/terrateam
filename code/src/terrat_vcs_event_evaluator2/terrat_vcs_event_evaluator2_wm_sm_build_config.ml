@@ -183,8 +183,7 @@ struct
     >>= fun token ->
     (* FIX: Index *)
     let index = None in
-    Abbs_future_combinators.to_result
-    @@ Abb.Thread.run (fun () ->
+    Abb.Thread.run (fun () ->
         Terrat_base_repo_config_v1.derive
           ~ctx:
             (Terrat_base_repo_config_v1.Ctx.make

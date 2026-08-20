@@ -419,6 +419,22 @@ module File_pattern_list : sig
   type t = File_pattern.t list [@@deriving show, yojson, eq]
 end
 
+(** A glob in the repository configuration that the glob parser rejected.
+
+    [pattern] is the glob as written in the configuration, [glob] is what it expands to. The two
+    differ because {!derive} substitutes [${DIR}] and [${WORKSPACE}] before parsing, so the string
+    the parser rejected is often not a string anybody typed. [location] names where in the
+    configuration the glob came from. *)
+module Bad_glob : sig
+  type t = {
+    location : string;
+    pattern : string;
+    glob : string;
+    err : string;
+  }
+  [@@deriving show]
+end
+
 module Depends_on : sig
   type t = {
     tag_query : Tag_query.t;
@@ -890,8 +906,13 @@ type raw
 type derived
 type 'a t
 
+(** The errors {!derive} can report. A subset of {!of_version_1_err}, so that a derive failure
+    travels the same path to the user as a configuration parse failure. *)
+type derive_err = [ `Bad_glob_err of Bad_glob.t ] [@@deriving show]
+
 type of_version_1_err =
-  [ `Access_control_ci_config_update_match_parse_err of string
+  [ derive_err
+  | `Access_control_ci_config_update_match_parse_err of string
   | `Access_control_file_match_parse_err of string * string
   | `Access_control_policy_apply_autoapprove_match_parse_err of string
   | `Access_control_policy_apply_force_match_parse_err of string
@@ -938,8 +959,13 @@ val of_version_1_json_derived : Yojson.Safe.t -> (derived t, [> of_version_1_jso
 val to_version_1 : 'a t -> Terrat_repo_config.Version_1.t
 val merge_with_default_branch_config : default:'a t -> 'a t -> 'a t
 
-(** Given contextual information, take a configuration and produce a derived configuration. *)
-val derive : ctx:Ctx.t -> index:Index.t -> file_list:string list -> 'a t -> derived t
+(** Given contextual information, take a configuration and produce a derived configuration.
+
+    Deriving expands the globs of the configuration over the repository, substituting [${DIR}] and
+    [${WORKSPACE}], so it can fail on a glob the parser rejects even though the configuration
+    parsed. *)
+val derive :
+  ctx:Ctx.t -> index:Index.t -> file_list:string list -> 'a t -> (derived t, [> derive_err ]) result
 
 (** Accessors*)
 

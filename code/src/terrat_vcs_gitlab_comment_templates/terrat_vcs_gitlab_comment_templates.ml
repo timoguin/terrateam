@@ -186,6 +186,7 @@ module Tmpl = struct
     read [%blob "tmpl/repo_config_err_drift_tag_query_err.tmpl"]
 
   let repo_config_err_glob_parse_err = read [%blob "tmpl/repo_config_err_glob_parse_err.tmpl"]
+  let repo_config_err_bad_glob_err = jinja [%blob "tmpl/repo_config_err_bad_glob_err.tmpl"]
   let repo_config_err_pattern_parse_err = read [%blob "tmpl/repo_config_err_pattern_parse_err.tmpl"]
 
   let repo_config_err_window_parse_timezone_err =

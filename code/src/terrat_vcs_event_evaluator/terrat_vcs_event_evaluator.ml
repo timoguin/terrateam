@@ -2127,21 +2127,21 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         in
         Abbs_time_it.run (log_time state.State.request_id "DERIVE_AND_COMPUTE") (fun () ->
             Abb.Thread.run (fun () ->
-                let repo_config =
-                  Terrat_base_repo_config_v1.derive
-                    ~ctx:
-                      (Terrat_base_repo_config_v1.Ctx.make
-                         ~dest_branch:(S.Api.Ref.to_string base_branch_name)
-                         ~branch:(S.Api.Ref.to_string branch_name)
-                         ())
-                    ~index:
-                      (CCOption.map_or
-                         ~default:Terrat_base_repo_config_v1.Index.empty
-                         (fun { Terrat_vcs_provider2.Index.index; _ } -> index)
-                         index)
-                    ~file_list:repo_tree
-                    repo_config
-                in
+                let open CCResult.Infix in
+                Terrat_base_repo_config_v1.derive
+                  ~ctx:
+                    (Terrat_base_repo_config_v1.Ctx.make
+                       ~dest_branch:(S.Api.Ref.to_string base_branch_name)
+                       ~branch:(S.Api.Ref.to_string branch_name)
+                       ())
+                  ~index:
+                    (CCOption.map_or
+                       ~default:Terrat_base_repo_config_v1.Index.empty
+                       (fun { Terrat_vcs_provider2.Index.index; _ } -> index)
+                       index)
+                  ~file_list:repo_tree
+                  repo_config
+                >>= fun repo_config ->
                 compute_matches
                   ~ctx:
                     (Terrat_base_repo_config_v1.Ctx.make
@@ -2399,8 +2399,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           <*> fetch_tree state.State.request_id client repo ref_)
         >>= fun (repo_config, repo_tree) ->
         Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-            Abbs_future_combinators.to_result
-            @@ Abb.Thread.run (fun () ->
+            Abb.Thread.run (fun () ->
                 Terrat_base_repo_config_v1.derive
                   ~ctx:(Terrat_base_repo_config_v1.Ctx.make ~dest_branch ~branch ())
                   ~index:Terrat_base_repo_config_v1.Index.empty
@@ -3135,8 +3134,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dest_branch = S.Api.Ref.to_string base_branch_name' in
       let branch = S.Api.Ref.to_string branch_name' in
       Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-          Abbs_future_combinators.to_result
-          @@ Abb.Thread.run (fun () ->
+          Abb.Thread.run (fun () ->
               Terrat_base_repo_config_v1.derive
                 ~ctx:(Terrat_base_repo_config_v1.Ctx.make ~dest_branch ~branch ())
                 ~index:Terrat_base_repo_config_v1.Index.empty
@@ -3218,8 +3216,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           Dv.branch_name ctx state
           >>= fun branch_name ->
           Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-              Abbs_future_combinators.to_result
-              @@ Abb.Thread.run (fun () ->
+              Abb.Thread.run (fun () ->
                   Terrat_base_repo_config_v1.derive
                     ~ctx:
                       (Terrat_base_repo_config_v1.Ctx.make
@@ -4305,8 +4302,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   index
               in
               Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-                  Abbs_future_combinators.to_result
-                  @@ Abb.Thread.run (fun () ->
+                  Abb.Thread.run (fun () ->
                       Terrat_base_repo_config_v1.derive
                         ~ctx:
                           (Terrat_base_repo_config_v1.Ctx.make
@@ -4387,8 +4383,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   index
               in
               Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-                  Abbs_future_combinators.to_result
-                  @@ Abb.Thread.run (fun () ->
+                  Abb.Thread.run (fun () ->
                       Terrat_base_repo_config_v1.derive
                         ~ctx:
                           (Terrat_base_repo_config_v1.Ctx.make
@@ -4521,8 +4516,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      | _ -> Terrat_base_repo_config_v1.Index.empty
                    in
                    Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-                       Abbs_future_combinators.to_result
-                       @@ Abb.Thread.run (fun () ->
+                       Abb.Thread.run (fun () ->
                            Terrat_base_repo_config_v1.derive
                              ~ctx:
                                (Terrat_base_repo_config_v1.Ctx.make
@@ -4914,8 +4908,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               built_repo_tree
           in
           Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-              Abbs_future_combinators.to_result
-              @@ Abb.Thread.run (fun () ->
+              Abb.Thread.run (fun () ->
                   Terrat_base_repo_config_v1.derive
                     ~ctx:
                       (Terrat_base_repo_config_v1.Ctx.make
@@ -4978,8 +4971,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | _ -> Terrat_base_repo_config_v1.Index.empty
         in
         Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-            Abbs_future_combinators.to_result
-            @@ Abb.Thread.run (fun () ->
+            Abb.Thread.run (fun () ->
                 Terrat_base_repo_config_v1.derive
                   ~ctx:
                     (Terrat_base_repo_config_v1.Ctx.make
@@ -6774,8 +6766,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               Dv.branch_name ctx state
               >>= fun branch_name ->
               Abbs_time_it.run (log_time state.State.request_id "DERIVE") (fun () ->
-                  Abbs_future_combinators.to_result
-                  @@ Abb.Thread.run (fun () ->
+                  Abb.Thread.run (fun () ->
                       Terrat_base_repo_config_v1.derive
                         ~ctx:
                           (Terrat_base_repo_config_v1.Ctx.make

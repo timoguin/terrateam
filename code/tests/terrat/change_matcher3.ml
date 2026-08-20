@@ -1,5 +1,13 @@
 let ctx = Terrat_base_repo_config_v1.Ctx.make ~dest_branch:"main" ~branch:"test" ()
 
+(* [Terrat_base_repo_config_v1.derive] reports a glob it cannot parse rather than
+   raising.  Unwrap it with the assertion so a test that trips over one says which
+   glob and why, instead of dying on a bare exception. *)
+let derive ~ctx ~index ~file_list repo_config =
+  Oth.Assert.ok_pp
+    ~pp:Terrat_base_repo_config_v1.pp_derive_err
+    (Terrat_base_repo_config_v1.derive ~ctx ~index ~file_list repo_config)
+
 let depends_on_q ?(prune_on_no_change = false) s =
   {
     Terrat_base_repo_config_v1.Depends_on.tag_query =
@@ -193,7 +201,7 @@ let bad_dirs_config =
 let test_simple =
   Oth.test ~name:"Test simple" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf" ]
@@ -213,7 +221,7 @@ let test_workflow_idx =
   Oth.test ~name:"Test workflow idx" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf" ]
@@ -260,7 +268,7 @@ let test_workflow_idx_tag_in_dir =
     (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf" ]
@@ -308,7 +316,7 @@ let test_workflow_idx_multiple_dirs =
     (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "s3/s3.tf" ]
@@ -366,7 +374,7 @@ let test_workflow_override =
   Oth.test ~name:"Test overriding workflow for all" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "s3/s3.tf" ]
@@ -414,7 +422,7 @@ let test_dir_match =
   Oth.test ~name:"Test dir match" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "s3/s3.tf" ]
@@ -441,7 +449,7 @@ let test_dirspace_map =
   Oth.test ~name:"Test dirspace map" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "s3/s3.tf" ]
@@ -471,7 +479,7 @@ let test_dir_file_pattern =
   Oth.test ~name:"Test dir file pattern" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "s3/s3.tf"; "iam/main.tf" ]
@@ -512,7 +520,7 @@ let test_dir_file_pattern =
 let test_dir_config_iam =
   Oth.test ~name:"Test Dir Config IAM" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "iam/foo.tf"; "ec2/ec2.tf"; "ebl/ebl.tf"; "lambda/lambda.tf" ]
@@ -552,7 +560,7 @@ let test_dir_config_iam =
 let test_dir_config_ebl =
   Oth.test ~name:"Test Dir Config ebl" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "iam/foo.tf"; "ec2/ec2.tf"; "ebl/ebl.tf"; "lambda/lambda.tf" ]
@@ -585,7 +593,7 @@ let test_dir_config_ebl =
 let test_dir_config_ebl_modules =
   Oth.test ~name:"Test Dir Config ebl modules" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "iam/foo.tf"; "ec2/ec2.tf"; "ebl/ebl.tf"; "lambda/lambda.tf"; "ebl_modules" ]
@@ -618,7 +626,7 @@ let test_dir_config_ebl_modules =
 let test_dir_config_ebl_and_modules =
   Oth.test ~name:"Test Dir Config ebl and modules" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "iam/foo.tf"; "ec2/ec2.tf"; "ebl/ebl.tf"; "lambda/lambda.tf"; "ebl_modules" ]
@@ -653,7 +661,7 @@ let test_dir_config_ebl_and_modules =
 let test_dir_config_s3 =
   Oth.test ~name:"Test Dir Config s3" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:
@@ -694,7 +702,7 @@ let test_dir_config_s3 =
 let test_dir_config_lambda_json =
   Oth.test ~name:"Test Dir Config lambda JSON" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:
@@ -728,7 +736,7 @@ let test_dir_config_lambda_json =
 let test_dir_config_module =
   Oth.test ~name:"Test Dir Config module" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:
@@ -756,7 +764,7 @@ let test_dir_config_module =
 let test_dir_config_null_file_patterns =
   Oth.test ~name:"Test Dir Config null_file_patterns" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:
@@ -809,7 +817,7 @@ let test_recursive_dirs_template_dir =
 
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -874,7 +882,7 @@ let test_recursive_dirs_aws_prod =
 
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -939,7 +947,7 @@ let test_recursive_dirs_tags =
       in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1046,7 +1054,7 @@ let test_recursive_dirs_without_tags =
 
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1138,7 +1146,7 @@ let test_recursive_dirs_without_tags =
 let test_bad_dir_config_iam =
   Oth.test ~name:"Test Bad Dir Config iam" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "iam/foo.tf"; "ebl/ebl.tf"; "s3/s3.tf"; "s3/foo.tf"; "foo.tf" ]
@@ -1158,7 +1166,7 @@ let test_bad_dir_config_iam =
 let test_bad_dir_config_ec2 =
   Oth.test ~name:"Test Bad Dir Config ec2" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "iam/foo.tf"; "ebl/ebl.tf"; "s3/s3.tf"; "s3/foo.tf"; "foo.tf" ]
@@ -1178,7 +1186,7 @@ let test_bad_dir_config_ec2 =
 let test_bad_dir_config_ec2_root_dir_change =
   Oth.test ~name:"Test Bad Dir Config ec2 root dir change" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "iam/foo.tf"; "ebl/ebl.tf"; "s3/s3.tf"; "foo.tf" ]
@@ -1198,7 +1206,7 @@ let test_bad_dir_config_ec2_root_dir_change =
 let test_bad_dir_config_s3 =
   Oth.test ~name:"Test Bad Dir Config s3" (fun _ ->
       let repo_config =
-        Terrat_base_repo_config_v1.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf"; "iam/foo.tf"; "ebl/ebl.tf"; "s3/s3.tf"; "s3/foo.tf"; "foo.tf" ]
@@ -1218,7 +1226,7 @@ let test_module_dir_with_root_dir =
   Oth.test ~name:"Test module dir with root dir" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "foo.tf"; "module/foo/tf.tf" ]
@@ -1292,7 +1300,7 @@ let test_large_directory_count_unmatching_files =
       in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list R.default
+        derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list R.default
       in
       let diff = CCList.map (fun filename -> Terrat_change.Diff.(Change { filename })) file_list in
       let dirs =
@@ -1319,7 +1327,7 @@ let test_large_directory_count_matching_files =
       in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list R.default
+        derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list R.default
       in
       let diff = CCList.map (fun filename -> Terrat_change.Diff.(Change { filename })) file_list in
       let dirs =
@@ -1357,7 +1365,7 @@ let test_large_file_count_with_low_match_count =
       in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list
+        derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list
         @@ R.of_view
         @@ R.View.make
              ~when_modified:(R.When_modified.make ~file_patterns:[] ())
@@ -1399,7 +1407,7 @@ let test_large_file_count_with_low_match_count_lesser_dir_depth =
       in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list
+        derive ~ctx ~index:Terrat_base_repo_config_v1.Index.empty ~file_list
         @@ R.of_view
         @@ R.View.make
              ~when_modified:(R.When_modified.make ~file_patterns:[] ())
@@ -1433,7 +1441,7 @@ let test_large_directory_count_non_default_when_modified =
 
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1463,7 +1471,7 @@ let test_not_match =
   Oth.test ~name:"Test not match" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf" ]
@@ -1493,7 +1501,7 @@ let test_not_match_multiple =
   Oth.test ~name:"Test not match multiple" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "ec2/ec2.tf" ]
@@ -1524,7 +1532,7 @@ let test_relative_path_file_pattern =
   Oth.test ~name:"Test relative path file pattern" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "d/bar/foo/t.tf"; "d/bar/baz/t.tf" ]
@@ -1580,7 +1588,7 @@ let test_relative_path_file_pattern_multiple_dots =
   Oth.test ~name:"Test relative path file pattern multiple dots" (fun _ ->
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list:[ "d/bar/foo/t.tf"; "d/bar/envs/baz/t.tf" ]
@@ -1639,7 +1647,7 @@ let test_index_basic =
       let file_list = [ "modules/foo/main.tf"; "tf/main.tf" ] in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index ~file_list R.default
+        derive ~ctx ~index ~file_list R.default
       in
       let dirs = CCResult.get_exn (Terrat_change_match3.synthesize_config ~index repo_config) in
       let diff = Terrat_change.Diff.[ Add { filename = "modules/foo/main.tf" } ] in
@@ -1660,7 +1668,7 @@ let test_index_with_dirs_section =
       let file_list = [ "modules/foo/main.tf"; "tf/main.tf" ] in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index
           ~file_list
@@ -1690,7 +1698,7 @@ let test_index_module_in_same_dir =
       let file_list = [ "tf/modules/foo/main.tf"; "tf/main.tf" ] in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index ~file_list R.default
+        derive ~ctx ~index ~file_list R.default
       in
       let dirs = CCResult.get_exn (Terrat_change_match3.synthesize_config ~index repo_config) in
       let diff = Terrat_change.Diff.[ Add { filename = "tf/modules/foo/main.tf" } ] in
@@ -1715,7 +1723,7 @@ let test_index_symlinks =
       let file_list = [ "modules/foo/main.tf"; "tf/main.tf" ] in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive ~ctx ~index ~file_list R.default
+        derive ~ctx ~index ~file_list R.default
       in
       let dirs = CCResult.get_exn (Terrat_change_match3.synthesize_config ~index repo_config) in
       let diff = Terrat_change.Diff.[ Add { filename = "modules/foo/main.tf" } ] in
@@ -1736,7 +1744,7 @@ let test_index_symlinks_dir_config =
       let file_list = [ "tf/main.tf"; "null/main.tf" ] in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index
           ~file_list
@@ -1776,7 +1784,7 @@ let test_depends_on =
       let module R = Terrat_base_repo_config_v1 in
       let file_list = [ "base/main.tf"; "database/main.tf" ] in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1817,7 +1825,7 @@ let test_depends_on_multiple_depends =
       let module R = Terrat_base_repo_config_v1 in
       let file_list = [ "base/main.tf"; "database1/main.tf"; "database2/main.tf" ] in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1879,7 +1887,7 @@ let test_depends_on_multiple_depends_2 =
         [ "base/main.tf"; "database1/main.tf"; "database2/main.tf"; "webservice/main.tf" ]
       in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -1963,7 +1971,7 @@ let test_depends_on_multiple_depends_disjoint =
         ]
       in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2052,7 +2060,7 @@ let test_depends_on_cycle =
       let module R = Terrat_base_repo_config_v1 in
       let file_list = [ "base/main.tf"; "database/main.tf" ] in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2113,7 +2121,7 @@ let test_depends_on_relative_dir =
         ]
       in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2188,7 +2196,7 @@ let test_depends_on_prune_on_no_change_chain =
           ()
       in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2244,7 +2252,7 @@ let test_depends_on_prune_on_no_change_all_pruned =
           ()
       in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2271,12 +2279,408 @@ let test_depends_on_prune_on_no_change_all_pruned =
         "CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ \"c\" ] ]"
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c" ] ]))
 
+(* A dirspace belongs in the earliest layer its dependencies allow.
+
+   Configuration here:
+
+     a  depends_on  dir:b
+     b  depends_on  dir:c
+     c  depends_on  nothing
+     d  depends_on  nothing, and nothing depends on d
+
+   [c] and [d] are both changed, so [b] and [a] come in as dependents.  [d] is
+   isolated: it has no dependency and no dependent, so [d] runs in layer 0
+   alongside [c], and the layering is [[c; d]; [b]; [a]].
+
+   This is a regression test for a defect in the layer assignment that
+   [Terrat_change_match3.sort] used before it moved to Kahn's algorithm.  The
+   old code took a topological order from Tsort and scanned it left to right,
+   opening a new layer at each direct-dependency conflict.  Tsort emits every
+   node with no dependent first, and [sort] reversed that list, so an isolated
+   node like [d] always landed at the END of the order, where a left-to-right
+   scan can no longer put it in layer 0.  It produced [[c]; [b; d]; [a]].  Which
+   later layer [d] joined depended on the hash order Tsort returned -- over 650
+   name permutations of this shape, [d] landed with [b] about half the time and
+   with [a] the other half, and in layer 0 never. *)
+let test_layer_is_earliest_possible =
+  Oth.test ~name:"layer is the earliest possible" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let file_list = [ "a/main.tf"; "b/main.tf"; "c/main.tf"; "d/main.tf" ] in
+      let dir_depends_on tag =
+        R.Dirs.Dir.make
+          ~workspaces:
+            (Sln_map.String.of_list
+               [
+                 ( "default",
+                   R.Dirs.Workspace.make
+                     ~when_modified:(R.When_modified.make ~depends_on:(depends_on_q tag) ())
+                     () );
+               ])
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:Terrat_base_repo_config_v1.Index.empty
+          ~file_list
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ("a", dir_depends_on "dir:b");
+                       ("b", dir_depends_on "dir:c");
+                       ("c", R.Dirs.Dir.make ());
+                       ("d", R.Dirs.Dir.make ());
+                     ])
+                ()))
+      in
+      let diff =
+        Terrat_change.Diff.[ Change { filename = "c/main.tf" }; Change { filename = "d/main.tf" } ]
+      in
+      let config =
+        CCResult.get_exn
+          (Terrat_change_match3.synthesize_config
+             ~index:Terrat_base_repo_config_v1.Index.empty
+             repo_config)
+      in
+      let changes = Terrat_change_match3.match_diff_list config diff in
+      let layer_dirs =
+        CCList.map
+          (fun layer ->
+            CCList.sort CCString.compare
+            @@ CCList.map
+                 (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
+                   dirspace.Terrat_dirspace.dir)
+                 layer)
+          changes
+      in
+      (* [d] has no dependency, so [d] belongs in the first layer.  This
+         assertion does not depend on the hash order Tsort returns. *)
+      Oth.Assert.true_
+        "d is in the first layer"
+        (CCList.mem
+           ~eq:CCString.equal
+           "d"
+           (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
+      (* The whole layering, stated as it should be. *)
+      Oth.Assert.true_
+        "layer_dirs = [ [ \"c\"; \"d\" ]; [ \"b\" ]; [ \"a\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "d" ]; [ "b" ]; [ "a" ] ]);
+      ())
+
+(* The same rule as [test_layer_is_earliest_possible], but here [a] depends on
+   the isolated dirspace.  See that test for the defect this guards against.
+
+   Configuration here:
+
+     a  depends_on  dir:b or dir:h
+     b  depends_on  dir:c
+     c  depends_on  nothing
+     h  depends_on  nothing
+
+   [c] and [h] are changed, so [b] and [a] come in as dependents.  [h] depends
+   on nothing, so [h] runs in layer 0 and the layering is [[c; h]; [b]; [a]].
+
+   The directory name [h] is load bearing, so do not rename it.  [b] and [h]
+   have the same single dependent, [a], so the old Tsort-based code made them
+   ready in the same round and returned them in hash order, and whichever the
+   scan reached first opened the layer.  Over 676 name permutations of this
+   shape, 308 put [h] in [b]'s layer and the rest happened to put it in layer 0
+   -- correct by luck, not by construction.  [h] is one of the names that showed
+   the defect, which is why the fixture uses it. *)
+let test_layer_is_earliest_possible_shared_dependent =
+  Oth.test ~name:"layer is the earliest possible with a shared dependent" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let file_list = [ "a/main.tf"; "b/main.tf"; "c/main.tf"; "h/main.tf" ] in
+      let dir_depends_on tag =
+        R.Dirs.Dir.make
+          ~workspaces:
+            (Sln_map.String.of_list
+               [
+                 ( "default",
+                   R.Dirs.Workspace.make
+                     ~when_modified:(R.When_modified.make ~depends_on:(depends_on_q tag) ())
+                     () );
+               ])
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:Terrat_base_repo_config_v1.Index.empty
+          ~file_list
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ("a", dir_depends_on "dir:b or dir:h");
+                       ("b", dir_depends_on "dir:c");
+                       ("c", R.Dirs.Dir.make ());
+                       ("h", R.Dirs.Dir.make ());
+                     ])
+                ()))
+      in
+      let diff =
+        Terrat_change.Diff.[ Change { filename = "c/main.tf" }; Change { filename = "h/main.tf" } ]
+      in
+      let config =
+        CCResult.get_exn
+          (Terrat_change_match3.synthesize_config
+             ~index:Terrat_base_repo_config_v1.Index.empty
+             repo_config)
+      in
+      let changes = Terrat_change_match3.match_diff_list config diff in
+      let layer_dirs =
+        CCList.map
+          (fun layer ->
+            CCList.sort CCString.compare
+            @@ CCList.map
+                 (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
+                   dirspace.Terrat_dirspace.dir)
+                 layer)
+          changes
+      in
+      Oth.Assert.true_
+        "h is in the first layer"
+        (CCList.mem
+           ~eq:CCString.equal
+           "h"
+           (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
+      Oth.Assert.true_
+        "layer_dirs = [ [ \"c\"; \"h\" ]; [ \"b\" ]; [ \"a\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "h" ]; [ "b" ]; [ "a" ] ]);
+      ())
+
+(* [Terrat_change_match3.collect_dependents] must walk each dirspace
+   one time, not each path to it.
+
+   The fixture is a chain of diamonds: level [i] holds two directories, and each
+   of them declares [depends_on] against BOTH directories of level [i - 1].
+   Only one directory of level 0 changes.  The number of paths from it doubles
+   at every level, so a collector with no visited set costs time exponential in
+   the depth while the dirspace count grows by two.  At 24 levels -- 47
+   dirspaces -- that was about 31 seconds, against about a millisecond with the
+   visited set.
+
+   The test asserts the layering and a CPU time bound.  The bound is what makes
+   a regression fail rather than appear as a slow suite.  It is 3 seconds: ten
+   times under the cost of the defect and three thousand times over the cost of
+   the correct code, so neither a fast nor a slow machine changes the verdict.
+   [Oth.timeout] would say this better, but it is [nyi] in the sync backend. *)
+let test_collect_dependents_visits_each_dirspace_once =
+  Oth.test ~name:"collect dependents visits each dirspace one time" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let levels = 24 in
+      let name i j = Printf.sprintf "l%02dw%d" i j in
+      let dir i =
+        if i = 0 then R.Dirs.Dir.make ()
+        else
+          R.Dirs.Dir.make
+            ~workspaces:
+              (Sln_map.String.of_list
+                 [
+                   ( "default",
+                     R.Dirs.Workspace.make
+                       ~when_modified:
+                         (R.When_modified.make
+                            ~depends_on:
+                              (depends_on_q
+                                 (Printf.sprintf
+                                    "dir:%s or dir:%s"
+                                    (name (i - 1) 0)
+                                    (name (i - 1) 1)))
+                            ())
+                       () );
+                 ])
+            ()
+      in
+      let dirs =
+        CCList.flat_map
+          (fun i -> CCList.map (fun j -> (name i j, dir i)) [ 0; 1 ])
+          (CCList.range' 0 levels)
+      in
+      let file_list = CCList.map (fun (n, _) -> n ^ "/main.tf") dirs in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list
+          (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ()))
+      in
+      let config =
+        CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+      in
+      let diff = Terrat_change.Diff.[ Change { filename = name 0 0 ^ "/main.tf" } ] in
+      let start = Sys.time () in
+      let changes = Terrat_change_match3.match_diff_list config diff in
+      let elapsed = Sys.time () -. start in
+      (* One changed directory in layer 0, then two per level after it. *)
+      Oth.Assert.Eq.int ~expected:levels ~actual:(CCList.length changes);
+      Oth.Assert.Eq.int
+        ~expected:(1 + (2 * (levels - 1)))
+        ~actual:(CCList.length (CCList.flatten changes));
+      Oth.Assert.true_ "match_diff_list used less than 3 CPU seconds" (elapsed < 3.0);
+      ())
+
+(* A dirspace that [modified_by] brings into a run must itself bring in the
+   dirspaces that declare [depends_on] against it.
+
+   Configuration here:
+
+     base   stack base
+     other  stack other
+     app    stack app, modified_by [base], plan_after [other]
+     db     depends_on dir:app
+
+   Only [base] changes.  [app] is in stack [app], which is modified_by [base],
+   so [app] runs.  [db] declares [depends_on] against [app], so [db] runs too.
+
+   The explicit [plan_after] is what makes this the interesting case.  A stack
+   that names [modified_by] and no [plan_after] gets [plan_after] from
+   [modified_by] when the configuration is decoded, which puts an edge in the
+   topology.  Naming [plan_after] keeps that edge away, so nothing in the
+   topology joins [base] to [app], and [app] can only arrive through the
+   [modified_by] lookup.  The collector used to follow the two relations one
+   after the other, so a dirspace that arrived by [modified_by] was never
+   expanded again and [db] was lost. *)
+let test_modified_by_pull_collects_depends_on =
+  Oth.test ~name:"a modified_by pull collects its depends_on dependents" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let file_list = [ "base/main.tf"; "other/main.tf"; "app/main.tf"; "db/main.tf" ] in
+      let stack ?rules name =
+        R.Stacks.Stack.make
+          ~type_:
+            (R.Stacks.Type_.Stack (CCResult.get_exn (Terrat_tag_query.of_string ("dir:" ^ name))))
+          ?rules
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ("base", R.Dirs.Dir.make ());
+                       ("other", R.Dirs.Dir.make ());
+                       ("app", R.Dirs.Dir.make ());
+                       ( "db",
+                         R.Dirs.Dir.make
+                           ~workspaces:
+                             (Sln_map.String.of_list
+                                [
+                                  ( "default",
+                                    R.Dirs.Workspace.make
+                                      ~when_modified:
+                                        (R.When_modified.make
+                                           ~depends_on:(depends_on_q "dir:app")
+                                           ())
+                                      () );
+                                ])
+                           () );
+                     ])
+                ~stacks:
+                  (R.Stacks.make
+                     ~names:
+                       (Sln_map.String.of_list
+                          [
+                            ("base", stack "base");
+                            ("other", stack "other");
+                            ("db", stack "db");
+                            ( "app",
+                              stack
+                                ~rules:
+                                  (R.Stacks.Rules.make
+                                     ~modified_by:[ "base" ]
+                                     ~plan_after:[ "other" ]
+                                     ())
+                                "app" );
+                          ])
+                     ())
+                ()))
+      in
+      let diff = Terrat_change.Diff.[ Change { filename = "base/main.tf" } ] in
+      let config =
+        CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+      in
+      let layer_dirs =
+        CCList.map
+          (fun layer ->
+            CCList.sort CCString.compare
+            @@ CCList.map
+                 (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
+                   dirspace.Terrat_dirspace.dir)
+                 layer)
+          (Terrat_change_match3.match_diff_list config diff)
+      in
+      Oth.Assert.true_
+        "layer_dirs = [ [ \"app\"; \"base\" ]; [ \"db\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "app"; "base" ]; [ "db" ] ]);
+      ())
+
+(* [modified_by] may name a cycle.  [assert_no_stack_cycle] covers nested
+   stacks, [plan_after] and [apply_after], but not [modified_by], so
+   [synthesize_config] accepts stack [a] modified_by [b] and stack [b]
+   modified_by [a].  The collector must end on its own.  Both dirspaces run,
+   and neither declares an order over the other, so both are in one layer. *)
+let test_modified_by_cycle_terminates =
+  Oth.test ~name:"a modified_by cycle terminates" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let file_list = [ "a/main.tf"; "b/main.tf" ] in
+      let stack name modified_by =
+        R.Stacks.Stack.make
+          ~type_:
+            (R.Stacks.Type_.Stack (CCResult.get_exn (Terrat_tag_query.of_string ("dir:" ^ name))))
+          ~rules:(R.Stacks.Rules.make ~modified_by ())
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list [ ("a", R.Dirs.Dir.make ()); ("b", R.Dirs.Dir.make ()) ])
+                ~stacks:
+                  (R.Stacks.make
+                     ~names:
+                       (Sln_map.String.of_list
+                          [ ("a", stack "a" [ "b" ]); ("b", stack "b" [ "a" ]) ])
+                     ())
+                ()))
+      in
+      let diff = Terrat_change.Diff.[ Change { filename = "a/main.tf" } ] in
+      let config =
+        CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+      in
+      let layer_dirs =
+        CCList.map
+          (fun layer ->
+            CCList.sort CCString.compare
+            @@ CCList.map
+                 (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
+                   dirspace.Terrat_dirspace.dir)
+                 layer)
+          (Terrat_change_match3.match_diff_list config diff)
+      in
+      Oth.Assert.true_
+        "layer_dirs = [ [ \"a\"; \"b\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "a"; "b" ] ]);
+      ())
+
 let test_force_matches_not_pruned =
   Oth.test ~name:"force_matches not pruned" (fun _ ->
       let module R = Terrat_base_repo_config_v1 in
       let file_list = [ "a/main.tf"; "b/main.tf" ] in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2332,7 +2736,7 @@ let test_files_in_same_dir_match_multiple_dirs =
       let module R = Terrat_base_repo_config_v1 in
       let file_list = [ "projects/dir1/file1"; "projects/dir1/file2" ] in
       let repo_config =
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2411,7 +2815,7 @@ let test_large_directory_timing =
       let file_list = tf_files @ other_files in
       let repo_config =
         let module R = Terrat_base_repo_config_v1 in
-        R.derive
+        derive
           ~ctx
           ~index:Terrat_base_repo_config_v1.Index.empty
           ~file_list
@@ -2524,6 +2928,11 @@ let test =
       test_depends_on_prune_on_no_change_chain;
       test_depends_on_prune_on_no_change_all_pruned;
       test_force_matches_not_pruned;
+      test_layer_is_earliest_possible;
+      test_layer_is_earliest_possible_shared_dependent;
+      test_collect_dependents_visits_each_dirspace_once;
+      test_modified_by_pull_collects_depends_on;
+      test_modified_by_cycle_terminates;
       test_files_in_same_dir_match_multiple_dirs;
       test_large_directory_timing;
     ]
