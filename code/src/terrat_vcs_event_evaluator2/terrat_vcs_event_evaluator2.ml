@@ -130,6 +130,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         (* A Noop isn't an error, it just means tehre is nothing to do *)
         Logs.info (fun m -> m "%s : %a" request_id Builder.pp_err err);
         Abbs_future_combinators.return_ok `Noop
+    | Error (`Rerun _ as err) ->
+        (* A Rerun isn't an error either.  It has to become an [Ok] here or the
+           [tx] rolls back the very write the evaluation asked to commit, and
+           then the next pass finds nothing and asks again, forever. *)
+        Logs.info (fun m -> m "%s : %a" request_id Builder.pp_err err);
+        Abbs_future_combinators.return_ok err
     | Error #err as err -> Abb.Future.return err
 
   let log_err ~request_id fut =
@@ -137,6 +143,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       (function
         | `Det (Ok ret) -> Abbs_future_combinators.return_ok ret
         | `Det (Error (`Suspend_eval _) as err) -> Abb.Future.return err
+        (* Not an error: the evaluation committed something and asked for a
+           fresh transaction.  Logging it through the error path below would
+           report a working evaluation as a failure. *)
+        | `Det (Error (`Rerun _) as err) -> Abb.Future.return err
         | `Det (Error (#Builder.err as err)) ->
             Logs.err (fun m -> m "%s : %a" request_id Builder.pp_err err);
             Abbs_future_combinators.return_err err
@@ -354,8 +364,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                             ~tasks:(Tasks_pr.tasks tasks)
                             ()
                           >>= fun s -> tx_safe ~request_id @@ Builder.eval s Keys.run_next_layer))
-              | (`Suspend_eval _ | `Noop) as r -> Abbs_future_combinators.return_ok r)
-          | Ok (_, (`Suspend_eval _ as r)) -> Abbs_future_combinators.return_ok r
+              | (`Suspend_eval _ | `Noop | `Rerun _) as r -> Abbs_future_combinators.return_ok r)
+          (* [`Rerun] is handled like [`Suspend_eval] everywhere except
+             [work_manifest_result], which is the only entry point that drives
+             the loop: the transaction has committed and the evaluation stops,
+             to be re-driven by the next event.  Only a work manifest result can
+             raise it today -- a pull request event evaluates the work manifest
+             state machines through [create], not [result] -- so these arms are
+             a guard against a future task adopting the signal, not a live
+             path. *)
+          | Ok (_, ((`Suspend_eval _ | `Rerun _) as r)) -> Abbs_future_combinators.return_ok r
           | Error err ->
               let open Irm in
               Logs.info (fun m ->
@@ -549,7 +567,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         log_err ~request_id run
         >>= function
         | Ok (`Ok r) -> Abbs_future_combinators.return_ok r
-        | Ok (`Suspend_eval _) | Ok `Noop | Error _ -> Abbs_future_combinators.return_err `Error)
+        | Ok (`Suspend_eval _) | Ok `Noop | Ok (`Rerun _) | Error _ ->
+            Abbs_future_combinators.return_err `Error)
       ~finally:(fun () ->
         Fc.ignore
         @@ Abb.Future.fork
@@ -583,7 +602,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 ~while_:
                   (Fc.finite_tries 50 (function
                     | Ok (`Ok n) -> n > 0
-                    | Ok (`Noop | `Suspend_eval _) | Error _ -> true))
+                    | Ok (`Noop | `Suspend_eval _ | `Rerun _) | Error _ -> true))
                 ~betwixt:(fun _ -> Fc.unit))
       | Some _ ->
           let ctx = Legacy.Ctx.make ~config ~storage ~request_id () in
@@ -668,40 +687,69 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | `New_age -> (
           let open Abb.Future.Infix_monad in
           with_conn storage ~f:(fun db ->
-              Pgsql_io.tx db ~f:(fun () ->
-                  let open Irm in
-                  query_job db
-                  >>= function
-                  | Some job ->
-                      query_work_manifest db
-                      >>= fun work_manifest ->
-                      query_compute_node db
-                      >>= fun compute_node ->
-                      let work_manifest_event =
-                        Keys.Work_manifest_event.Result { work_manifest; result }
-                      in
-                      let store =
-                        Hmap.empty
-                        |> Keys.Key.add Keys.compute_node compute_node
-                        |> Keys.Key.add Keys.work_manifest_event (Some work_manifest_event)
-                      in
-                      let open Abb.Future.Infix_monad in
-                      Builder.State.make ~log_id:request_id ~config ~store ~db ~exec ~tasks ()
-                      >>= fun s ->
-                      let open Irm in
-                      let target = Keys.eval_work_manifest_event in
-                      Logs.info (fun m ->
-                          m "%s : target=%s" (Builder.log_id s) (Hmap.Key.info target));
-                      tx_safe ~request_id @@ Builder.eval s target
-                      >>= fun r -> Abbs_future_combinators.return_ok (s, work_manifest, job, r)
-                  | None ->
-                      Logs.info (fun m ->
-                          m
-                            "%s : JOB_MISSING_FOR_WORK_MANIFEST : work_manifest_id= %a"
-                            request_id
-                            Uuidm.pp
-                            work_manifest_id);
-                      Abbs_future_combinators.return_err `Error))
+              (* An evaluation that commits something durable ends its
+                 transaction there and asks to be re-run, so the rows it wrote
+                 are not held for the rest of the job.  Each pass is a fresh
+                 transaction on this same connection, as
+                 [run_missing_drift_schedules] already does, and [reruns] carries
+                 what earlier passes committed.
+
+                 A payload is recorded only after its transaction committed, so
+                 seeing one twice means the pass committed nothing new and
+                 another would loop.  That is a broken task, not a user error,
+                 so it fails loudly. *)
+              let rec eval_with_reruns reruns =
+                Pgsql_io.tx db ~f:(fun () ->
+                    let open Irm in
+                    query_job db
+                    >>= function
+                    | Some job ->
+                        query_work_manifest db
+                        >>= fun work_manifest ->
+                        query_compute_node db
+                        >>= fun compute_node ->
+                        let work_manifest_event =
+                          Keys.Work_manifest_event.Result { work_manifest; result }
+                        in
+                        let store =
+                          Hmap.empty
+                          |> Keys.Key.add Keys.compute_node compute_node
+                          |> Keys.Key.add Keys.work_manifest_event (Some work_manifest_event)
+                          |> Keys.Key.add Keys.reruns reruns
+                        in
+                        let open Abb.Future.Infix_monad in
+                        Builder.State.make ~log_id:request_id ~config ~store ~db ~exec ~tasks ()
+                        >>= fun s ->
+                        let open Irm in
+                        let target = Keys.eval_work_manifest_event in
+                        Logs.info (fun m ->
+                            m "%s : target=%s" (Builder.log_id s) (Hmap.Key.info target));
+                        tx_safe ~request_id @@ Builder.eval s target
+                        >>= fun r -> Abbs_future_combinators.return_ok (s, work_manifest, job, r)
+                    | None ->
+                        Logs.info (fun m ->
+                            m
+                              "%s : JOB_MISSING_FOR_WORK_MANIFEST : work_manifest_id= %a"
+                              request_id
+                              Uuidm.pp
+                              work_manifest_id);
+                        Abbs_future_combinators.return_err `Error)
+                >>= function
+                | Ok (_, _, _, `Rerun id) when CCList.mem ~eq:CCString.equal id reruns ->
+                    Logs.err (fun m -> m "%s : RERUN : NO_PROGRESS : id=%s" request_id id);
+                    Abbs_future_combinators.return_err `Error
+                | Ok (_, _, _, `Rerun id) ->
+                    Logs.info (fun m -> m "%s : RERUN : id=%s" request_id id);
+                    eval_with_reruns (id :: reruns)
+                (* Spelled out rather than a wildcard so the loop's result type
+                   has no [`Rerun] in it.  The rest of this function then stays
+                   exhaustive without an arm for a case the loop has already
+                   consumed. *)
+                | Ok (s, work_manifest, job, ((`Ok _ | `Suspend_eval _ | `Noop) as r)) ->
+                    Abbs_future_combinators.return_ok (s, work_manifest, job, r)
+                | Error _ as err -> Abb.Future.return err
+              in
+              eval_with_reruns [])
           >>= function
           | Ok (s, work_manifest, job, `Ok _) ->
               (* We've calculated the API response, so background running the next
@@ -808,7 +856,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                              Fc.ignore
                              @@ Abb.Future.fork
                              @@ run_next_pending_compute ~request_id ~config ~storage ~exec ())
-                     | (Ok (`Suspend_eval _ | `Noop) | Error _) as r -> Abb.Future.return r)
+                     | (Ok (`Suspend_eval _ | `Noop | `Rerun _) | Error _) as r ->
+                         Abb.Future.return r)
                    ~finally:(fun () ->
                      Fc.ignore
                      @@ Abb.Future.fork
