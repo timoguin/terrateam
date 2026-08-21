@@ -2782,6 +2782,27 @@ struct
             Builder.run_db s ~f:(fun db -> update_job_state_failed s job_id db)
         | Some _ | None -> Abbs_future_combinators.return_ok ()
       in
+      (* The run is dead: it can no longer post a result.  Nothing else takes the
+         work manifest out of [running], and a work manifest that runs holds back
+         every apply queued against its dirspaces, so end it here. *)
+      let abort_dead_work_manifest s work_manifest_id =
+        Builder.run_db s ~f:(fun db ->
+            time_it
+              s
+              (fun m log_id time ->
+                m
+                  "%s : WORK_MANIFEST : ABORT_DEAD : work_manifest_id = %a : time=%f"
+                  log_id
+                  Uuidm.pp
+                  work_manifest_id
+                  time)
+              (fun () ->
+                S.Work_manifest.update_state
+                  ~request_id:(Builder.log_id s)
+                  db
+                  work_manifest_id
+                  Wm.State.Aborted))
+      in
       let bail_out_aborted s work_manifest_id run_id =
         let open Irm in
         Logs.info (fun m ->
@@ -2823,7 +2844,12 @@ struct
               Abbs_future_combinators.return_err `Noop
           | Some { Wm.state = Wm.State.Aborted; id = work_manifest_id; _ } ->
               bail_out_aborted s work_manifest_id run_id
-          | Some work_manifest -> dispatch_fail_event s work_manifest run_id)
+          | Some work_manifest ->
+              (* Abort before the event is dispatched, not after: the dispatch
+                 publishes the failure and then suspends, so there is no "after"
+                 to run in. *)
+              abort_dead_work_manifest s work_manifest.Wm.id
+              >>= fun () -> dispatch_fail_event s work_manifest run_id)
 
     let eval_push_event =
       run ~name:"eval_push_event" (fun s { Bs.Fetcher.fetch } ->

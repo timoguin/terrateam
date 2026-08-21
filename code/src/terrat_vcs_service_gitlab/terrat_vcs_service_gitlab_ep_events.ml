@@ -220,10 +220,12 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
               Evaluator2.Pull_request_event.Close
         | _ -> raise (Failure "nyi"))
     | E.Pipeline_event _ -> Abbs_future_combinators.return_ok ()
+    (* A canceled job posts no result either, so it leaves the same dead work
+       manifest behind as a failed one. *)
     | E.Job_event
         {
           Je.build_id = run_id;
-          build_status = "failed";
+          build_status = "canceled" | "failed";
           project = { Pr.id = repo_id; path_with_namespace; _ };
           _;
         } ->

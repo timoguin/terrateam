@@ -314,6 +314,84 @@ let test_missing_plans_mixed_reasons =
       Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #12";
       Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed")
 
+(* The [work_manifests] payload both providers build for every message that lists work manifests,
+   see [work_manifests_kv] in the service providers. *)
+let work_manifests_kv rows =
+  Snabela.Kv.(
+    Map.of_list
+      [
+        ( "work_manifests",
+          list
+            (CCList.map
+               (fun (id, is_pr, run_type, state, created_at) ->
+                 Map.of_list
+                   [
+                     ("id", string id);
+                     ("is_pr", bool is_pr);
+                     ("run_type", string run_type);
+                     ("state", string state);
+                     ("created_at", string created_at);
+                   ])
+               rows) );
+      ])
+
+let render_snabela template kv =
+  match Snabela.apply template kv with
+  | Ok body -> body
+  | Error (#Snabela.err as err) -> failwith (Snabela.show_err err)
+
+(* An apply that waits behind running work has to name that work, and give the unlock command that
+   clears it.  A pull request blocker unlocks by number.  See #1968. *)
+let test_apply_queued_behind_pull_request =
+  Oth.test ~name:"Apply queued behind a pull request" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.apply_queued_behind_work_manifests
+          (work_manifests_kv [ ("42", true, "Plan", "Running", "2026-8-21 9:14") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Apply queued";
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "#42"; "Plan"; "Running"; "terrateam unlock 42" ])
+
+(* A drift blocker unlocks with [terrateam unlock drift], not with a number.  A drift run has no
+   pull request, so it must not be printed as one. *)
+let test_apply_queued_behind_drift =
+  Oth.test ~name:"Apply queued behind drift" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.apply_queued_behind_work_manifests
+          (work_manifests_kv [ ("drift", false, "Plan", "Running", "2026-8-21 0:02") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam unlock drift";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"#drift")
+
+(* One command unlocks both kinds of blocker at the same time. *)
+let test_apply_queued_behind_both_kinds =
+  Oth.test ~name:"Apply queued behind a pull request and drift" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.apply_queued_behind_work_manifests
+          (work_manifests_kv
+             [
+               ("42", true, "Plan", "Running", "2026-8-21 9:14");
+               ("drift", false, "Plan", "Running", "2026-8-21 0:02");
+             ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam unlock 42 drift")
+
+(* The conflict message covers a queued apply as well as a running one, so it must not claim the
+   apply is in progress.  The system tests match on this title. *)
+let test_conflicting_work_manifests_title =
+  Oth.test ~name:"Conflicting work manifests title" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.conflicting_work_manifests
+          (work_manifests_kv [ ("42", true, "Apply", "Queued", "2026-8-21 9:25") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Apply already queued or running";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Apply already in progress")
+
 let test =
   Oth.parallel
     [
@@ -336,6 +414,10 @@ let test =
       test_missing_plans_invalidated;
       test_missing_plans_last_run_failed;
       test_missing_plans_mixed_reasons;
+      test_apply_queued_behind_pull_request;
+      test_apply_queued_behind_drift;
+      test_apply_queued_behind_both_kinds;
+      test_conflicting_work_manifests_title;
     ]
 
 let () =

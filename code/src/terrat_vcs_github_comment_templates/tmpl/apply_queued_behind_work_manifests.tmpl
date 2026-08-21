@@ -1,0 +1,30 @@
+## Apply queued :hourglass_flowing_sand:
+This apply is queued.  Work is already running against directories and workspaces it touches, and an apply waits for that work to finish.
+
+The apply starts on its own when the work below completes.  You do not have to comment again.
+
+<details>
+   <summary><h3>Waiting for</h3></summary>
+
+| Pull Request | Operation | State | Created At |
+| --- | --- | --- | --- |
+@#work_manifests-@
+| @?is_pr-@ #@id@ @-/is_pr@@!is_pr-@ @id@ @-/is_pr@ | @run_type@ | @state@ | @created_at@ UTC |
+@/work_manifests-@
+
+If these runs are not really running, for example their GitHub Actions workflow was cancelled or never started, unlock them by commenting in any pull request:
+
+```
+terrateam unlock@-#work_manifests@ @id@@/work_manifests@
+```
+
+An unlock of a pull request also cancels this queued apply.  Comment `terrateam apply` again after such an unlock.
+
+**Be careful when unlocking.**  Make sure that these runs are actually stuck by verifying if there are any running GitHub Actions workflows.
+
+For further support:
+
+- Join our [Slack community](https://slack.terrateam.io/) (Fastest)
+- Email us directly at support@@terrateam.io
+
+</details>

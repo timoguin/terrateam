@@ -658,22 +658,33 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
         Abbs_future_combinators.return_ok ()
 
+  (* A job that ends in any of these posts no result, so its work manifest is
+     dead and has to be ended.  A concurrency group, a user cancel and a queue
+     timeout all report [cancelled], and none of them were heard at all while
+     this only matched [failure]. *)
+  let is_dead_conclusion = function
+    | "cancelled" | "failure" | "stale" | "timed_out" -> true
+    | _ -> false
+
   let process_workflow_job request_id config storage exec event =
     match event with
     | {
      Gw.Workflow_job_event.installation = Some { Gw.Installation_lite.id = installation_id; _ };
      repository;
-     workflow_job = { Gw.Workflow_job.run_id; conclusion = Some "failure"; _ };
+     workflow_job = { Gw.Workflow_job.run_id; conclusion = Some conclusion; _ };
      sender;
      _;
-    } ->
+    }
+      when is_dead_conclusion conclusion ->
         Logs.info (fun m ->
             m
-              "%s : WORKFLOW_JOB_EVENT : FAILURE : owner = %s : repo = %s : run_id = %d"
+              "%s : WORKFLOW_JOB_EVENT : FAILURE : owner = %s : repo = %s : run_id = %d : \
+               conclusion = %s"
               request_id
               repository.Gw.Repository.owner.Gw.User.login
               repository.Gw.Repository.name
-              run_id);
+              run_id
+              conclusion);
         let account = P.Api.Account.make installation_id in
         let repo =
           P.Api.Repo.make
