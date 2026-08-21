@@ -155,6 +155,8 @@ module Msg = struct
     | Apply_no_matching_dirspaces of Terrat_tag_query.t
     | Apply_requirements_config_err of [ Terrat_tag_query_ast.err | `Invalid_query of string ]
     | Apply_requirements_validation_err
+    | Apply_queued_behind_work_manifests of
+        ('account, 'target) Terrat_work_manifest3.Existing.t list
     | Autoapply_running
     | Automerge_failure of ('pull_request * string)
     | Bad_custom_branch_tag_pattern of (string * string)
@@ -449,6 +451,24 @@ module type S = sig
         Terrat_work_manifest3.Existing.t
         Conflicting_work_manifests.t
         option,
+        [> `Error ] )
+      result
+      Abb.Future.t
+
+    (* The work manifests that are running against [dirspaces], so an apply
+       queued against them cannot start yet.  These are not conflicts: the apply
+       is queued and will run once they finish.  [job_id] is the job asking, its
+       own work manifests are never reported. *)
+    val query_blocking_work_manifests_in_repo_for_context :
+      request_id:string ->
+      job_id:Uuidm.t ->
+      t ->
+      (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
+      Terrat_change.Dirspace.t list ->
+      ( ( Api.Account.t,
+          ((unit, unit) Api.Pull_request.t, Api.Repo.t) Target.t )
+        Terrat_work_manifest3.Existing.t
+        list,
         [> `Error ] )
       result
       Abb.Future.t

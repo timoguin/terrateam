@@ -67,6 +67,9 @@ module Db = struct
       op =
     raise (Failure "nyi")
 
+  let query_blocking_work_manifests_in_repo_for_context ~request_id ~job_id db context dirspaces =
+    raise (Failure "nyi")
+
   let query_dirspaces_owned_by_other_pull_requests ~request_id db pull_request dirspaces =
     raise (Failure "nyi")
 

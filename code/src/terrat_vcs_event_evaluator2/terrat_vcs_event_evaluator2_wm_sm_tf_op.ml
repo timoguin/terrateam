@@ -792,12 +792,65 @@ struct
           | _ -> Abbs_future_combinators.return_ok ())
       | _ -> Abbs_future_combinators.return_ok ()
 
+    (* The apply is created and queued, but the dispatcher does not start it
+       while other work runs against its dirspaces.  Nothing downstream speaks
+       again until that work finishes, so say what the apply waits for.  Without
+       this the reaction on the comment is the only answer the user gets. *)
+    let maybe_comment_queued_behind wms s { Bs.Fetcher.fetch } =
+      let module Tjc = Terrat_job_context in
+      let open Irm in
+      let dirspaces =
+        CCList.flat_map
+          (fun { Wm.changes; _ } ->
+            CCList.map (fun { Terrat_change.Dirspaceflow.dirspace; _ } -> dirspace) changes)
+          wms
+      in
+      fetch Keys.context
+      >>= function
+      (* A drift apply has nowhere to publish, so there is nothing to say and no
+         reason to ask the question. *)
+      | { Tjc.Context.scope = Tjc.Context.Scope.Branch _; _ } ->
+          Abbs_future_combinators.return_ok ()
+      | context -> (
+          match dirspaces with
+          | [] -> Abbs_future_combinators.return_ok ()
+          | dirspaces -> (
+              fetch Keys.job
+              >>= fun job ->
+              Builder.run_db s ~f:(fun db ->
+                  S.Db.query_blocking_work_manifests_in_repo_for_context
+                    ~request_id:(Builder.log_id s)
+                    ~job_id:job.Tjc.Job.id
+                    db
+                    context
+                    dirspaces)
+              >>= function
+              | [] -> Abbs_future_combinators.return_ok ()
+              | blocking_wms ->
+                  CCList.iter
+                    (fun { Wm.id; _ } ->
+                      Logs.info (fun m ->
+                          m
+                            "%s : APPLY_QUEUED_BEHIND_WORK_MANIFEST : id=%a"
+                            (Builder.log_id s)
+                            Uuidm.pp
+                            id))
+                    blocking_wms;
+                  fetch Keys.publish_comment
+                  >>= fun publish_comment ->
+                  publish_comment'
+                    publish_comment
+                    (Msg.Apply_queued_behind_work_manifests blocking_wms)))
+
     let create ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
       let open Irm in
       fetch Keys.can_run_apply
       >>= fun () ->
       maybe_comment_autoapply_running s fetcher
-      >>= fun () -> create ~dest_branch_ref ~branch_ref ~branch `Apply s fetcher
+      >>= fun () ->
+      create ~dest_branch_ref ~branch_ref ~branch `Apply s fetcher
+      >>= fun wms ->
+      maybe_comment_queued_behind wms s fetcher >>= fun () -> Abbs_future_combinators.return_ok wms
 
     let initiate ({ Wm.id; _ } as work_manifest) s { Bs.Fetcher.fetch } =
       let open Irm in

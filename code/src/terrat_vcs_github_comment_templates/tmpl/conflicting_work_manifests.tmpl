@@ -1,12 +1,14 @@
-## Apply already in progress :heavy_multiplication_x:
+## Apply already queued or running :heavy_multiplication_x:
 An apply is already queued or running against directories and workspaces this operation touches, so it was not started.  Only one apply runs against a directory and workspace at a time, and a second apply is not queued behind the first.
+
+The State column below says whether that apply runs now or still waits.  A queued apply starts on its own once the work ahead of it finishes.
 
 Wait for the apply below to finish, then comment `terrateam apply` again.  If that apply belongs to another pull request, plan again first, because an apply supersedes any plan made against those directories and workspaces before it ran.
 
 Plans do not have to wait like this.  A plan against those directories and workspaces is queued automatically and runs once the apply has completed.
 
 <details>
-   <summary><h3>Apply in progress</h3></summary>
+   <summary><h3>Apply already queued or running</h3></summary>
 
 | Pull Request | Operation | State | Created At |
 | --- | --- | --- | --- |

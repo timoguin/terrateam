@@ -62,6 +62,9 @@ module Tmpl = struct
 
   let conflicting_work_manifests = read [%blob "tmpl/conflicting_work_manifests.tmpl"]
 
+  let apply_queued_behind_work_manifests =
+    read [%blob "tmpl/apply_queued_behind_work_manifests.tmpl"]
+
   let synthesize_config_err_stack_cycle =
     jinja [%blob "tmpl/synthesize_config_err_stack_cycle.tmpl"]
 

@@ -625,6 +625,21 @@ module Db = struct
         /% Var.(str_array (text "workspaces"))
         /% Var.uuid "job_id")
 
+    let select_blocking_work_manifests_in_repo_for_context_query =
+      read [%blob "sql/select_blocking_work_manifests_in_repo_for_context.sql"]
+
+    let select_blocking_work_manifests_in_repo_for_context () =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* id *)
+        Ret.uuid
+        /^ select_blocking_work_manifests_in_repo_for_context_query
+        /% Var.(ud (uuid "context_id") (fun c -> c.Terrat_job_context.Context.id))
+        /% Var.(str_array (text "dirs"))
+        /% Var.(str_array (text "workspaces"))
+        /% Var.uuid "job_id")
+
     let select_dirspaces_owned_by_other_pull_requests_query =
       read [%blob "sql/select_dirspaces_owned_by_other_pull_requests.sql"]
 
@@ -1982,6 +1997,38 @@ module Db = struct
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
         Abbs_future_combinators.return_err `Error
 
+  let query_blocking_work_manifests_in_repo_for_context ~request_id ~job_id db context dirspaces =
+    let dirs = CCList.map (fun Terrat_change.Dirspace.{ dir; _ } -> dir) dirspaces in
+    let workspaces =
+      CCList.map (fun Terrat_change.Dirspace.{ workspace; _ } -> workspace) dirspaces
+    in
+    let run =
+      let open Abbs_future_combinators.Infix_result_monad in
+      Metrics.Psql_query_time.time
+        (Metrics.psql_query_time "select_blocking_work_manifests_in_repo_for_context")
+        (fun () ->
+          Pgsql_io.Prepared_stmt.fetch
+            db
+            (Sql.select_blocking_work_manifests_in_repo_for_context ())
+            ~f:CCFun.id
+            context
+            dirs
+            workspaces
+            job_id)
+      >>= fun ids ->
+      Abbs_future_combinators.List_result.map ~f:(query_work_manifest ~request_id db) ids
+      >>= fun wms -> Abbs_future_combinators.return_ok (CCList.filter_map CCFun.id wms)
+    in
+    let open Abb.Future.Infix_monad in
+    run
+    >>= function
+    | Ok wms -> Abbs_future_combinators.return_ok wms
+    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
   let query_dirspaces_owned_by_other_pull_requests ~request_id db pull_request dirspaces =
     let open Abb.Future.Infix_monad in
     Metrics.Psql_query_time.time
@@ -3070,6 +3117,64 @@ module Comment = struct
              kv
     | `Stack_config_tag_query_err _err -> raise (Failure "nyi")
 
+  (* Every message that lists work manifests renders the same table, so they all
+     build their [work_manifests] key here.  [name] only names the caller in the
+     exception a work manifest with no steps would raise. *)
+  let work_manifests_kv ~name wms =
+    let module Wm = Terrat_work_manifest3 in
+    Snabela.Kv.(
+      list
+        (CCList.map
+           (fun { Wm.created_at; steps; state; target; _ } ->
+             let id, is_pr =
+               match target with
+               | Terrat_vcs_provider2.Target.Pr pr ->
+                   (CCInt.to_string (Api.Pull_request.id pr), true)
+               | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
+             in
+             Map.of_list
+               [
+                 ("id", string id);
+                 ("is_pr", bool is_pr);
+                 ( "run_type",
+                   string
+                     (CCString.capitalize_ascii
+                        (Wm.Step.to_string (CCOption.get_exn_or name (CCList.last_opt steps)))) );
+                 ("state", string (CCString.capitalize_ascii (Wm.State.to_string state)));
+                 ( "created_at",
+                   string
+                     (let Unix.{ tm_year; tm_mon; tm_mday; tm_hour; tm_min; _ } =
+                        Unix.gmtime (ISO8601.Permissive.datetime created_at)
+                      in
+                      Printf.sprintf
+                        "%d-%d-%d %d:%d"
+                        (1900 + tm_year)
+                        (tm_mon + 1)
+                        tm_mday
+                        tm_hour
+                        tm_min) );
+               ])
+           wms))
+
+  (* One row per target, so a merge request with several work manifests against
+     these dirspaces is named one time. *)
+  let uniq_work_manifests_by_target wms =
+    let module Wm = Terrat_work_manifest3 in
+    let module Key = struct
+      type t = string * bool [@@deriving ord]
+    end in
+    CCList.map
+      (fun ({ Wm.target; _ } as wm) ->
+        let id, is_pr =
+          match target with
+          | Terrat_vcs_provider2.Target.Pr pr -> (CCInt.to_string (Api.Pull_request.id pr), true)
+          | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
+        in
+        ((id, is_pr), wm))
+      wms
+    |> CCList.sort_uniq ~cmp:(fun (a, _) (b, _) -> Key.compare a b)
+    |> CCList.map snd
+
   let publish_comment ~request_id client user pull_request =
     let module Gcm_api = Terrat_vcs_gitlab_comment_publishers.Comment_api in
     let module Msg = Terrat_vcs_provider2.Msg in
@@ -3351,6 +3456,24 @@ module Comment = struct
           "APPLY_REQUIREMENTS_VALIDATION_ERR"
           Tmpl.apply_requirements_validation_err
           kv
+    | Msg.Apply_queued_behind_work_manifests wms ->
+        let kv =
+          Snabela.Kv.(
+            Map.of_list
+              [
+                ( "work_manifests",
+                  work_manifests_kv
+                    ~name:"Apply_queued_behind_work_manifests"
+                    (uniq_work_manifests_by_target wms) );
+              ])
+        in
+        Gcm_api.apply_template_and_publish
+          ~request_id
+          client
+          pull_request
+          "APPLY_QUEUED_BEHIND_WORK_MANIFESTS"
+          Tmpl.apply_queued_behind_work_manifests
+          kv
     | Msg.Autoapply_running ->
         let kv = Snabela.Kv.(Map.of_list []) in
         Gcm_api.apply_template_and_publish
@@ -3400,64 +3523,14 @@ module Comment = struct
           Tmpl.build_tree_failure
           kv
     | Msg.Conflicting_work_manifests wms ->
-        let module Wm = Terrat_work_manifest3 in
-        let wms =
-          let module Key = struct
-            type t = string * bool [@@deriving ord]
-          end in
-          CCList.map
-            (fun ({ Wm.target; _ } as wm) ->
-              let id, is_pr =
-                match target with
-                | Terrat_vcs_provider2.Target.Pr pr ->
-                    (CCInt.to_string (Api.Pull_request.id pr), true)
-                | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
-              in
-              ((id, is_pr), wm))
-            wms
-          |> CCList.sort_uniq ~cmp:(fun (a, _) (b, _) -> Key.compare a b)
-          |> CCList.map snd
-        in
         let kv =
           Snabela.Kv.(
             Map.of_list
               [
                 ( "work_manifests",
-                  list
-                    (CCList.map
-                       (fun { Wm.created_at; steps; state; target; _ } ->
-                         let id, is_pr =
-                           match target with
-                           | Terrat_vcs_provider2.Target.Pr pr ->
-                               (CCInt.to_string (Api.Pull_request.id pr), true)
-                           | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
-                         in
-                         Map.of_list
-                           [
-                             ("id", string id);
-                             ("is_pr", bool is_pr);
-                             ( "run_type",
-                               string
-                                 (CCString.capitalize_ascii
-                                    (Wm.Step.to_string
-                                       (CCOption.get_exn_or
-                                          "Conflicting_work_manifests"
-                                          (CCList.last_opt steps)))) );
-                             ("state", string (CCString.capitalize_ascii (Wm.State.to_string state)));
-                             ( "created_at",
-                               string
-                                 (let Unix.{ tm_year; tm_mon; tm_mday; tm_hour; tm_min; _ } =
-                                    Unix.gmtime (ISO8601.Permissive.datetime created_at)
-                                  in
-                                  Printf.sprintf
-                                    "%d-%d-%d %d:%d"
-                                    (1900 + tm_year)
-                                    (tm_mon + 1)
-                                    tm_mday
-                                    tm_hour
-                                    tm_min) );
-                           ])
-                       wms) );
+                  work_manifests_kv
+                    ~name:"Conflicting_work_manifests"
+                    (uniq_work_manifests_by_target wms) );
               ])
         in
         Gcm_api.apply_template_and_publish
@@ -3707,48 +3780,10 @@ module Comment = struct
           Tmpl.invalid_lock_id
           kv
     | Msg.Maybe_stale_work_manifests wms ->
-        let module Wm = Terrat_work_manifest3 in
         let kv =
           Snabela.Kv.(
             Map.of_list
-              [
-                ( "work_manifests",
-                  list
-                    (CCList.map
-                       (fun Wm.{ created_at; steps; state; target; _ } ->
-                         let id, is_pr =
-                           match target with
-                           | Terrat_vcs_provider2.Target.Pr pr ->
-                               (CCInt.to_string (Api.Pull_request.id pr), true)
-                           | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
-                         in
-                         Map.of_list
-                           [
-                             ("id", string id);
-                             ("is_pr", bool is_pr);
-                             ( "run_type",
-                               string
-                                 (CCString.capitalize_ascii
-                                    (Wm.Step.to_string
-                                       (CCOption.get_exn_or
-                                          "Maybe_stale_work_manifests"
-                                          (CCList.last_opt steps)))) );
-                             ("state", string (CCString.capitalize_ascii (Wm.State.to_string state)));
-                             ( "created_at",
-                               string
-                                 (let Unix.{ tm_year; tm_mon; tm_mday; tm_hour; tm_min; _ } =
-                                    Unix.gmtime (ISO8601.Permissive.datetime created_at)
-                                  in
-                                  Printf.sprintf
-                                    "%d-%d-%d %d:%d"
-                                    (1900 + tm_year)
-                                    (tm_mon + 1)
-                                    tm_mday
-                                    tm_hour
-                                    tm_min) );
-                           ])
-                       wms) );
-              ])
+              [ ("work_manifests", work_manifests_kv ~name:"Maybe_stale_work_manifests" wms) ])
         in
         Gcm_api.apply_template_and_publish
           ~request_id
