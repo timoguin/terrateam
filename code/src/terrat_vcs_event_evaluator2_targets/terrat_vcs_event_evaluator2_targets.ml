@@ -16,6 +16,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     | repo_config_fetch_err
     | Terrat_change_match3.synthesize_config_err
     | `Suspend_eval of string
+      (* Not an error.  The evaluation committed something durable and wants the
+         transaction closed and the evaluation re-run immediately in a fresh
+         one, so the rows it wrote stop being held for the rest of the job.  The
+         payload names the committed fact, so the same payload coming back twice
+         proves the evaluation made no progress.  Only ever returned by a task
+         whose own guard will answer differently on the next pass. *)
+    | `Rerun of string
     | `Work_manifest_err of Uuidm.t
     | `Noop
     | Pgsql_io.err
@@ -108,6 +115,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     }
     [@@deriving show]
   end
+
+  (* The [`Rerun] payloads this evaluation has already acted on, most recent
+     first.  A task that is about to commit-and-rerun consults this to find out
+     whether it has already done so, and the driver uses it to prove progress.
+     Membership means the named write is committed, because the driver only adds
+     a payload after the transaction that produced it committed.  It says
+     nothing about what other processes have written -- a "does this already
+     exist?" question still belongs in the database. *)
+  let reruns : string list Key.t = Hmap.Key.create "reruns"
 
   (* Ya basic *)
   let account : S.Api.Account.t Key.t = Hmap.Key.create "account"

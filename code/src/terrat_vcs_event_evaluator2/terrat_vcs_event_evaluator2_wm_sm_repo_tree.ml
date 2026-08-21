@@ -226,12 +226,33 @@ struct
     | Wmr.Work_manifest_build_tree_result { Bt.files } ->
         fetch Keys.account
         >>= fun account ->
-        Logs.info (fun m ->
-            m
-              "%s : REPO_TREE : STORE : branch_ref=%s"
-              (Builder.log_id s)
-              (S.Api.Ref.to_string branch_ref));
-        Builder.run_db s ~f:(fun db -> store_repo_tree s db account branch_ref files)
+        fetch Keys.reruns
+        >>= fun reruns ->
+        (* The tree of a commit is written in blocks of 500 rows and can run to
+           tens of thousands of them, all keyed by the commit, so every other
+           job that needs the same tree waits on those rows until this
+           transaction commits -- which is after the rest of the job, GitHub
+           calls included.  Commit the tree on its own and ask to be re-run, so
+           the rows are held for the write and nothing more.
+
+           On the second pass the payload is in [reruns], which the driver only
+           records after the transaction committed, so the tree is durable and
+           the rest of this branch runs exactly once. *)
+        let rerun_id =
+          Printf.sprintf
+            "repo_tree:%s:%s"
+            (S.Api.Account.Id.to_string @@ S.Api.Account.id account)
+            (S.Api.Ref.to_string branch_ref)
+        in
+        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_future_combinators.return_ok ()
+         else (
+           Logs.info (fun m ->
+               m
+                 "%s : REPO_TREE : STORE : branch_ref=%s"
+                 (Builder.log_id s)
+                 (S.Api.Ref.to_string branch_ref));
+           Builder.run_db s ~f:(fun db -> store_repo_tree s db account branch_ref files)
+           >>= fun () -> Abbs_future_combinators.return_err (`Rerun rerun_id)))
         >>= fun () ->
         fetch Keys.repo
         >>= fun repo ->

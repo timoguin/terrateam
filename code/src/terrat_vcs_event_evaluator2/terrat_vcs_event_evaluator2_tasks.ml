@@ -91,7 +91,10 @@ struct
           let open Irm in
           Builder.run_db s ~f:(fun db -> update_job_state_completed s job.Tjc.Job.id db)
           >>= fun () -> Abb.Future.return ret
-      | Error (`Suspend_eval _) as err -> Abb.Future.return err
+      (* [`Rerun] rides alongside [`Suspend_eval]: neither is a failure, and
+         marking the job failed for one would be unrecoverable, because the next
+         pass finds the job already in a terminal state and gives up. *)
+      | (Error (`Suspend_eval _) | Error (`Rerun _)) as err -> Abb.Future.return err
       | Error (#Builder.err as err) -> (
           Builder.run_db s ~f:(fun db -> update_job_state_failed s job.Tjc.Job.id db)
           >>= function
@@ -1224,6 +1227,14 @@ struct
                   (fun () ->
                     S.Db.query_repo_config_json ~request_id:(Builder.log_id s) db account cache_ref))
           else Abbs_future_combinators.return_ok None)
+
+    (* Only an entry point that drives the commit-and-rerun loop seeds this.
+       Everywhere else the answer is "no re-runs have happened".  Giving the key
+       a task rather than making all dozen entry points seed it means a [fetch]
+       from any evaluation succeeds: a key with neither a store value nor a task
+       raises [Failure "Missing_dep_err ..."] out of [Builder.State.get_k],
+       which surfaces to the user as an opaque internal error. *)
+    let reruns = run ~name:"reruns" (fun _ _ -> Abbs_future_combinators.return_ok [])
 
     let repo_config_system_defaults =
       run ~name:"repo_config_system_defaults" (fun s _ ->
@@ -3027,7 +3038,11 @@ struct
                     let open Abb.Future.Infix_monad in
                     Builder.eval s' Keys.iter_job
                     >>= function
-                    | (Ok _ | Error (`Noop | `Suspend_eval _)) as r -> Abb.Future.return r
+                    (* [`Rerun] is not a failure.  The arm below turns the
+                       repository's drift schedule off, so letting one fall
+                       through would disable drift for a healthy repository. *)
+                    | (Ok _ | Error (`Noop | `Suspend_eval _ | `Rerun _)) as r ->
+                        Abb.Future.return r
                     | Error (#Builder.err as err) ->
                         Logs.err (fun m ->
                             m
@@ -3455,6 +3470,7 @@ struct
     |> Hmap.add
          (coerce Keys.repo_tree_dest_branch_wm_completed)
          Tasks.repo_tree_dest_branch_wm_completed
+    |> Hmap.add (coerce Keys.reruns) Tasks.reruns
     |> Hmap.add (coerce Keys.run_apply) Tasks.run_apply
     |> Hmap.add (coerce Keys.run_missing_drift_schedules) Tasks.run_missing_drift_schedules
     |> Hmap.add (coerce Keys.run_next_layer) Tasks.run_next_layer

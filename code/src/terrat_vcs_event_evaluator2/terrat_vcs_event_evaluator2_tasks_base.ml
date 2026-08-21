@@ -57,6 +57,12 @@ struct
            | Error `Noop ->
                Logs.info (fun m ->
                    m "%s : TASK : END: NOOP : name=%s : time=%f" (Builder.log_id s) name t)
+           | Error (`Rerun _) ->
+               (* Not a failure: the task committed something and asked for a
+                  fresh transaction, so every task on the path back up would
+                  otherwise read as FAIL. *)
+               Logs.info (fun m ->
+                   m "%s : TASK : END: RERUN : name=%s : time=%f" (Builder.log_id s) name t)
            | Error #Builder.err ->
                Logs.info (fun m ->
                    m "%s : TASK : END: FAIL : name=%s : time=%f" (Builder.log_id s) name t))
@@ -96,8 +102,9 @@ struct
         | Error `Error -> Abbs_future_combinators.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
 
   (* The comment, if any, a user should see for an evaluation error.  [None]
-     means say nothing: either nothing went wrong ([`Noop], [`Suspend_eval]) or
-     everything worth saying has already been said ([`Silent_failure]).
+     means say nothing: either nothing went wrong ([`Noop], [`Suspend_eval],
+     [`Rerun]) or everything worth saying has already been said
+     ([`Silent_failure]).
 
      Every constructor is listed rather than falling back on a [#Builder.err]
      catch-all, so that adding a member to [Keys.err] fails the build until
@@ -123,7 +130,7 @@ struct
     | `Work_manifest_err id ->
         Some (Msg.Operation_failed (`Internal_err ("WORK_MANIFEST:" ^ Uuidm.to_string id)))
     | `Error -> Some (Msg.Operation_failed (`Internal_err "UNKNOWN"))
-    | `Noop | `Suspend_eval _ | `Silent_failure -> None
+    | `Noop | `Suspend_eval _ | `Rerun _ | `Silent_failure -> None
 
   let forward_std_keys s store = store |> Builder.State.forward_store_value Keys.pull_request s
 end
