@@ -929,6 +929,19 @@ module type S = sig
     (** Accept a new connection on a listening socket. *)
     val accept : 'a t -> ('a t, [> Errors.accept ]) result Future.t
 
+    (** Whether [close] has been called on this handle.
+
+        A handle is the owner of its descriptor, and a closed one no longer owns the number it used
+        to hold: the number may already have been handed back out to something else. Operations that
+        return a result report that themselves, but {!readable} and {!writable} carry no error
+        channel and can only resolve. A caller that loops on those -- retrying its own I/O each time
+        the socket says it is ready -- must therefore ask here, or it will spin once the descriptor
+        is gone.
+
+        A scheduler that does not track descriptor state answers [false] for every handle, which
+        leaves such callers behaving exactly as they did before this could be asked. *)
+    val is_closed : 'a t -> bool
+
     (** Set the future when the socket has data to be read. *)
     val readable : 'a t -> unit Future.t
 

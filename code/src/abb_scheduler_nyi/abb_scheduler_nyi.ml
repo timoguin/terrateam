@@ -80,6 +80,11 @@ module Socket = struct
   let close t = failwith "nyi"
   let listen t ~backlog = failwith "nyi"
   let accept t = failwith "nyi"
+
+  (* This scheduler tracks no descriptor state, so it reports every handle as
+     open: callers that consult this to decide whether to keep waiting then
+     behave exactly as they did before the question could be asked. *)
+  let is_closed _t = false
   let readable t = failwith "nyi"
   let writable t = failwith "nyi"
 
