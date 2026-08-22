@@ -13,6 +13,16 @@ end
 
 external unsafe_int_of_file_descr : Unix.file_descr -> int = "%identity"
 
+(* Descriptor-keyed table for the armed-poll registry.  Descriptor numbers are
+   small and dense, so they are their own hash: no generic-hash C call on a
+   path we touch for every poll we arm. *)
+module Fd_tbl = Hashtbl.Make (struct
+  type t = int
+
+  let equal = CCInt.equal
+  let hash (t : int) = t
+end)
+
 let sec_ns = Mtime.Span.(to_float_ns s)
 
 (* Per-task callback-serialization context, shared between the task's
@@ -52,7 +62,7 @@ module Handle = struct
   type t =
     | None
     | Timer of Luv.Timer.t
-    | Poll of Luv.Poll.t
+    | Poll of Luv.Poll.t * int  (** handle, and the descriptor number it is armed on *)
 end
 
 (* Op: data describing an async operation that the scheduler must perform on
@@ -71,11 +81,14 @@ module Op = struct
         on_fire : unit -> unit;
       }
     | Poll of {
-        fd : Unix.file_descr;
+        fd : Abb_fd_socket.t;
+            (** The owning handle, not a bare descriptor: [dispatch] re-reads its closed flag
+                immediately before arming, which is the only point at which the answer is still true
+                when libuv gets the number. *)
         events : Luv.Poll.Event.t list;
         on_event : (Luv.Poll.Event.t list, Luv.Error.t) result -> unit;
       }
-    | Close_fd of Unix.file_descr  (** deferred [Unix.close] (replaces the zero-ms timer trick) *)
+    | Close_fd of Abb_fd_socket.t  (** deferred [Unix.close] (replaces the zero-ms timer trick) *)
     | Abort of op_state  (** worker-side abort hand-off *)
     | Run of (unit -> unit)
         (** generic "run this on the scheduler"; used as the worker → scheduler completion path for
@@ -118,6 +131,10 @@ module El = struct
     task_counter : int Atomic.t;
     op_queue : Op.t Saturn.Single_consumer_queue.t;
     op_async : Luv.Async.t;
+    (* Polls currently armed, keyed by descriptor number.  Only the loop domain
+       touches it -- [dispatch], the libuv poll callback and [cleanup_handle] all
+       run there -- so a plain table needs no lock and no atomics. *)
+    live_polls : Op.t list ref Fd_tbl.t;
   }
 
   (* The scheduler's [Abb_fut] state payload.  It carries the event loop [el] plus the owning
@@ -159,15 +176,45 @@ end
    [close] for queued ops happens inside [dispatch], which only runs on the
    loop domain (it is the body of [op_async]'s callback). *)
 module Op_queue = struct
-  let cleanup_handle state =
-    (match state.Op.handle with
+  (* Registry of armed polls.  libuv forbids closing a descriptor a [uv_poll_t]
+     is watching: the handle may go on to report events for whatever takes the
+     number next.  We therefore remember which polls are live on which
+     descriptor so [Close_fd] can tear them down first.  All three entry points
+     run on the loop domain, so no synchronisation is needed. *)
+  let register_poll el fd_int op =
+    match Fd_tbl.find_opt el.El.live_polls fd_int with
+    | Some l -> l := op :: !l
+    | None -> Fd_tbl.replace el.El.live_polls fd_int (ref [ op ])
+
+  let unregister_poll el fd_int state =
+    CCOption.iter
+      (fun l ->
+        (* Physical equality: one descriptor can carry a read poll and a write
+           poll at once, and only ours comes out. *)
+        l := List.filter ~f:(fun op -> op.Op.state != state) !l;
+        if CCList.is_empty !l then Fd_tbl.remove el.El.live_polls fd_int)
+      (Fd_tbl.find_opt el.El.live_polls fd_int)
+
+  (* Stop and close the libuv handle backing an op, if it has one. *)
+  let close_handle = function
     | Handle.None -> ()
     | Handle.Timer t ->
         ignore (Luv.Timer.stop t);
         Luv.Handle.close t CCFun.id
-    | Handle.Poll p ->
+    | Handle.Poll (p, _) ->
         ignore (Luv.Poll.stop p);
-        Luv.Handle.close p CCFun.id);
+        Luv.Handle.close p CCFun.id
+
+  (* Drop this op's registry entry.  A no-op for an op with no armed poll, and
+     for one whose entry a [Close_fd] already took. *)
+  let unregister_handle el state =
+    match state.Op.handle with
+    | Handle.Poll (_, fd_int) -> unregister_poll el fd_int state
+    | Handle.None | Handle.Timer _ -> ()
+
+  let cleanup_handle el state =
+    unregister_handle el state;
+    close_handle state.Op.handle;
     state.Op.handle <- Handle.None
 
   let submit el op =
@@ -216,11 +263,45 @@ module Op_queue = struct
                on the scheduler. *)
             drain_mailbox ctx
 
+  (* Remove and return every poll armed on [fd_int]. *)
+  let take_polls el fd_int =
+    CCOption.map_or
+      ~default:[]
+      (fun l ->
+        Fd_tbl.remove el.El.live_polls fd_int;
+        !l)
+      (Fd_tbl.find_opt el.El.live_polls fd_int)
+
+  (* Wake a waiter whose poll we tore down.  [`EBADF] is what the descriptor
+     itself would report, and [with_poll] turns any [Error] into that site's
+     [bad_fd] value without re-running its syscall -- the descriptor is gone, so
+     there is nothing left to ask. *)
+  let notify_bad_fd el op =
+    match op.Op.body with
+    | Op.Poll { fd = _; events = _; on_event } when not (Atomic.get op.Op.state.Op.aborted) ->
+        run_callback el op (fun () -> on_event (Error `EBADF))
+    | Op.Poll _ | Op.Abort _ | Op.Close_fd _ | Op.Run _ | Op.Sleep _ | Op.Thread _ -> ()
+
   let dispatch el op =
     let s = op.Op.state in
     match op.Op.body with
-    | Op.Abort _ -> cleanup_handle s
-    | Op.Close_fd fd -> ( try Unix.close fd with _ -> ())
+    | Op.Abort _ -> cleanup_handle el s
+    | Op.Close_fd fd ->
+        (* Order matters three ways.  Stop the [uv_poll_t]s first: libuv forbids
+           closing a descriptor one is watching, and a watcher that outlives the
+           number can start reporting events for whatever takes it next.  Close
+           the descriptor next.  Wake the waiters LAST, because for a pinned op
+           [run_callback] resumes the waiter synchronously from inside this
+           dispatch: waking first would let a continuation run -- and open a
+           fresh descriptor, taking this very number -- while the close had not
+           happened yet.  By the time they do run, the handle's closed flag (set
+           by [close_once], before this op was ever queued) makes [dispatch]
+           refuse any new poll on it. *)
+        let raw = Abb_fd_socket.fd fd in
+        let ops = take_polls el (unsafe_int_of_file_descr raw) in
+        List.iter ~f:(fun op -> cleanup_handle el op.Op.state) ops;
+        (try Unix.close raw with _ -> ());
+        List.iter ~f:(notify_bad_fd el) ops
     | Op.Run f -> run_callback el op f
     | Op.Thread { f; on_done } ->
         (* Two abort checks, mirroring the [Op.Sleep] / [Op.Poll] pattern:
@@ -251,24 +332,36 @@ module Op_queue = struct
           ignore
             (Luv.Timer.start timer ms (fun () ->
                  let aborted = Atomic.get s.Op.aborted in
-                 cleanup_handle s;
+                 cleanup_handle el s;
                  if not aborted then run_callback el op on_fire)
             |> Result.get_ok)
-    | Op.Poll { fd; events; on_event } ->
+    | Op.Poll { fd; events; on_event } -> (
         if Atomic.get s.Op.aborted then ()
+        else if Abb_fd_socket.is_closed fd then
+          (* The handle was closed between this op being built and dispatched.
+             The number may already belong to something else, so it must never
+             be polled; answer the way the descriptor would. *)
+          run_callback el op (fun () -> on_event (Error `EBADF))
         else
-          let poll =
-            Luv.Poll.init ~loop:el.El.loop (unsafe_int_of_file_descr fd) |> Result.get_ok
-          in
-          s.Op.handle <- Handle.Poll poll;
-          (* All current poll sites are one-shot — they retry the syscall
-             and either succeed or re-arm a fresh poll.  Stop+close inside
-             the libuv callback so a stray fd-readable doesn't fire us
-             twice. *)
-          Luv.Poll.start poll events (fun result ->
-              let aborted = Atomic.get s.Op.aborted in
-              cleanup_handle s;
-              if not aborted then run_callback el op (fun () -> on_event result))
+          let fd_int = unsafe_int_of_file_descr (Abb_fd_socket.fd fd) in
+          (* [uv_poll_init] is fallible -- [EPERM] for a descriptor that does not
+             poll, [EBADF] for one that lost its race with a close on another
+             domain.  Report it rather than treating it as impossible: an
+             exception here escapes through the libuv callback and takes the
+             process down. *)
+          match Luv.Poll.init ~loop:el.El.loop fd_int with
+          | Ok poll ->
+              s.Op.handle <- Handle.Poll (poll, fd_int);
+              register_poll el fd_int op;
+              (* All current poll sites are one-shot — they retry the syscall
+                 and either succeed or re-arm a fresh poll.  Stop+close inside
+                 the libuv callback so a stray fd-readable doesn't fire us
+                 twice. *)
+              Luv.Poll.start poll events (fun result ->
+                  let aborted = Atomic.get s.Op.aborted in
+                  cleanup_handle el s;
+                  if not aborted then run_callback el op (fun () -> on_event result))
+          | Error _ as err -> run_callback el op (fun () -> on_event err))
 
   let drain el =
     let rec loop () =
@@ -304,6 +397,7 @@ module El_setup = struct
         task_counter = Atomic.make 1;
         op_queue;
         op_async;
+        live_polls = Fd_tbl.create 64;
       }
     in
     el_ref := Some t;
@@ -327,17 +421,36 @@ module El_setup = struct
        for an already-closed file/socket) and [Abort] (which [cleanup_handle]s
        an armed handle) MUST run, or they leak the fd / leave the handle open
        -- the latter also failing [Loop.close] with [EBUSY]. *)
+    let teardown_op op =
+      match op.Op.body with
+      | Op.Close_fd fd -> (
+          (* Teardown: stop the watchers so [Loop.close] can succeed, but do NOT
+             wake their waiters -- the worker pool is already gone. *)
+          let raw = Abb_fd_socket.fd fd in
+          List.iter
+            ~f:(fun op -> Op_queue.cleanup_handle t op.Op.state)
+            (Op_queue.take_polls t (unsafe_int_of_file_descr raw));
+          try Unix.close raw with _ -> ())
+      | Op.Abort _ -> Op_queue.cleanup_handle t op.Op.state
+      | Op.Run _ | Op.Sleep _ | Op.Poll _ | Op.Thread _ -> ()
+    in
     let rec drain () =
       CCOption.iter
         (fun op ->
-          (match op.Op.body with
-          | Op.Close_fd fd -> ( try Unix.close fd with _ -> ())
-          | Op.Abort _ -> Op_queue.cleanup_handle op.Op.state
-          | Op.Run _ | Op.Sleep _ | Op.Poll _ | Op.Thread _ -> ());
+          teardown_op op;
           drain ())
         (Saturn.Single_consumer_queue.pop_opt t.El.op_queue)
     in
     drain ();
+    (* Polls armed with neither a [Close_fd] nor an [Abort] queued are reachable
+       only through the registry, and each keeps a [uv_poll_t] open -- which is
+       exactly what fails [Loop.close] with [EBUSY].  Take them all out first,
+       so [cleanup_handle]'s own de-registration cannot mutate the table while
+       we walk it.  The reset also drops the [Op.t] references, and with them
+       the [on_event] closures and the buffers they hold. *)
+    let armed = Fd_tbl.fold (fun _ l acc -> !l @ acc) t.El.live_polls [] in
+    Fd_tbl.reset t.El.live_polls;
+    List.iter ~f:(fun op -> Op_queue.cleanup_handle t op.Op.state) armed;
     (* Tick (bounded) so libuv invokes the close callbacks for the handles we
        just stopped; [run] returns [true] while any remain active. *)
     let rec settle n =
@@ -354,7 +467,7 @@ end
    directly. *)
 let abort_of el state () =
   Atomic.set state.Op.aborted true;
-  if Domain.self () = el.El.loop_domain then Op_queue.cleanup_handle state
+  if Domain.self () = el.El.loop_domain then Op_queue.cleanup_handle el state
   else Op_queue.submit el { Op.state; body = Op.Abort state; unpinned_ctx = None };
   El.Future.return ()
 
@@ -375,13 +488,26 @@ let unpinned_of_state s = (Abb_fut.State.state s).El.owning
    pair shaped for [Future.with_state].
 
    The poll's [unpinned_ctx] is read from [s] (the run state being driven), so the callback is
-   routed to the owning task's gate regardless of where the surrounding op was constructed. *)
-let with_poll s ~fd ~events ~retry =
+   routed to the owning task's gate regardless of where the surrounding op was constructed.
+
+   [retry] runs only when the poll fired cleanly on a descriptor this handle still owns; otherwise
+   the promise takes [bad_fd].  Both halves of that test matter.  The poll can fail outright
+   ([uv_poll_init] rejecting the descriptor, or a [Close_fd] waking us), and the handle can be
+   closed between the poll firing and this callback running -- the callback is deferred onto a
+   worker domain for an unpinned task, so that window is unbounded.  A retry in either case would
+   run its syscall against a descriptor number the scheduler has released, which does not fail: the
+   number may already belong to a different socket, and the read or write would quietly land on a
+   stranger. *)
+let with_poll s ~(fd : Abb_fd_socket.t) ~events ~bad_fd ~retry =
   let el = el_of s in
   let state = { Op.aborted = Atomic.make false; handle = Handle.None } in
   let p = El.Future.Promise.create ~abort:(abort_of el state) () in
-  let on_event _result =
-    let v = retry () in
+  let on_event result =
+    let v =
+      match result with
+      | Ok _ when not (Abb_fd_socket.is_closed fd) -> retry ()
+      | Ok _ | Error _ -> bad_fd
+    in
     ignore (El.Future.run_with_state (El.Future.Promise.set p v) s)
   in
   let body = Op.Poll { fd; events; on_event } in
@@ -401,7 +527,7 @@ let with_poll s ~fd ~events ~retry =
 
    The promise takes no [~abort]: an aborted caller still wants the fd closed,
    and [Promise.set] on an aborted future is a no-op. *)
-let with_close_fd s ~fd =
+let with_close_fd s ~(fd : Abb_fd_socket.t) =
   let el = el_of s in
   let unpinned_ctx = unpinned_of_state s in
   let op body =
@@ -1160,13 +1286,31 @@ let safe_call f = try Ok (f ()) with e -> Error (`Unexpected e)
 (* The filesystem calls are implemented through a thread call because there is
    no guarantee that they will not block, for example on an NFS system. *)
 module File = struct
-  type t = Unix.file_descr
+  (* A file is the same handle a socket is: a descriptor plus a closed flag.
+     Every op reads the flag first, so an op on a closed file fails instead of
+     acting on a descriptor number that now belongs to something else. *)
+  type t = Abb_fd_socket.t
 
-  let to_native t = t
-  let of_native t = t
-  let stdin = Unix.stdin
-  let stdout = Unix.stdout
-  let stderr = Unix.stderr
+  let to_native = Abb_fd_socket.fd
+  let of_native = Abb_fd_socket.make
+
+  (* One handle per stream for the whole process, so a [close] on any of these
+     is permanent and every later op on it returns [`E_bad_file].  That is the
+     honest reading of "this descriptor is gone", but it does mean a caller that
+     closes stdin cannot reopen it through this module.  In particular, never
+     close a buffered wrapper built over one of these ([Abbs_io_buffered.Of
+     .of_file]'s [close] reaches [File.close]): the first caller to do so
+     poisons the stream for every later user in the process. *)
+  let stdin = Abb_fd_socket.make Unix.stdin
+  let stdout = Abb_fd_socket.make Unix.stdout
+  let stderr = Abb_fd_socket.make Unix.stderr
+
+  (* Fail fast once the handle is closed; otherwise run [f] with the live fd.
+     Mirrors [Socket.guarded]; [`E_bad_file] is in every file op's error type. *)
+  let guarded t f = if Abb_fd_socket.is_closed t then Error `E_bad_file else f (Abb_fd_socket.fd t)
+
+  let guarded_fut t f =
+    if Abb_fd_socket.is_closed t then Future.return (Error `E_bad_file) else f (Abb_fd_socket.fd t)
 
   let mode_of_flags flags =
     List.map
@@ -1204,7 +1348,7 @@ module File = struct
           ~mode:(Unix.O_CLOEXEC :: Unix.O_NONBLOCK :: mode_of_flags flags)
           ~perm:(perm_of_flags flags)
       in
-      Future.return (Ok t)
+      Future.return (Ok (Abb_fd_socket.make t))
     with
     | Unix.Unix_error (err, _, _) as exn ->
         let open Unix in
@@ -1238,21 +1382,27 @@ module File = struct
     | exn -> Error (`Unexpected exn)
 
   let read t ~buf ~pos ~len =
-    try Future.return (Ok (Unix.read t ~buf ~pos ~len)) with
-    | Unix.Unix_error (Unix.EAGAIN, _, _) | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
-        Future.with_state (fun s ->
-            with_poll s ~fd:t ~events:[ `READABLE ] ~retry:(fun () ->
-                try Ok (Unix.read t ~buf ~pos ~len) with exn -> read_err exn))
-    | exn -> Future.return (read_err exn)
+    guarded_fut t (fun fd ->
+        try Future.return (Ok (Unix.read fd ~buf ~pos ~len)) with
+        | Unix.Unix_error (Unix.EAGAIN, _, _) | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
+            Future.with_state (fun s ->
+                with_poll
+                  s
+                  ~fd:t
+                  ~events:[ `READABLE ]
+                  ~bad_fd:(Error `E_bad_file)
+                  ~retry:(fun () -> try Ok (Unix.read fd ~buf ~pos ~len) with exn -> read_err exn))
+        | exn -> Future.return (read_err exn))
 
   let pread t ~offset ~buf ~pos ~len =
-    try
-      let n = Unix.lseek t offset ~mode:Unix.SEEK_SET in
-      assert (n = offset);
-      read t ~buf ~pos ~len
-    with
-    | Unix.Unix_error (Unix.ENXIO, _, _) -> Future.return (Error `E_nxio)
-    | exn -> Future.return (Error (`Unexpected exn))
+    guarded_fut t (fun fd ->
+        try
+          let n = Unix.lseek fd offset ~mode:Unix.SEEK_SET in
+          assert (n = offset);
+          read t ~buf ~pos ~len
+        with
+        | Unix.Unix_error (Unix.ENXIO, _, _) -> Future.return (Error `E_nxio)
+        | exn -> Future.return (Error (`Unexpected exn)))
 
   let write_err = function
     | Unix.Unix_error (err, _, _) as exn ->
@@ -1269,12 +1419,18 @@ module File = struct
     | exn -> Error (`Unexpected exn)
 
   let write' ~buf ~pos ~len t =
-    try Future.return (Ok (Unix.write t ~buf ~pos ~len)) with
-    | Unix.Unix_error (Unix.EAGAIN, _, _) | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
-        Future.with_state (fun s ->
-            with_poll s ~fd:t ~events:[ `WRITABLE ] ~retry:(fun () ->
-                try Ok (Unix.write t ~buf ~pos ~len) with exn -> write_err exn))
-    | exn -> Future.return (write_err exn)
+    guarded_fut t (fun fd ->
+        try Future.return (Ok (Unix.write fd ~buf ~pos ~len)) with
+        | Unix.Unix_error (Unix.EAGAIN, _, _) | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
+            Future.with_state (fun s ->
+                with_poll
+                  s
+                  ~fd:t
+                  ~events:[ `WRITABLE ]
+                  ~bad_fd:(Error `E_bad_file)
+                  ~retry:(fun () ->
+                    try Ok (Unix.write fd ~buf ~pos ~len) with exn -> write_err exn))
+        | exn -> Future.return (write_err exn))
 
   let rec write_buf t buf =
     let open Future.Infix_monad in
@@ -1312,27 +1468,28 @@ module File = struct
   let write t bufs = write_bufs t bufs
 
   let pwrite t ~offset bufs =
-    try
-      let n = Unix.lseek t offset ~mode:Unix.SEEK_SET in
-      assert (n = offset);
-      write_bufs t bufs
-    with
-    | Unix.Unix_error (Unix.ENXIO, _, _) -> Future.return (Error `E_nxio)
-    | exn -> Future.return (Error (`Unexpected exn))
+    guarded_fut t (fun fd ->
+        try
+          let n = Unix.lseek fd offset ~mode:Unix.SEEK_SET in
+          assert (n = offset);
+          write_bufs t bufs
+        with
+        | Unix.Unix_error (Unix.ENXIO, _, _) -> Future.return (Error `E_nxio)
+        | exn -> Future.return (Error (`Unexpected exn)))
 
-  let lseek' t ~offset = function
+  let lseek' fd ~offset = function
     | Abb_intf.File.Seek.Cur ->
-        ignore (Unix.lseek t offset ~mode:Unix.SEEK_CUR);
+        ignore (Unix.lseek fd offset ~mode:Unix.SEEK_CUR);
         Ok ()
     | Abb_intf.File.Seek.Set ->
-        ignore (Unix.lseek t offset ~mode:Unix.SEEK_SET);
+        ignore (Unix.lseek fd offset ~mode:Unix.SEEK_SET);
         Ok ()
     | Abb_intf.File.Seek.End ->
-        ignore (Unix.lseek t offset ~mode:Unix.SEEK_END);
+        ignore (Unix.lseek fd offset ~mode:Unix.SEEK_END);
         Ok ()
 
   let lseek t ~offset seek =
-    try lseek' t ~offset seek with
+    try guarded t (fun fd -> lseek' fd ~offset seek) with
     | Unix.Unix_error (err, _, _) as exn ->
         let open Unix in
         Error
@@ -1343,7 +1500,11 @@ module File = struct
           | _ -> `Unexpected exn)
     | exn -> Error (`Unexpected exn)
 
-  let close t = Future.with_state (fun s -> with_close_fd s ~fd:t)
+  (* Idempotent, like [Socket.close]: only the first close submits the deferred
+     [Unix.close], so a recycled descriptor number is never closed twice. *)
+  let close t =
+    Future.with_state (fun s ->
+        if Abb_fd_socket.close_once t then with_close_fd s ~fd:t else (s, Future.return (Ok ())))
 
   let unlink path =
     try Future.return (Ok (Unix.unlink path)) with
@@ -1452,7 +1613,7 @@ module File = struct
 
   let fstat t =
     Thread.run (fun () ->
-        try Ok (of_unix_stat (Unix.fstat t)) with
+        try guarded t (fun fd -> Ok (of_unix_stat (Unix.fstat fd))) with
         | Unix.Unix_error (err, _, _) as exn ->
             let open Unix in
             Error
@@ -1526,7 +1687,7 @@ module File = struct
 
   let ftruncate t len =
     Thread.run (fun () ->
-        try Ok (Unix.ftruncate t ~len:(Int64.to_int len)) with
+        try guarded t (fun fd -> Ok (Unix.ftruncate fd ~len:(Int64.to_int len))) with
         | Unix.Unix_error (err, _, _) as exn ->
             let open Unix in
             Error
@@ -1563,7 +1724,7 @@ module File = struct
 
   let fchmod t mode =
     Thread.run (fun () ->
-        try Ok (Unix.fchmod t ~perm:mode) with
+        try guarded t (fun fd -> Ok (Unix.fchmod fd ~perm:mode)) with
         | Unix.Unix_error (err, _, _) as exn ->
             let open Unix in
             Error
@@ -1638,7 +1799,7 @@ module File = struct
 
   let fchown t ~uid ~gid =
     Thread.run (fun () ->
-        try Ok (Unix.fchown t ~uid ~gid) with
+        try guarded t (fun fd -> Ok (Unix.fchown fd ~uid ~gid)) with
         | Unix.Unix_error (err, _, _) as exn ->
             let open Unix in
             Error
@@ -1663,10 +1824,15 @@ module Socket = struct
   (* Fail fast once the handle is closed; otherwise run [f] with the live fd.
      [`E_file_closed] is in every guarded op's error type ([Abb_intf.Errors]).
      Covers connect/close and the plaintext data path; TLS reads/writes go
-     through Otls on the raw fd and are not covered here.  [getsockname]/
-     [getpeername] (no result type) and [readable]/[writable] (non-result
-     future) skip the guard -- Unix raises EBADF for a truly bad fd, and neither
-     is used on the hot path. *)
+     through Otls on the raw fd and are not covered here.
+
+     This guard is not an optimisation over "the syscall will fail anyway".  A
+     descriptor number the scheduler has released may already belong to
+     something else, in which case the syscall does NOT fail -- it succeeds
+     against a stranger.  [getsockname]/[getpeername] have no result type and so
+     cannot report the closure; [readable]/[writable] have no error channel
+     either, and are covered instead by [dispatch], which refuses to arm a poll
+     on a closed handle. *)
   let guarded t f =
     if Abb_fd_socket.is_closed t then Error `E_file_closed else f (Abb_fd_socket.fd t)
 
@@ -1679,13 +1845,14 @@ module Socket = struct
      guard/with_state/with_poll nesting shared by the single-shot read ops. *)
   let with_open_poll t ~events ~retry =
     guarded_fut t (fun fd ->
-        Future.with_state (fun s -> with_poll s ~fd ~events ~retry:(fun () -> retry fd)))
+        Future.with_state (fun s ->
+            with_poll s ~fd:t ~events ~bad_fd:(Error `E_bad_file) ~retry:(fun () -> retry fd)))
 
   (* Partial-write loop for [send]/[sendto]: re-arm a WRITABLE poll for each
      remaining chunk, calling [write_chunk] (one [send]/[sendto] syscall) until
      all of [bufs] is written, mapping a syscall exn through [err_of].  One
      op-state is reused across the chain so an abort tears down the live poll. *)
-  let write_via_poll fd ~bufs ~write_chunk ~err_of =
+  let write_via_poll t ~bufs ~write_chunk ~err_of =
     let state = { Op.aborted = Atomic.make false; handle = Handle.None } in
     Future.with_state (fun s ->
         let el = el_of s in
@@ -1693,19 +1860,30 @@ module Socket = struct
         let rec send' ~total ~pos = function
           | [] -> ignore (Future.run_with_state (Future.Promise.set p (Ok total)) s)
           | wb :: bufs as all_bufs ->
-              let on_event _result =
-                try
-                  let len = wb.Abb_intf.Write_buf.len - pos in
-                  let n = write_chunk fd ~buf:wb.Abb_intf.Write_buf.buf ~pos ~len in
-                  let total = total + n in
-                  if n = len then send' ~total ~pos:0 bufs else send' ~total ~pos:(pos + n) all_bufs
-                with exn -> ignore (Future.run_with_state (Future.Promise.set p (err_of exn)) s)
+              (* Re-check the handle before each chunk.  The chain re-arms a poll per
+                 chunk, so a close landing mid-write would otherwise drain the
+                 rest of [bufs] into whatever took the descriptor number. *)
+              let on_event result =
+                match result with
+                | Ok _ when not (Abb_fd_socket.is_closed t) -> (
+                    try
+                      let len = wb.Abb_intf.Write_buf.len - pos in
+                      let n =
+                        write_chunk (Abb_fd_socket.fd t) ~buf:wb.Abb_intf.Write_buf.buf ~pos ~len
+                      in
+                      let total = total + n in
+                      if n = len then send' ~total ~pos:0 bufs
+                      else send' ~total ~pos:(pos + n) all_bufs
+                    with exn ->
+                      ignore (Future.run_with_state (Future.Promise.set p (err_of exn)) s))
+                | Ok _ | Error _ ->
+                    ignore (Future.run_with_state (Future.Promise.set p (Error `E_bad_file)) s)
               in
               Op_queue.submit
                 el
                 {
                   Op.state;
-                  body = Op.Poll { fd; events = [ `WRITABLE ]; on_event };
+                  body = Op.Poll { fd = t; events = [ `WRITABLE ]; on_event };
                   unpinned_ctx = unpinned_of_state s;
                 }
         in
@@ -1829,8 +2007,8 @@ module Socket = struct
 
   let sendto t ~bufs sockaddr =
     let addr = unix_sockaddr_of_sockaddr sockaddr in
-    guarded_fut t (fun fd ->
-        write_via_poll fd ~bufs ~err_of:sendto_err ~write_chunk:(fun fd ~buf ~pos ~len ->
+    guarded_fut t (fun _fd ->
+        write_via_poll t ~bufs ~err_of:sendto_err ~write_chunk:(fun fd ~buf ~pos ~len ->
             Unix.sendto fd ~buf ~pos ~len ~mode:[] ~addr))
 
   let close t =
@@ -1838,8 +2016,7 @@ module Socket = struct
         (* Idempotent: only the first close submits the deferred [Unix.close], so
            a reused fd number is never double-closed.  A later close has nothing
            to wait for. *)
-        if Abb_fd_socket.close_once t then with_close_fd s ~fd:(Abb_fd_socket.fd t)
-        else (s, Future.return (Ok ())))
+        if Abb_fd_socket.close_once t then with_close_fd s ~fd:t else (s, Future.return (Ok ())))
 
   let listen t ~backlog =
     guarded t (fun fd ->
@@ -1888,7 +2065,12 @@ module Socket = struct
         with
         | Unix.Unix_error (Unix.EAGAIN, _, _) | Unix.Unix_error (Unix.EWOULDBLOCK, _, _) ->
             Future.with_state (fun s ->
-                with_poll s ~fd ~events:[ `READABLE ] ~retry:(fun () ->
+                with_poll
+                  s
+                  ~fd:t
+                  ~events:[ `READABLE ]
+                  ~bad_fd:(Error `E_bad_file)
+                  ~retry:(fun () ->
                     try
                       let nfd, _ = Unix.accept ~cloexec:true fd in
                       Unix.set_nonblock nfd;
@@ -1916,13 +2098,20 @@ module Socket = struct
           | _ -> `Unexpected exn)
     | exn -> Error (`Unexpected exn)
 
+  let is_closed = Abb_fd_socket.is_closed
+
+  (* [readable]/[writable] return a non-result future, so they cannot report
+     [`E_file_closed] the way the guarded ops do.  They do not need to for
+     safety -- the op carries the handle, and [dispatch] refuses to arm a poll on
+     a closed one -- but a caller that loops on them must consult [is_closed],
+     or it will spin against a resolve-at-once future. *)
   let readable t =
     Future.with_state (fun s ->
-        with_poll s ~fd:(Abb_fd_socket.fd t) ~events:[ `READABLE ] ~retry:(fun () -> ()))
+        with_poll s ~fd:t ~events:[ `READABLE ] ~bad_fd:() ~retry:(fun () -> ()))
 
   let writable t =
     Future.with_state (fun s ->
-        with_poll s ~fd:(Abb_fd_socket.fd t) ~events:[ `WRITABLE ] ~retry:(fun () -> ()))
+        with_poll s ~fd:t ~events:[ `WRITABLE ] ~bad_fd:() ~retry:(fun () -> ()))
 
   module Tcp = struct
     let to_native t = Abb_fd_socket.fd t
@@ -1986,7 +2175,24 @@ module Socket = struct
           with
           | Unix.Unix_error (Unix.EINPROGRESS, _, _) ->
               Future.with_state (fun s ->
-                  with_poll s ~fd ~events:[ `WRITABLE ] ~retry:(fun () -> Ok ()))
+                  with_poll
+                    s
+                    ~fd:t
+                    ~events:[ `WRITABLE ]
+                    ~bad_fd:(Error `E_bad_file)
+                    ~retry:(fun () ->
+                      (* A WRITABLE poll after [EINPROGRESS] fires for a REFUSED
+                         or timed-out connect just as it does for a successful
+                         one, so readiness on its own says nothing.  The verdict
+                         is in SO_ERROR; reading it also clears it.  Wrapped
+                         because [getsockopt] itself raises on a descriptor that
+                         has gone away, and this runs inline in a libuv
+                         callback, where an exception ends the process. *)
+                      try
+                        match Unix.getsockopt_error fd with
+                        | None -> Ok ()
+                        | Some err -> connect_err (Unix.Unix_error (err, "connect", ""))
+                      with exn -> connect_err exn))
           | exn -> Future.return (connect_err exn))
 
     let recv_err = function
@@ -2019,8 +2225,8 @@ module Socket = struct
       | exn -> Error (`Unexpected exn)
 
     let send t ~bufs =
-      guarded_fut t (fun fd ->
-          write_via_poll fd ~bufs ~err_of:send_err ~write_chunk:(fun fd ~buf ~pos ~len ->
+      guarded_fut t (fun _fd ->
+          write_via_poll t ~bufs ~err_of:send_err ~write_chunk:(fun fd ~buf ~pos ~len ->
               Unix.send fd ~buf ~pos ~len ~mode:[]))
 
     let nodelay t enabled =

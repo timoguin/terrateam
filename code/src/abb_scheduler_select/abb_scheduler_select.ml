@@ -1102,6 +1102,8 @@ module Socket = struct
           in
           Future.with_state (fun s -> (add_read fd handler s, Future.Promise.future p)))
 
+  let is_closed = Abb_fd_socket.is_closed
+
   let readable t =
     let fd = Abb_fd_socket.fd t in
     let p =
@@ -1177,6 +1179,25 @@ module Socket = struct
                 | _ -> `Unexpected exn)
           | exn -> Error (`Unexpected exn))
 
+    let connect_err = function
+      | Unix.Unix_error (err, _, _) as exn ->
+          let open Unix in
+          Error
+            (match err with
+            | EBADF -> `E_bad_file
+            | EINVAL -> `E_invalid
+            | EADDRNOTAVAIL -> `E_address_not_available
+            | EAFNOSUPPORT -> `E_address_family_not_supported
+            | EISCONN -> `E_is_connected
+            | ECONNREFUSED -> `E_connection_refused
+            | ECONNRESET -> `E_connection_reset
+            | ENETUNREACH -> `E_network_unreachable
+            | EHOSTUNREACH -> `E_host_unreachable
+            | EADDRINUSE -> `E_address_in_use
+            | EACCES -> `E_access
+            | _ -> `Unexpected exn)
+      | exn -> Error (`Unexpected exn)
+
     let connect t addr =
       let open Future.Infix_monad in
       let sa = unix_sockaddr_of_sockaddr addr in
@@ -1191,26 +1212,20 @@ module Socket = struct
             Future.Promise.set p (Ok ()) >>= fun () -> Future.Promise.future p
           with
           | Unix.Unix_error (Unix.EINPROGRESS, _, _) ->
-              let handler s = Future.run_with_state (Future.Promise.set p (Ok ())) s in
+              (* Writability after [EINPROGRESS] means the connect FINISHED, not
+                 that it succeeded -- a refused or timed-out connect reports
+                 exactly the same readiness.  The verdict is in SO_ERROR, and
+                 [getsockopt] itself raises on a descriptor that has gone. *)
+              let result () =
+                try
+                  match Unix.getsockopt_error fd with
+                  | None -> Ok ()
+                  | Some err -> connect_err (Unix.Unix_error (err, "connect", ""))
+                with exn -> connect_err exn
+              in
+              let handler s = Future.run_with_state (Future.Promise.set p (result ())) s in
               Future.with_state (fun s -> (add_write fd handler s, Future.Promise.future p))
-          | Unix.Unix_error (err, _, _) as exn ->
-              let open Unix in
-              Future.return
-                (Error
-                   (match err with
-                   | EBADF -> `E_bad_file
-                   | EINVAL -> `E_invalid
-                   | EADDRNOTAVAIL -> `E_address_not_available
-                   | EAFNOSUPPORT -> `E_address_family_not_supported
-                   | EISCONN -> `E_is_connected
-                   | ECONNREFUSED -> `E_connection_refused
-                   | ECONNRESET -> `E_connection_reset
-                   | ENETUNREACH -> `E_network_unreachable
-                   | EHOSTUNREACH -> `E_host_unreachable
-                   | EADDRINUSE -> `E_address_in_use
-                   | EACCES -> `E_access
-                   | _ -> `Unexpected exn))
-          | exn -> Future.return (Error (`Unexpected exn)))
+          | exn -> Future.return (connect_err exn))
 
     let recv t ~buf ~pos ~len =
       guarded_fut t (fun fd ->

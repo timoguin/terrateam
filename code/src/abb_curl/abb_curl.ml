@@ -445,6 +445,11 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
         mutex : Mutex.t;
         mt : Curl.Multi.mt;
         curl_opts : Curl.curlOption list;
+        (* Descriptors we could not arm a poll on, and the idle handle that
+           drains them.  [socket_function] runs inside libcurl and must not call
+           back into it, so the recovery is deferred to the next loop turn. *)
+        fail_idle : Luv.Idle.t;
+        mutable failed_fds : Unix.file_descr list;
         mutable polls : Luv.Poll.t Int_map.t;
         mutable requests : Request.t Id_map.t;
         mutable responses : Response.t Id_map.t;
@@ -514,6 +519,23 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
             | None -> assert false)
         | None -> ()
 
+      (* Drive curl so it observes that [fd] is unusable and completes the
+         transfer with an error.  Only ever called from [Loop.run] -- the poll's
+         own error callback, or [drain_failed_fds] -- never from inside one of
+         libcurl's callbacks. *)
+      let fail_socket t fd =
+        ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_IN);
+        process_finished t;
+        trigger_out_events t
+
+      (* Runs from [Loop.run], not from inside libcurl, so driving curl here is
+         legal.  Stops itself once the backlog is empty. *)
+      let drain_failed_fds t =
+        ignore (Luv.Idle.stop t.fail_idle);
+        let fds = t.failed_fds in
+        t.failed_fds <- [];
+        CCList.iter (fail_socket t) fds
+
       let socket_function t fd poll =
         let fd_int = unsafe_int_of_file_descr fd in
         let ensure_poll events =
@@ -521,26 +543,48 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
             match Int_map.get fd_int t.polls with
             | Some p ->
                 ignore (Luv.Poll.stop p);
-                p
-            | None ->
-                let p = Luv.Poll.init ~loop:t.loop fd_int |> Result.get_ok in
-                t.polls <- Int_map.add fd_int p t.polls;
-                p
+                Some p
+            | None -> (
+                (* [uv_poll_init] is fallible: curl may have closed this
+                   descriptor already, or it may be one epoll refuses.  Report it
+                   as a failed transfer rather than raising -- luv's default
+                   handler for an exception escaping a callback prints it and
+                   calls [exit 2], so this would end the whole process. *)
+                match Luv.Poll.init ~loop:t.loop fd_int with
+                | Ok p ->
+                    t.polls <- Int_map.add fd_int p t.polls;
+                    Some p
+                | Error err ->
+                    Logs.err (fun m ->
+                        m "SOCKET_FUNCTION : fd=%d : POLL_INIT : %s" fd_int (Luv.Error.strerror err));
+                    None)
           in
-          ignore
-            (Luv.Poll.start poll_handle events (fun result ->
-                 match result with
-                 | Ok events ->
-                     let has_readable = List.mem `READABLE events in
-                     let has_writable = List.mem `WRITABLE events in
-                     if has_readable then ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_IN);
-                     if has_writable then ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_OUT);
-                     process_finished t;
-                     trigger_out_events t
-                 | Error _ ->
-                     ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_IN);
-                     process_finished t;
-                     trigger_out_events t))
+          match poll_handle with
+          | None ->
+              (* Hand the descriptor to the idle handle rather than driving curl
+                 from here.  Two reasons it cannot be done inline: this runs
+                 inside [curl_multi_socket_action], so calling [action] /
+                 [remove_handle] / [easy_cleanup] would re-enter libcurl from one
+                 of its own callbacks, and curl re-registering the same socket
+                 would recurse straight back into us.  Nor can the transfer
+                 simply be left alone: curl reports timeout [-1] once it is only
+                 waiting on socket readiness, which STOPS [t.timer], so with no
+                 poll armed and no timer there is nothing left to complete the
+                 request and the caller waits forever. *)
+              t.failed_fds <- fd :: t.failed_fds;
+              ignore (Luv.Idle.start t.fail_idle (fun () -> drain_failed_fds t))
+          | Some poll_handle ->
+              ignore
+                (Luv.Poll.start poll_handle events (fun result ->
+                     match result with
+                     | Ok events ->
+                         let has_readable = List.mem `READABLE events in
+                         let has_writable = List.mem `WRITABLE events in
+                         if has_readable then ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_IN);
+                         if has_writable then ignore (Curl.Multi.action t.mt fd Curl.Multi.EV_OUT);
+                         process_finished t;
+                         trigger_out_events t
+                     | Error _ -> fail_socket t fd))
         in
         match poll with
         | Curl.Multi.POLL_NONE -> ()
@@ -725,6 +769,47 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
             ("SSL_CERT_FILE", fun path -> Some (Curl.CURLOPT_CAINFO path));
           ]
 
+      (* Body of the curl loop domain.  Named rather than inlined in
+         [Domain.spawn] so the [Luv.Poll.init] result can be matched without the
+         match colliding with the caller's [try ... with]. *)
+      let run_loop_domain' t =
+        (* If we cannot watch the wake pipe there is no loop to run.  Say so
+           plainly rather than raising out of a [get_ok] and relying on the
+           caller's [try ... with] to turn a bare [Invalid_argument] into a log
+           line that does not name the cause. *)
+        match Luv.Poll.init ~loop:t.loop (unsafe_int_of_file_descr t.wait_eventfd) with
+        | Error err -> Logs.err (fun m -> m "LOOP : WAIT_POLL_INIT : %s" (Luv.Error.strerror err))
+        | Ok wait_poll ->
+            ignore
+              (Luv.Poll.start wait_poll [ `READABLE ] (fun _result ->
+                   consume_eventfd t.wait_eventfd;
+                   process_in_events t;
+                   if t.shutdown then (
+                     ignore (Luv.Timer.stop t.timer);
+                     Luv.Handle.close t.timer CCFun.id;
+                     ignore (Luv.Idle.stop t.fail_idle);
+                     Luv.Handle.close t.fail_idle CCFun.id;
+                     t.failed_fds <- [];
+                     ignore (Luv.Poll.stop wait_poll);
+                     Luv.Handle.close wait_poll CCFun.id;
+                     Int_map.iter
+                       (fun _ p ->
+                         ignore (Luv.Poll.stop p);
+                         Luv.Handle.close p CCFun.id)
+                       t.polls;
+                     t.polls <- Int_map.empty)
+                   else (
+                     process_finished t;
+                     trigger_out_events t)));
+            ignore (Curl.Multi.action_timeout t.mt);
+            ignore (Luv.Loop.run ~loop:t.loop ());
+            ignore (Luv.Loop.close t.loop)
+
+      let run_loop_domain t =
+        try run_loop_domain' t
+        with exn ->
+          Logs.err (fun m -> m "--- %s %s ---" (Printexc.to_string exn) (Printexc.get_backtrace ()))
+
       let start () =
         let wait_loop_eventfd, trigger_server_eventfd = Unix.pipe ~cloexec:true () in
         let wait_server_eventfd, trigger_loop_eventfd = Unix.pipe ~cloexec:true () in
@@ -734,10 +819,13 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
         UnixLabels.set_nonblock trigger_server_eventfd;
         let loop = Luv.Loop.init () |> Result.get_ok in
         let timer = Luv.Timer.init ~loop () |> Result.get_ok in
+        let fail_idle = Luv.Idle.init ~loop () |> Result.get_ok in
         let t =
           {
             loop;
             timer;
+            fail_idle;
+            failed_fds = [];
             trigger_eventfd = trigger_loop_eventfd;
             wait_eventfd = wait_loop_eventfd;
             in_event = Queue.create ();
@@ -765,37 +853,7 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
                      Curl.Multi.action_timeout t.mt;
                      process_finished t;
                      trigger_out_events t)));
-        ignore
-          (Domain.spawn (fun () ->
-               try
-                 let wait_poll =
-                   Luv.Poll.init ~loop:t.loop (unsafe_int_of_file_descr t.wait_eventfd)
-                   |> Result.get_ok
-                 in
-                 ignore
-                   (Luv.Poll.start wait_poll [ `READABLE ] (fun _result ->
-                        consume_eventfd t.wait_eventfd;
-                        process_in_events t;
-                        if t.shutdown then (
-                          ignore (Luv.Timer.stop t.timer);
-                          Luv.Handle.close t.timer CCFun.id;
-                          ignore (Luv.Poll.stop wait_poll);
-                          Luv.Handle.close wait_poll CCFun.id;
-                          Int_map.iter
-                            (fun _ p ->
-                              ignore (Luv.Poll.stop p);
-                              Luv.Handle.close p CCFun.id)
-                            t.polls;
-                          t.polls <- Int_map.empty)
-                        else (
-                          process_finished t;
-                          trigger_out_events t)));
-                 ignore (Curl.Multi.action_timeout t.mt);
-                 ignore (Luv.Loop.run ~loop:t.loop ());
-                 ignore (Luv.Loop.close t.loop)
-               with exn ->
-                 Logs.err (fun m ->
-                     m "--- %s %s ---" (Printexc.to_string exn) (Printexc.get_backtrace ()))));
+        ignore (Domain.spawn (fun () -> run_loop_domain t));
         (wait_server_eventfd, trigger_server_eventfd, t.mutex, t.in_event, t.out_event)
     end
 

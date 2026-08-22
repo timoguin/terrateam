@@ -6,12 +6,21 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
   module Fut_comb = Abb_future_combinators.Make (Abb.Future)
   module Buffered = Abb_io_buffered.Make (Abb.Future)
 
+  (* libtls holds the descriptor NUMBER it was handed at [connect_socket] time,
+     not [sock], so it cannot tell that the handle has been closed underneath
+     it.  If that number has since been recycled onto a live socket, libtls'
+     read or write gets [EAGAIN] and asks us to wait again -- and
+     [Abb.Socket.readable]/[writable] carry no error channel, so on a closed
+     handle they resolve at once.  The pair spins.  Stop at the handle instead,
+     which is the one thing that stays true once it is closed. *)
   let make_buffered ?size sock tls =
+    let closed () = Fut_comb.return_err `E_io in
     let rec read ~buf ~pos ~len =
       assert (pos >= 0);
       assert (len > 0);
       match Otls.Tls.read tls ~pos ~len buf with
       | Ok n -> Fut_comb.return_ok n
+      | Error (`Want_pollin | `Want_pollout) when Abb.Socket.is_closed sock -> closed ()
       | Error `Want_pollin ->
           let open Abb.Future.Infix_monad in
           Abb.Socket.readable sock >>= fun () -> read ~buf ~pos ~len
@@ -36,6 +45,7 @@ module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
               let open Fut_comb.Infix_result_monad in
               write ~bufs:Abb_intf.Write_buf.({ buf; pos = pos + n; len = len - n } :: bs)
               >>= fun n' -> Fut_comb.return_ok (n + n')
+          | Error (`Want_pollin | `Want_pollout) when Abb.Socket.is_closed sock -> closed ()
           | Error `Want_pollin ->
               let open Abb.Future.Infix_monad in
               Abb.Socket.readable sock >>= fun () -> write ~bufs
