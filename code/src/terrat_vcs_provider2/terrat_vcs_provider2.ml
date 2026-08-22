@@ -17,7 +17,7 @@ type fetch_repo_config_with_provenance_err =
   | `Unexpected_err of string
   | `Yaml_decode_err of string * string
   | premium_feature_err
-  | `Error
+  | Terrat_vcs_api.call_err
   ]
 [@@deriving show]
 
@@ -145,6 +145,8 @@ module Msg = struct
     | `Db_err
     | `Internal_err of string  (** Short tag naming the invariant that broke *)
     | `Vcs_api_err of string  (** Short tag naming the API call that failed *)
+    | `Vcs_api_timeout_err of string
+      (** Short tag naming the API call the VCS did not answer in time *)
     | `Work_manifest_start_err
     ]
   [@@deriving show]
@@ -552,7 +554,7 @@ module type S = sig
       'a Terrat_base_repo_config_v1.t ->
       ('diff, 'checks) Api.Pull_request.t ->
       Terrat_change_match3.Dirspace_config.t list ->
-      (Result.t, [> `Error ]) result Abb.Future.t
+      (Result.t, [> Terrat_vcs_api.call_err ]) result Abb.Future.t
   end
 
   module Gate : sig

@@ -85,3 +85,11 @@ let to_string = function
   | Plan { tag_query } -> "terrateam plan " ^ Terrat_tag_query.to_string tag_query
   | Repo_config -> "terrateam repo-config"
   | Unlock ids -> "terrateam unlock " ^ CCString.concat " " ids
+
+let self_marker = "<!-- stategraph -->"
+let add_self_marker body = body ^ "\n\n" ^ self_marker
+
+(* The marker must CLOSE the body, not merely appear in it.  A quote-reply
+   carries the raw markdown of the quoted comment, marker included, and the
+   person's own command follows it. *)
+let is_from_self body = CCString.suffix ~suf:self_marker (CCString.trim body)

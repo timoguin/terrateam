@@ -108,6 +108,9 @@ module S = struct
     Api.comment_on_pull_request ~request_id t.client t.pull_request body
     >>= function
     | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+    (* A body the VCS never answered for is not a body that is too big, so
+       rendering a smaller one buys nothing but another call timeout. *)
+    | Error (`Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
@@ -132,6 +135,7 @@ module S = struct
         Api.comment_on_pull_request ~request_id t.client t.pull_request body
         >>= function
         | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+        | Error (`Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
         | Error `Error ->
             let by_scope = [] in
             let body =
@@ -154,7 +158,8 @@ module S = struct
             let content_length = CCString.length body in
             Logs.info (fun m ->
                 m "%s : RENDERED_LENGTH %i : COMPACTED %b" t.request_id content_length compact);
-            Api.comment_on_pull_request ~request_id t.client t.pull_request body)
+            Terrat_vcs_api.collapse_call_err (fun () ->
+                Api.comment_on_pull_request ~request_id t.client t.pull_request body))
 
   let rendered_length t els =
     let module R2 = Terrat_api_components.Work_manifest_tf_operation_result2 in

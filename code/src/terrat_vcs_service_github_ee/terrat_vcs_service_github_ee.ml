@@ -376,6 +376,9 @@ module Provider :
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
           Abbs_future_combinators.return_err `Error
+      | Error (`Vcs_api_timeout_err operation) ->
+          Logs.err (fun m -> m "%s : VCS_API_TIMEOUT : %s" request_id operation);
+          Abbs_future_combinators.return_err `Error
       | Error `Error ->
           Logs.err (fun m -> m "%s" request_id);
           Abbs_future_combinators.return_err `Error

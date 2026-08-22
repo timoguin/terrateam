@@ -170,7 +170,7 @@ module Client = struct
   module Client_cache = Abbs_cache.Expiring.Make (struct
     type k = Account.t [@@deriving eq]
     type v = Githubc2_abb.t
-    type err = [ `Error ]
+    type err = Terrat_vcs_api.call_err
     type args = unit -> (v, err) result Abb.Future.t
 
     let fetch f = f ()
@@ -290,6 +290,15 @@ module Client = struct
   let to_native t = t.client
 end
 
+(* A call GitHub did not answer inside the call timeout.  It is reported apart
+   from [`Error] so that the user is told GitHub is unresponsive, rather than
+   that something inside Terrateam broke.  [operation] names the call and is
+   printed in the comment the user sees. *)
+let vcs_api_timeout_err ~request_id operation =
+  Prmths.Counter.inc_one Metrics.github_errors_total;
+  Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
+  Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
+
 let fetch_branch_sha ~request_id client repo ref_ =
   let ret =
     let open Abbs_future_combinators.Infix_result_monad in
@@ -308,6 +317,7 @@ let fetch_branch_sha ~request_id client repo ref_ =
   >>= function
   | Ok sha -> Abbs_future_combinators.return_ok (Some sha)
   | Error (`Not_found _) -> Abbs_future_combinators.return_ok None
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Terrat_github.fetch_branch_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_BRANCH_SHA : %a" request_id Terrat_github.pp_fetch_branch_err err);
@@ -340,6 +350,7 @@ let fetch_file ~request_id client repo ref_ path =
   | Ok (Some { C.primary = { C.Primary.content; _ }; _ }) ->
       Abbs_future_combinators.return_ok (Some content)
   | Ok None -> Abbs_future_combinators.return_ok None
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_FILE"
   | Error (#Terrat_github.fetch_file_err as err) ->
       Logs.info (fun m -> m "%s : FETCH_FILE : %a" request_id Terrat_github.pp_fetch_file_err err);
       Abbs_future_combinators.return_err `Error
@@ -355,6 +366,7 @@ let fetch_remote_repo ~request_id client repo =
     fetch
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_REMOTE_REPO"
   | Error (#Terrat_github.fetch_repo_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_REMOTE_REPO : %a" request_id Terrat_github.pp_fetch_repo_err err);
@@ -371,6 +383,7 @@ let fetch_centralized_repo ~request_id client owner =
   >>= function
   | Ok r -> Abbs_future_combinators.return_ok (Some r)
   | Error (`Not_found _) -> Abbs_future_combinators.return_ok None
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_CENTRALIZED_REPO"
   | Error (#Terrat_github.fetch_repo_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_CENTRALIZED_REPO : %a" request_id Terrat_github.pp_fetch_repo_err err);
@@ -389,6 +402,7 @@ let create_client ~request_id config account _db =
     create_client' config account
     >>= function
     | Ok _ as ret -> Abb.Future.return ret
+    | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_CLIENT"
     | Error (#Terrat_github.get_installation_access_token_err as err) ->
         Logs.err (fun m ->
             m "%s: ERROR : %a" request_id Terrat_github.pp_get_installation_access_token_err err);
@@ -398,6 +412,7 @@ let create_client ~request_id config account _db =
   >>= function
   | Ok github_client ->
       Abbs_future_combinators.return_ok (Client.make ~account ~client:github_client ())
+  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
   | Error `Error -> Abbs_future_combinators.return_err `Error
 
 let fetch_tree ~request_id client repo ref_ =
@@ -417,6 +432,7 @@ let fetch_tree ~request_id client repo ref_ =
    else fetch ())
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_TREE"
   | Error (#Terrat_github.get_tree_err as err) ->
       Logs.info (fun m -> m "%s : FETCH_TREE : %a" request_id Terrat_github.pp_get_tree_err err);
       Abbs_future_combinators.return_err `Error
@@ -427,10 +443,11 @@ let comment_on_pull_request ~request_id client pull_request body =
     ~owner:(Repo.owner (Terrat_pull_request.repo pull_request))
     ~repo:(Repo.name (Terrat_pull_request.repo pull_request))
     ~pull_number:(Terrat_pull_request.id pull_request)
-    ~body
+    ~body:(Terrat_comment.add_self_marker body)
     client.Client.client
   >>= function
   | Ok id -> Abbs_future_combinators.return_ok id
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error (#Terrat_github.publish_comment_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -515,6 +532,7 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   >>= function
   | Ok _ as r -> Abb.Future.return r
   | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF_FILES"
   | Error (#Terrat_github.fetch_diff_files_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_DIFF_FILES : %a" request_id Terrat_github.pp_fetch_diff_files_err err);
@@ -639,6 +657,7 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
         Prmths.Counter.inc_one Metrics.github_errors_total;
         Logs.err (fun m -> m "%s : ERROR : repo=%s : ERROR" request_id (Repo.to_string repo));
         Abbs_future_combinators.return_err `Error
+    | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST"
     | Error (#Terrat_github.fetch_pull_request_err as err) ->
         Prmths.Counter.inc_one Metrics.github_errors_total;
         Logs.err (fun m ->
@@ -672,6 +691,7 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
   | Error (`Service_unavailable _)
   | Error (`Not_acceptable _)
   | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
 
 let react_to_comment ~request_id client pull_request comment_id =
   let open Abb.Future.Infix_monad in
@@ -683,6 +703,7 @@ let react_to_comment ~request_id client pull_request comment_id =
     client.Client.client
   >>= function
   | Ok () -> Abbs_future_combinators.return_ok ()
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "REACT_TO_COMMENT"
   | Error (#Terrat_github.publish_reaction_err as err) ->
       Logs.info (fun m ->
           m "%s : REACT_TO_COMMENT : %a" request_id Terrat_github.pp_publish_reaction_err err);
@@ -699,6 +720,7 @@ let create_commit_checks ~request_id client repo ref_ checks =
     client.Client.client
   >>= function
   | Ok () -> Abbs_future_combinators.return_ok ()
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error (#Githubc2_abb.call_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.err (fun m -> m "%s : ERROR : %a" request_id Githubc2_abb.pp_call_err err);
@@ -719,6 +741,7 @@ let fetch_commit_checks ~request_id client repo ref_ =
         client.Client.client)
   >>= function
   | Ok _ as res -> Abb.Future.return res
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_COMMIT_CHECKS"
   | Error (#Terrat_vcs_api_github_commit_check.list_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -756,6 +779,7 @@ let fetch_pull_request_reviews ~request_id repo pull_request_id client =
                      user;
                })
            reviews)
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error (#Terrat_github.Pull_request_reviews.list_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m -> m "%s : %a" request_id Terrat_github.Pull_request_reviews.pp_list_err err);
@@ -792,6 +816,7 @@ let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m -> m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Resp.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error (#Githubc2_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS: %a" request_id Githubc2_abb.pp_call_err err);
@@ -817,6 +842,7 @@ let fetch_pull_request_review_decision ~request_id repo pull_number client =
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REVIEW_DECISION : UNKNOWN : %s" request_id decision);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEW_DECISION"
   | Error (#Terrat_github.fetch_pull_request_review_decision_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.err (fun m ->
@@ -914,6 +940,7 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
       merge_pull_request' ?retain_pr_title request_id client pull_request merge_strategy
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
+      | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST"
       | Error (#Githubc2_abb.call_err as err) ->
           Logs.info (fun m ->
               m "%s : MERGE_PULL_REQUEST : %a" request_id Githubc2_abb.pp_call_err err);
@@ -983,6 +1010,7 @@ let delete_branch ~request_id client repo branch =
   delete_branch' request_id client repo branch
   >>= function
   | Ok _ as ret -> Abb.Future.return ret
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "DELETE_BRANCH"
   | Error (#Githubc2_abb.call_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -995,6 +1023,7 @@ let is_member_of_team ~request_id ~team ~user repo client =
   Terrat_github.get_team_membership_in_org ~org:(Repo.owner repo) ~team ~user client.Client.client
   >>= function
   | Ok _ as res -> Abb.Future.return res
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "IS_MEMBER_OF_TEAM"
   | Error (#Terrat_github.get_team_membership_in_org_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -1014,6 +1043,7 @@ let get_repo_role ~request_id repo user client =
     client.Client.client
   >>= function
   | Ok _ as res -> Abb.Future.return res
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_REPO_ROLE"
   | Error (#Terrat_github.get_repo_collaborator_permission_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -1029,6 +1059,7 @@ let get_org_role ~request_id ~org user client =
   Terrat_github.get_org_membership ~org ~user:(User.to_string user) client.Client.client
   >>= function
   | Ok _ as res -> Abb.Future.return res
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_ORG_ROLE"
   | Error (#Terrat_github.get_org_membership_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
@@ -1043,6 +1074,7 @@ let find_workflow_file ~request_id repo client =
     client.Client.client
   >>= function
   | Ok _ as res -> Abb.Future.return res
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FIND_WORKFLOW_FILE"
   | Error (#Terrat_github.get_installation_access_token_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->

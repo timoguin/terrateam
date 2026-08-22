@@ -190,6 +190,21 @@ let test_operation_failed_vcs_api_err =
       in
       Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "CREATE_COMMIT_CHECKS" ])
 
+(* A call the VCS never answered is a separate comment from a call that failed,
+   so that the reader is told GitHub is unresponsive rather than that Terrateam
+   broke. *)
+let test_operation_failed_vcs_api_timeout_err =
+  Oth.test ~name:"Operation failed vcs api timeout err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_vcs_api_timeout_err
+          (`Assoc [ ("request_id", `String "req-123"); ("operation", `String "FETCH_PULL_REQUEST") ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "req-123"; "FETCH_PULL_REQUEST"; "GitHub"; "timed out" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"UNKNOWN")
+
 let test_operation_failed_work_manifest_start_err =
   Oth.test ~name:"Operation failed work manifest start err" (fun _ ->
       let body =
@@ -313,6 +328,39 @@ let test_missing_plans_mixed_reasons =
       Oth.Assert.str_contains ~haystack:body ~needle:"Never planned on this ref";
       Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #12";
       Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed")
+
+(* These templates open on the word "Terrateam", which is a command trigger
+   word, so the bodies this system publishes come back as commands.  The self
+   marker is what keeps this system from answering its own comment.  See
+   [Terrat_comment.is_from_self] and the guard in the event endpoints. *)
+let test_published_bodies_carry_the_self_marker =
+  Oth.test ~name:"Published bodies carry the self marker" (fun _ ->
+      let templates =
+        [
+          ("operation_failed_branch_not_found", Tmpl.operation_failed_branch_not_found);
+          ("operation_failed_compute_aborted", Tmpl.operation_failed_compute_aborted);
+          ("operation_failed_db_err", Tmpl.operation_failed_db_err);
+          ("operation_failed_internal_err", Tmpl.operation_failed_internal_err);
+          ("operation_failed_work_manifest_start_err", Tmpl.operation_failed_work_manifest_start_err);
+        ]
+      in
+      Oth.Assert.true_
+        "a shipped template still parses as a command"
+        (CCList.exists
+           (fun (_, tmpl) ->
+             match Terrat_comment.parse tmpl with
+             | Ok _ -> true
+             | Error (`Unknown_action _) -> true
+             | Error (`Tag_query_error _) -> true
+             | Error `Not_terrateam -> false)
+           templates);
+      CCList.iter
+        (fun (name, tmpl) ->
+          Oth.Assert.true_
+            (name ^ " is recognized as published by this system")
+            (Terrat_comment.is_from_self (Terrat_comment.add_self_marker tmpl)))
+        templates;
+      ())
 
 (* The [work_manifests] payload both providers build for every message that lists work manifests,
    see [work_manifests_kv] in the service providers. *)
@@ -497,11 +545,13 @@ let test_apply_complete2_details_many_dirspaces_applied =
 let test =
   Oth.parallel
     [
+      test_published_bodies_carry_the_self_marker;
       test_operation_failed_branch_not_found;
       test_operation_failed_compute_aborted;
       test_operation_failed_db_err;
       test_operation_failed_internal_err;
       test_operation_failed_vcs_api_err;
+      test_operation_failed_vcs_api_timeout_err;
       test_operation_failed_work_manifest_start_err;
       test_matches_in_later_layer;
       test_tag_query_dropped_dirspaces;

@@ -35,6 +35,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     | `Branch_not_found_err of string (* A VCS API call failed.  The payload names the call. *)
     | `Vcs_api_err of string (* Gave up after this many work manifests aborted without a result. *)
     | `Compute_aborted_err of int
+      (* The VCS did not answer a call inside the call timeout.  The payload
+         names the call.  Kept apart from [`Vcs_api_err] so the user is told
+         which side is unresponsive. *)
+    | `Vcs_api_timeout_err of string
     ]
   [@@deriving show]
 
@@ -485,7 +489,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     Hmap.Key.create "publish_comment"
 
   let create_commit_checks :
-      (S.Api.Ref.t -> Terrat_commit_check.t list -> (unit, [ `Error ]) result Abb.Future.t) Key.t =
+      (S.Api.Ref.t ->
+      Terrat_commit_check.t list ->
+      (unit, Terrat_vcs_api.call_err) result Abb.Future.t)
+      Key.t =
     Hmap.Key.create "create_commit_checks"
 
   let commit_checks : Terrat_commit_check.t list Key.t = Hmap.Key.create "commit_checks"

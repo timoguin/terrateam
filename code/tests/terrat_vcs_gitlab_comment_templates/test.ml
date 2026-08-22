@@ -94,9 +94,25 @@ let test_apply_complete2_details_few_dirspaces_compact_view =
     ~compact_view:true
     ~num_dirspaces:3
 
+(* A call the VCS never answered is a separate comment from a call that failed,
+   so that the reader is told GitLab is unresponsive rather than that Terrateam
+   broke. *)
+let test_operation_failed_vcs_api_timeout_err =
+  Oth.test ~name:"Operation failed vcs api timeout err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_vcs_api_timeout_err
+          (`Assoc [ ("request_id", `String "req-123"); ("operation", `String "FETCH_PULL_REQUEST") ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "req-123"; "FETCH_PULL_REQUEST"; "GitLab"; "timed out" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"UNKNOWN")
+
 let test =
   Oth.parallel
     [
+      test_operation_failed_vcs_api_timeout_err;
       test_apply_complete2_details_many_dirspaces;
       test_apply_complete2_details_few_dirspaces;
       test_apply_complete2_details_few_dirspaces_compact_view;

@@ -12,6 +12,7 @@
   sln
   terrat_api
   terrat_code_idx
+  terrat_comment
   terrat_github
   terrat_github_webhooks
   terrat_github_webhooks_decoder

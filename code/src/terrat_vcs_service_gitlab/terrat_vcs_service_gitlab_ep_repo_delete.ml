@@ -105,6 +105,10 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) (S : S) = struct
             let body = error_response "REPO_NOT_ARCHIVED" in
             Abbs_future_combinators.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request body) ctx)
+        | Error (`Vcs_api_timeout_err operation) ->
+            Logs.err (fun m -> m "%s : VCS_API_TIMEOUT : %s" request_id operation);
+            Abbs_future_combinators.return_ok
+              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error `Error ->
             Abbs_future_combinators.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)

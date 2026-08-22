@@ -31,6 +31,7 @@ end
 
 let fetch_pull_request_tries = 6
 let one_minute = Duration.(to_f (of_min 1))
+
 (* let log_call = function *)
 (*   | `Req req -> *)
 (*       Logs.debug (fun m -> *)
@@ -40,6 +41,14 @@ let one_minute = Duration.(to_f (of_min 1))
 (*           m "resp = %a" (Openapi.Response.pp (fun fmt _ -> Format.fprintf fmt "<opaque>")) resp) *)
 (*   | `Err (#Openapic_abb.call_err as err) -> *)
 (*       Logs.debug (fun m -> m "err = %a" Openapic_abb.pp_call_err err) *)
+
+(* A call GitLab did not answer inside the call timeout.  It is reported apart
+   from [`Error] so that the user is told GitLab is unresponsive, rather than
+   that something inside Terrateam broke.  [operation] names the call and is
+   printed in the comment the user sees. *)
+let vcs_api_timeout_err ~request_id operation =
+  Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
+  Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
 
 let rate_limit_wait resp =
   let headers = Openapi.Response.headers resp in
@@ -258,6 +267,7 @@ let fetch_branch_sha ~request_id client repo ref_ =
   run
   >>= function
   | Ok _ as ret -> Abb.Future.return ret
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_BRANCH_SHA : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -282,6 +292,7 @@ let fetch_file ~request_id client repo ref_ path =
   run
   >>= function
   | Ok _ as ret -> Abb.Future.return ret
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_FILE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_FILE : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -305,6 +316,7 @@ let fetch_remote_repo ~request_id client repo =
       Logs.err (fun m ->
           m "%s : FETCH_REMOTE_REPO : repo=%s : `Not_found" request_id (Repo.to_string repo));
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_REMOTE_REPO"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m
@@ -320,6 +332,7 @@ let fetch_centralized_repo ~request_id client owner =
   fetch_remote_repo' ~request_id client (Repo.make ~id:0 ~owner ~name:"terrateam" ())
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_CENTRALIZED_REPO"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m
@@ -360,6 +373,7 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES" request_id);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF_FILES"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -429,6 +443,7 @@ let fetch_tree ~request_id client repo ref_ =
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_TREE" request_id);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_TREE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_TREE : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -439,7 +454,7 @@ let comment_on_pull_request ~request_id client pull_request body =
   in
   let run =
     let open Abbs_future_combinators.Infix_result_monad in
-    let body = { Gl.Request_body.body } in
+    let body = { Gl.Request_body.body = Terrat_comment.add_self_marker body } in
     call
       client.Client.client
       Gl.(
@@ -460,6 +475,7 @@ let comment_on_pull_request ~request_id client pull_request body =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
@@ -502,6 +518,7 @@ let fetch_diff ~request_id ~client ~repo merge_request_iid =
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_DIFF" request_id);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_DIFF : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -619,6 +636,8 @@ let fetch_pull_request ~request_id _account client repo merge_request_iid =
   | Error `Not_found ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : `Not_found" request_id);
       Abbs_future_combinators.return_err `Error
+  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -651,6 +670,7 @@ let react_to_comment ~request_id client pull_request comment_id =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "REACT_TO_COMMENT"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -788,6 +808,7 @@ let create_commit_checks ~request_id client repo ref_ checks =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -832,6 +853,7 @@ let fetch_commit_checks ~request_id client repo ref_ =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -865,6 +887,7 @@ let fetch_pull_request_approvals' ~request_id repo pull_number client =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_APPROVALS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_APPROVALS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_APPROVALS : %a" request_id Openapic_abb.pp_call_err err);
@@ -903,6 +926,7 @@ let fetch_pull_request_reviews' ~request_id repo pull_number client =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_REVIEWS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REVIEWS : %a" request_id Openapic_abb.pp_call_err err);
@@ -919,6 +943,7 @@ let fetch_pull_request_reviews ~request_id repo pull_number client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
   | Error `Error -> Abbs_future_combinators.return_err `Error
 
 let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
@@ -951,6 +976,7 @@ let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Openapic_abb.pp_call_err err);
@@ -1020,6 +1046,7 @@ let merge_pull_request ~request_id ?(retain_pr_title = false) client pull_reques
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -1043,6 +1070,7 @@ let delete_branch ~request_id client repo branch =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "DELETE_BRANCH"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -1081,6 +1109,7 @@ let is_member_of_team ~request_id ~team ~user _repo client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "IS_MEMBER_OF_TEAM"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : IS_MEMBER_OF_TEAM : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -1126,6 +1155,7 @@ let get_repo_role ~request_id repo user client =
   | Error (#Glp.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Glp.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_REPO_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
@@ -1163,6 +1193,7 @@ let get_org_role ~request_id ~org user client =
   | Error (#Glg.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Glg.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_ORG_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error

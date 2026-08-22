@@ -322,10 +322,15 @@ let dirspace_compare (dirspace1, steps1) (dirspace2, steps2) =
   Cmp.compare (not has_changes1, success1, dirspace1) (not has_changes2, success2, dirspace2)
 
 module Comment_api = struct
+  (* The comment is how a failure reaches the user, so a call the VCS never
+     answered while commenting cannot be told apart for them.  It is reported
+     the same as every other comment failure. *)
   let comment_on_pull_request ~request_id client pull_request _msg_type body =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abb.Future.Infix_monad in
     Api.comment_on_pull_request ~request_id client pull_request body
-    >>= fun comment_id -> Abbs_future_combinators.return_ok comment_id
+    >>= function
+    | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+    | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
 
   let apply_template_and_publish ~request_id client pull_request msg_type template kv =
     Logs.info (fun m -> m "%s : PUBLISH : %s" request_id msg_type);
