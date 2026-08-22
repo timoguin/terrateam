@@ -133,16 +133,27 @@ module Witness = struct
     | Var : (('f, 'a -> 'r) t * 'a * v_type) -> ('f, 'r) t
 end
 
-let rec test_uri : type f r. Uri.t -> (f, r) t -> (int * (f, r) Witness.t) option =
- fun uri t ->
-  let path = Uri.path uri in
+(* [path], [query] and [fragment] are properties of the URI being matched, not of the route being
+   tried, so they are decoded once by the entry points below and threaded through here. [Uri.path]
+   is the expensive one: it allocates a fresh pct encoder and re-encodes the whole path list on
+   every call, and taken per recursion step that was paid once per path segment of every route the
+   matcher tried before reaching the right one, so the cost of dispatch grew with a route's
+   position in the table. [Uri.query] is memoised behind a lazy inside the URI and [Uri.fragment]
+   only unwraps an option, so they ride along for symmetry with [Brtl_rtng], not for the saving. *)
+let rec test_uri : type f r.
+    path:string ->
+    query:(string * string list) list ->
+    fragment:string option ->
+    (f, r) t ->
+    (int * (f, r) Witness.t) option =
+ fun ~path ~query ~fragment t ->
   match t with
   | Rel s when CCString.is_sub ~sub:s 0 path 0 ~sub_len:(CCString.length s) ->
       Some (CCString.length s, Witness.Start)
   | Rel _ -> None
   | Path_const (t, s) ->
       let open CCOption.Infix in
-      test_uri uri t
+      test_uri ~path ~query ~fragment t
       >>= fun (idx, wit) ->
       if idx < String.length path then
         let s = "/" ^ s in
@@ -151,14 +162,14 @@ let rec test_uri : type f r. Uri.t -> (f, r) t -> (int * (f, r) Witness.t) optio
       else None
   | Path_var (t, v) ->
       let open CCOption.Infix in
-      test_uri uri t
+      test_uri ~path ~query ~fragment t
       >>= fun (idx, wit) ->
       if idx < String.length path then
         v idx path >>= fun (idx, value) -> Some (idx, Witness.Var (wit, value, Witness.Path))
       else None
   | Query_var (t, (n, v)) ->
       let open CCOption.Infix in
-      test_uri uri t
+      test_uri ~path ~query ~fragment t
       >>= fun (idx, wit) ->
       (* The Uri library gives you all query params as mappings to list with
          [query], so we filter the one we care about, which will be a list of
@@ -170,7 +181,7 @@ let rec test_uri : type f r. Uri.t -> (f, r) t -> (int * (f, r) Witness.t) optio
           CCList.filter_map (function
             | qn, vs when CCString.equal qn n -> Some vs
             | _ -> None)
-          @@ Uri.query uri
+          @@ query
         in
         match qp with
         | [] -> None
@@ -179,9 +190,8 @@ let rec test_uri : type f r. Uri.t -> (f, r) t -> (int * (f, r) Witness.t) optio
       v q >>= fun value -> Some (idx, Witness.Var (wit, value, Witness.Query (n, q)))
   | Fragment_var (t, v) ->
       let open CCOption.Infix in
-      test_uri uri t
+      test_uri ~path ~query ~fragment t
       >>= fun (idx, wit) ->
-      let fragment = Uri.fragment uri in
       v fragment >>= fun value -> Some (idx, Witness.Var (wit, value, Witness.Fragment fragment))
 
 let rec apply_uri' : type f r x. (f, x) Witness.t -> (x -> r) -> f -> r =
@@ -196,17 +206,11 @@ let rec apply_uri' : type f r x. (f, x) Witness.t -> (x -> r) -> f -> r =
 let apply : type f r. (f, r) Witness.t -> f -> r = fun wit -> apply_uri' wit (fun x -> x)
 
 module Match = struct
-  type 'r t = Match : (int * Uri.t * 'f * ('f, 'r) Witness.t) -> 'r t
+  type 'r t = Match : (int * string * 'f * ('f, 'r) Witness.t) -> 'r t
 
   let apply (Match (_, _, f, wit)) = apply wit f
-
-  let consumed_path (Match (idx, uri, _, _)) =
-    let path = Uri.path uri in
-    String.sub path 0 idx
-
-  let remaining_path (Match (idx, uri, _, _)) =
-    let path = Uri.path uri in
-    String.sub path idx (String.length path - idx)
+  let consumed_path (Match (idx, path, _, _)) = String.sub path 0 idx
+  let remaining_path (Match (idx, path, _, _)) = String.sub path idx (String.length path - idx)
 
   let rec equal' : type f1 r1 f2 r2. (f1, r1) Witness.t -> (f2, r2) Witness.t -> bool =
    fun wit1 wit2 ->
@@ -220,19 +224,23 @@ module Match = struct
     consumed_path t1 = consumed_path t2 && equal' wit1 wit2
 end
 
-let match_uri ?(must_consume_path = true) (Route.Route (t, f)) uri =
-  match test_uri uri t with
-  | Some (idx, wit) when (not must_consume_path) || String.length (Uri.path uri) = idx ->
-      Some (Match.Match (idx, uri, f, wit))
+let match_uri' ~must_consume_path ~path ~query ~fragment (Route.Route (t, f)) =
+  match test_uri ~path ~query ~fragment t with
+  | Some (idx, wit) when (not must_consume_path) || String.length path = idx ->
+      Some (Match.Match (idx, path, f, wit))
   | Some _ | None -> None
 
-let rec first_match ?(must_consume_path = true) rs uri =
-  match rs with
-  | [] -> None
-  | r :: rs -> (
-      match match_uri ~must_consume_path r uri with
-      | Some _ as r -> r
-      | None -> first_match ~must_consume_path rs uri)
+let match_uri ?(must_consume_path = true) r uri =
+  let path = Uri.path uri in
+  let query = Uri.query uri in
+  let fragment = Uri.fragment uri in
+  match_uri' ~must_consume_path ~path ~query ~fragment r
+
+let first_match ?(must_consume_path = true) rs uri =
+  let path = Uri.path uri in
+  let query = Uri.query uri in
+  let fragment = Uri.fragment uri in
+  CCList.find_map (match_uri' ~must_consume_path ~path ~query ~fragment) rs
 
 let route_uri ?(must_consume_path = true) ~default rs uri =
   match first_match ~must_consume_path rs uri with
