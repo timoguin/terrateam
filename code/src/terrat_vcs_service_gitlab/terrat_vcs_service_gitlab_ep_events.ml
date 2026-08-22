@@ -112,6 +112,11 @@ module Make (P : Terrat_vcs_provider2_gitlab.S) = struct
         Evaluator2.push ~request_id ~config ~storage ~exec ~account ~repo ~branch ~user ()
     | E.Push_event _ -> Abbs_future_combinators.return_ok ()
     | E.Merge_request_comment_event
+        { Mrce.object_attributes = { Mrceoa.note = Some comment_body; _ }; _ }
+      when Terrat_comment.is_from_self comment_body ->
+        Logs.debug (fun m -> m "%s : NOOP : COMMENT_FROM_SELF" request_id);
+        Abbs_future_combinators.return_ok ()
+    | E.Merge_request_comment_event
         {
           Mrce.project = { Pr.id = repo_id; path_with_namespace; _ };
           object_attributes =

@@ -3877,6 +3877,10 @@ module Comment = struct
               ( "OPERATION_FAILED_VCS_API_ERR",
                 Tmpl.operation_failed_vcs_api_err,
                 [ ("operation", `String operation) ] )
+          | `Vcs_api_timeout_err operation ->
+              ( "OPERATION_FAILED_VCS_API_TIMEOUT_ERR",
+                Tmpl.operation_failed_vcs_api_timeout_err,
+                [ ("operation", `String operation) ] )
           | `Work_manifest_start_err ->
               ( "OPERATION_FAILED_WORK_MANIFEST_START_ERR",
                 Tmpl.operation_failed_work_manifest_start_err,

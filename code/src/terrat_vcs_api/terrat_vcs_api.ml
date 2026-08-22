@@ -1,3 +1,24 @@
+(* How a VCS API call can fail.  A call that ran out of time is kept apart from
+   [`Error] so the user is told that their VCS did not answer, rather than that
+   something inside Terrateam broke.  The payload names the call.  See
+   [Terrat_vcs_provider2.Msg.operation_failed_reason]. *)
+type call_err =
+  [ `Error
+  | `Vcs_api_timeout_err of string
+  ]
+[@@deriving show]
+
+(* Report a call the VCS did not answer the same as every other VCS failure.
+   For the callers that cannot tell the user which side was at fault: the
+   comment is the delivery channel, so a timeout while commenting reaches
+   no one. *)
+let collapse_call_err f =
+  let open Abb.Future.Infix_monad in
+  f ()
+  >>= function
+  | Ok _ as r -> Abb.Future.return r
+  | Error (`Error | `Vcs_api_timeout_err _) -> Abb.Future.return (Error `Error)
+
 module type ID = sig
   type t [@@deriving yojson, eq, show]
 
@@ -104,14 +125,14 @@ module type S = sig
     Config.t ->
     Account.t ->
     Pgsql_io.t ->
-    (Client.t, [> `Error ]) result Abb.Future.t
+    (Client.t, [> call_err ]) result Abb.Future.t
 
   val fetch_branch_sha :
     request_id:string ->
     Client.t ->
     Repo.t ->
     Ref.t ->
-    (Ref.t option, [> `Error ]) result Abb.Future.t
+    (Ref.t option, [> call_err ]) result Abb.Future.t
 
   val fetch_file :
     request_id:string ->
@@ -119,44 +140,46 @@ module type S = sig
     Repo.t ->
     Ref.t ->
     string ->
-    (string option, [> `Error ]) result Abb.Future.t
+    (string option, [> call_err ]) result Abb.Future.t
 
   val fetch_remote_repo :
-    request_id:string -> Client.t -> Repo.t -> (Remote_repo.t, [> `Error ]) result Abb.Future.t
+    request_id:string -> Client.t -> Repo.t -> (Remote_repo.t, [> call_err ]) result Abb.Future.t
 
   val fetch_centralized_repo :
     request_id:string ->
     Client.t ->
     string ->
-    (Remote_repo.t option, [> `Error ]) result Abb.Future.t
+    (Remote_repo.t option, [> call_err ]) result Abb.Future.t
 
   val fetch_tree :
     request_id:string ->
     Client.t ->
     Repo.t ->
     Ref.t ->
-    (string list, [> `Error ]) result Abb.Future.t
+    (string list, [> call_err ]) result Abb.Future.t
 
+  (** Publishes [body] closed with {!Terrat_comment.add_self_marker}, so that the comment is
+      recognized and ignored when the VCS sends it back as an event. *)
   val comment_on_pull_request :
     request_id:string ->
     Client.t ->
     ('diff, 'checks) Pull_request.t ->
     string ->
-    (Comment.Id.t, [> `Error ]) result Abb.Future.t
+    (Comment.Id.t, [> call_err ]) result Abb.Future.t
 
   val delete_pull_request_comment :
     request_id:string ->
     Client.t ->
     ('diff, 'checks) Pull_request.t ->
     Comment.Id.t ->
-    (unit, [> `Error ]) result Abb.Future.t
+    (unit, [> call_err ]) result Abb.Future.t
 
   val minimize_pull_request_comment :
     request_id:string ->
     Client.t ->
     ('diff, 'checks) Pull_request.t ->
     Comment.Id.t ->
-    (unit, [> `Error ]) result Abb.Future.t
+    (unit, [> call_err ]) result Abb.Future.t
 
   val fetch_pull_request :
     request_id:string ->
@@ -164,21 +187,21 @@ module type S = sig
     Client.t ->
     Repo.t ->
     Pull_request.Id.t ->
-    ((Terrat_change.Diff.t list, bool) Pull_request.t, [> `Error ]) result Abb.Future.t
+    ((Terrat_change.Diff.t list, bool) Pull_request.t, [> call_err ]) result Abb.Future.t
 
   val fetch_pull_request_reviews :
     request_id:string ->
     Repo.t ->
     Pull_request.Id.t ->
     Client.t ->
-    (Terrat_pull_request_review.t list, [> `Error ]) result Abb.Future.t
+    (Terrat_pull_request_review.t list, [> call_err ]) result Abb.Future.t
 
   val fetch_pull_request_requested_reviews :
     request_id:string ->
     Repo.t ->
     Pull_request.Id.t ->
     Client.t ->
-    (Terrat_base_repo_config_v1.Access_control.Match.t list, [> `Error ]) result Abb.Future.t
+    (Terrat_base_repo_config_v1.Access_control.Match.t list, [> call_err ]) result Abb.Future.t
 
   (** The VCS's verdict on the pull request's required reviews. [None] means the VCS has no verdict,
       either because the target branch requires no reviews or because the VCS does not implement
@@ -188,7 +211,7 @@ module type S = sig
     Repo.t ->
     Pull_request.Id.t ->
     Client.t ->
-    (Terrat_pull_request_review.Decision.t option, [> `Error ]) result Abb.Future.t
+    (Terrat_pull_request_review.Decision.t option, [> call_err ]) result Abb.Future.t
 
   val fetch_diff_files :
     request_id:string ->
@@ -196,14 +219,14 @@ module type S = sig
     branch_ref:Ref.t ->
     Repo.t ->
     Client.t ->
-    (Terrat_change.Diff.t list, [> `Error ]) result Abb.Future.t
+    (Terrat_change.Diff.t list, [> call_err ]) result Abb.Future.t
 
   val react_to_comment :
     request_id:string ->
     Client.t ->
     ('a, 'b) Pull_request.t ->
     int ->
-    (unit, [> `Error ]) result Abb.Future.t
+    (unit, [> call_err ]) result Abb.Future.t
 
   val create_commit_checks :
     request_id:string ->
@@ -211,14 +234,14 @@ module type S = sig
     Repo.t ->
     Ref.t ->
     Terrat_commit_check.t list ->
-    (unit, [> `Error ]) result Abb.Future.t
+    (unit, [> call_err ]) result Abb.Future.t
 
   val fetch_commit_checks :
     request_id:string ->
     Client.t ->
     Repo.t ->
     Ref.t ->
-    (Terrat_commit_check.t list, [> `Error ]) result Abb.Future.t
+    (Terrat_commit_check.t list, [> call_err ]) result Abb.Future.t
 
   val merge_pull_request :
     request_id:string ->
@@ -226,10 +249,10 @@ module type S = sig
     Client.t ->
     ('diff, 'checks) Pull_request.t ->
     Terrat_base_repo_config_v1.Automerge.Merge_strategy.t ->
-    (unit, [> `Error | `Merge_err of string ]) result Abb.Future.t
+    (unit, [> call_err | `Merge_err of string ]) result Abb.Future.t
 
   val delete_branch :
-    request_id:string -> Client.t -> Repo.t -> string -> (unit, [> `Error ]) result Abb.Future.t
+    request_id:string -> Client.t -> Repo.t -> string -> (unit, [> call_err ]) result Abb.Future.t
 
   val is_member_of_team :
     request_id:string ->
@@ -237,22 +260,22 @@ module type S = sig
     user:User.t ->
     Repo.t ->
     Client.t ->
-    (bool, [> `Error ]) result Abb.Future.t
+    (bool, [> call_err ]) result Abb.Future.t
 
   val get_repo_role :
     request_id:string ->
     Repo.t ->
     User.t ->
     Client.t ->
-    (string option, [> `Error ]) result Abb.Future.t
+    (string option, [> call_err ]) result Abb.Future.t
 
   val get_org_role :
     request_id:string ->
     org:string ->
     User.t ->
     Client.t ->
-    ([ `Admin | `User ] option, [> `Error ]) result Abb.Future.t
+    ([ `Admin | `User ] option, [> call_err ]) result Abb.Future.t
 
   val find_workflow_file :
-    request_id:string -> Repo.t -> Client.t -> (string option, [> `Error ]) result Abb.Future.t
+    request_id:string -> Repo.t -> Client.t -> (string option, [> call_err ]) result Abb.Future.t
 end

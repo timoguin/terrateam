@@ -21,10 +21,12 @@ module Make
   (** Create commit checks, skipping the call entirely when there is nothing to create so that the
       commit checks are not dirtied. *)
   val create_commit_checks' :
-    (S.Api.Ref.t -> Terrat_commit_check.t list -> (unit, [ `Error ]) result Abb.Future.t) ->
+    (S.Api.Ref.t ->
+    Terrat_commit_check.t list ->
+    (unit, Terrat_vcs_api.call_err) result Abb.Future.t) ->
     S.Api.Ref.t ->
     Terrat_commit_check.t list ->
-    (unit, [> `Vcs_api_err of string ]) result Abb.Future.t
+    (unit, [> `Vcs_api_err of string | `Vcs_api_timeout_err of string ]) result Abb.Future.t
 
   (** The comment, if any, to publish for an evaluation error. [None] means publish nothing: either
       nothing went wrong or the user has already been told. *)

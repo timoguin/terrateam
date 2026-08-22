@@ -99,6 +99,7 @@ struct
         f branch_ref checks
         >>= function
         | Ok () -> Abbs_future_combinators.return_ok ()
+        | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
         | Error `Error -> Abbs_future_combinators.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
 
   (* The comment, if any, a user should see for an evaluation error.  [None]
@@ -122,6 +123,7 @@ struct
     | `Compute_aborted_err num_aborts ->
         Some (Msg.Operation_failed (`Compute_aborted_err num_aborts))
     | `Vcs_api_err operation -> Some (Msg.Operation_failed (`Vcs_api_err operation))
+    | `Vcs_api_timeout_err operation -> Some (Msg.Operation_failed (`Vcs_api_timeout_err operation))
     | `Closed | #Pgsql_io.err | #Pgsql_pool.err -> Some (Msg.Operation_failed `Db_err)
     | `Missing_dep_err tag | `Msg_err tag | `Unexpected_err tag ->
         Some (Msg.Operation_failed (`Internal_err tag))

@@ -547,6 +547,12 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
 
   let process_issue_comment request_id config storage exec = function
     | Gw.Issue_comment_event.Issue_comment_created
+        { Gw.Issue_comment_created.comment = { Gw.Issue_comment.body = comment_body; _ }; _ }
+      when Terrat_comment.is_from_self comment_body ->
+        Logs.debug (fun m -> m "%s : NOOP : COMMENT_FROM_SELF" request_id);
+        Prmths.Counter.inc_one (Metrics.comment_events_total "from_self");
+        Abbs_future_combinators.return_ok ()
+    | Gw.Issue_comment_event.Issue_comment_created
         {
           Gw.Issue_comment_created.installation =
             Some { Gw.Installation_lite.id = installation_id; _ };
@@ -619,7 +625,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                         ~owner:repository.Gw.Repository.owner.Gw.User.login
                         ~repo:repository.Gw.Repository.name
                         ~pull_number:pull_request_id
-                        ~body)
+                        ~body:(Terrat_comment.add_self_marker body))
             | Error (#Snabela.err as err) ->
                 Logs.err (fun m ->
                     m "%s : TMPL_ERROR : TAG_QUERY_ERROR : %s" request_id (Snabela.show_err err));
@@ -640,7 +646,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                     ~owner:repository.Gw.Repository.owner.Gw.User.login
                     ~repo:repository.Gw.Repository.name
                     ~pull_number:pull_request_id
-                    ~body:Tmpl.terrateam_comment_unknown_action))
+                    ~body:(Terrat_comment.add_self_marker Tmpl.terrateam_comment_unknown_action)))
     | Gw.Issue_comment_event.Issue_comment_created _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_CREATED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");

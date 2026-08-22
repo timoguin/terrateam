@@ -89,6 +89,9 @@ module Tmpl = struct
   let operation_failed_internal_err = jinja [%blob "tmpl/operation_failed_internal_err.tmpl"]
   let operation_failed_vcs_api_err = jinja [%blob "tmpl/operation_failed_vcs_api_err.tmpl"]
 
+  let operation_failed_vcs_api_timeout_err =
+    jinja [%blob "tmpl/operation_failed_vcs_api_timeout_err.tmpl"]
+
   let operation_failed_work_manifest_start_err =
     jinja [%blob "tmpl/operation_failed_work_manifest_start_err.tmpl"]
 

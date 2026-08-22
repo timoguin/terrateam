@@ -3060,6 +3060,20 @@ struct
                               Terrat_base_repo_config_v1.
                                 { Drift.enabled = false; schedules = Sln_map.String.empty })
                         >>= fun _ -> Abbs_future_combinators.return_err err)
+                (* The VCS did not answer, so nothing is known about the
+                   repository.  The arm below turns the repository's drift
+                   schedule off, which is the wrong answer for a VCS that was
+                   merely slow for one tick, so leave the schedule alone and let
+                   the next tick try again. *)
+                | Error (`Vcs_api_timeout_err operation) ->
+                    Logs.err (fun m ->
+                        m
+                          "%s : DRIFT : LOAD_REMOTE_REPO : TIMEOUT : %s : account = %s : repo = %s"
+                          (Builder.log_id s)
+                          operation
+                          (S.Api.Account.to_string account)
+                          (S.Api.Repo.to_string repo));
+                    Abbs_future_combinators.return_err `Error
                 | Error `Error ->
                     Logs.err (fun m ->
                         m

@@ -1730,7 +1730,7 @@ struct
                            @@ Terrat_pull_request.set_checks ()
                            @@ pull_request,
                            reason ))
-                | Error `Error as err -> Abb.Future.return err)
+                | Error (`Error | `Vcs_api_timeout_err _) as err -> Abb.Future.return err)
               else Abbs_future_combinators.return_ok ())
   end
 

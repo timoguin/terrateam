@@ -102,7 +102,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           ~finally:Pgsql_pool.destroy)
     >>= function
     | Ok client -> Abbs_future_combinators.return_ok client
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
         Abbs_future_combinators.return_err `Error
@@ -137,7 +137,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string repo)
               (S.Api.Ref.to_string ref_)
               time))
-      (fun () -> S.Api.fetch_branch_sha ~request_id client repo ref_)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.fetch_branch_sha ~request_id client repo ref_))
 
   let fetch_remote_repo request_id client repo =
     Abbs_time_it.run
@@ -148,7 +150,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               request_id
               (S.Api.Repo.to_string repo)
               time))
-      (fun () -> S.Api.fetch_remote_repo ~request_id client repo)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () -> S.Api.fetch_remote_repo ~request_id client repo))
 
   let fetch_tree request_id client repo ref_ =
     Abbs_time_it.run
@@ -160,7 +163,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string repo)
               (S.Api.Ref.to_string ref_)
               time))
-      (fun () -> S.Api.fetch_tree ~request_id client repo ref_)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () -> S.Api.fetch_tree ~request_id client repo ref_))
 
   let query_index request_id db account ref_ =
     Abbs_time_it.run
@@ -252,7 +256,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string repo)
               (S.Api.Pull_request.Id.to_string pull_request_id)
               time))
-      (fun () -> S.Api.fetch_pull_request ~request_id account client repo pull_request_id)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.fetch_pull_request ~request_id account client repo pull_request_id))
 
   let react_to_comment request_id client pull_request comment_id =
     Abbs_time_it.run
@@ -264,7 +270,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string @@ Terrat_pull_request.repo pull_request)
               comment_id
               time))
-      (fun () -> S.Api.react_to_comment ~request_id client pull_request comment_id)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.react_to_comment ~request_id client pull_request comment_id))
 
   let query_next_pending_work_manifest request_id db =
     Abbs_time_it.run
@@ -397,7 +405,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (CCList.length checks)
               (S.Api.Ref.to_string ref_)
               time))
-      (fun () -> S.Api.create_commit_checks ~request_id client repo ref_ checks)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.create_commit_checks ~request_id client repo ref_ checks))
 
   let fetch_commit_checks request_id client repo ref_ =
     Abbs_time_it.run
@@ -409,7 +419,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string repo)
               (S.Api.Ref.to_string ref_)
               time))
-      (fun () -> S.Api.fetch_commit_checks ~request_id client repo ref_)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.fetch_commit_checks ~request_id client repo ref_))
 
   let unlock request_id db repo unlock_id =
     Abbs_time_it.run
@@ -572,7 +584,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (Terrat_base_repo_config_v1.Automerge.Merge_strategy.to_string merge_strategy)
               time))
       (fun () ->
-        S.Api.merge_pull_request ~request_id ?retain_pr_title client pull_request merge_strategy)
+        let open Abb.Future.Infix_monad in
+        S.Api.merge_pull_request ~request_id ?retain_pr_title client pull_request merge_strategy
+        >>= function
+        | Ok _ as r -> Abb.Future.return r
+        | Error (`Merge_err _) as err -> Abb.Future.return err
+        | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error)
 
   let delete_branch request_id client repo branch =
     Abbs_time_it.run
@@ -584,7 +601,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Repo.to_string repo)
               branch
               time))
-      (fun () -> S.Api.delete_branch ~request_id client repo branch)
+      (fun () ->
+        Terrat_vcs_api.collapse_call_err (fun () ->
+            S.Api.delete_branch ~request_id client repo branch))
 
   let store_drift_schedule request_id db repo drift =
     Abbs_time_it.run
@@ -1586,10 +1605,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           let fetch () =
-            let open Abbs_future_combinators.Infix_result_monad in
-            create_client state.State.request_id (Ctx.config ctx) account
-            >>= fun client ->
-            fetch_pull_request state.State.request_id account client repo pull_request_id
+            let open Abb.Future.Infix_monad in
+            (let open Abbs_future_combinators.Infix_result_monad in
+             create_client state.State.request_id (Ctx.config ctx) account
+             >>= fun client ->
+             fetch_pull_request state.State.request_id account client repo pull_request_id)
+            >>= function
+            | Ok _ as r -> Abb.Future.return r
+            | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
           in
           let open Abb.Future.Infix_monad in
           Abbs_time_it.run

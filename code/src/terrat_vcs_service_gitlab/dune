@@ -10,6 +10,7 @@
   pgsql_pagination
   sln
   terrat_code_idx
+  terrat_comment
   terrat_metrics
   terrat_plan_diff
   terrat_session
