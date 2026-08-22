@@ -262,16 +262,25 @@ module Route = struct
       | Var : (('f, 'a -> 'r) t * 'a) -> ('f, 'r) t
   end
 
+  (* [path] and [query] are properties of the REQUEST, not of the route being tried, so they are
+     decoded once by [match_ctx'] and threaded through here. [Uri.path] and [Uri.query] each
+     re-decode the URI and allocate afresh; taken per recursion step they were paid once per path
+     segment of every route the matcher tried before reaching the right one, so the cost of dispatch
+     grew with a route's position in the table -- 0.4 ms at index 2, 17 ms at index 97 of 108. The
+     most frequent request this server serves is an actuator task poll, and it sits near the end of
+     that table. *)
   let rec test_ctx : type f r.
-      ('a, 'b) Brtl_ctx.t -> (module BODY_DECODER) -> (f, r) t -> (int * (f, r) Witness.t) option =
-   fun ctx body t ->
-    let uri = Brtl_ctx.Request.uri (Brtl_ctx.request ctx) in
-    let path = Uri.path uri in
+      (module BODY_DECODER) ->
+      path:string ->
+      query:(string * string list) list ->
+      (f, r) t ->
+      (int * (f, r) Witness.t) option =
+   fun body ~path ~query t ->
     match t with
     | Rel -> Some (0, Witness.Start)
     | Path_const (t, s) ->
         let open CCOption.Infix in
-        test_ctx ctx body t
+        test_ctx body ~path ~query t
         >>= fun (idx, wit) ->
         if idx < String.length path then
           let s = "/" ^ s in
@@ -280,14 +289,14 @@ module Route = struct
         else None
     | Path_var (t, v) ->
         let open CCOption.Infix in
-        test_ctx ctx body t
+        test_ctx body ~path ~query t
         >>= fun (idx, wit) ->
         if idx < String.length path then
           v idx path >>= fun (idx, value) -> Some (idx, Witness.Var (wit, value))
         else None
     | Query_var (t, (n, v)) ->
         let open CCOption.Infix in
-        test_ctx ctx body t
+        test_ctx body ~path ~query t
         >>= fun (idx, wit) ->
         (* The Uri library gives you all query params as mappings to list with
            [query], so we filter the one we care about, which will be a list of
@@ -299,7 +308,7 @@ module Route = struct
             CCList.filter_map (function
               | qn, vs when CCString.equal qn n -> Some vs
               | _ -> None)
-            @@ Uri.query uri
+            @@ query
           in
           match qp with
           | [] -> None
@@ -308,7 +317,7 @@ module Route = struct
         v q >>= fun value -> Some (idx, Witness.Var (wit, value))
     | Body_var (t, body_var) ->
         let open CCOption.Infix in
-        test_ctx ctx body t
+        test_ctx body ~path ~query t
         >>= fun (idx, wit) -> body_var body >>= fun value -> Some (idx, Witness.Var (wit, value))
 
   let rec apply_ctx' : type f r x. (f, x) Witness.t -> (x -> r) -> f -> r =
@@ -322,16 +331,21 @@ module Route = struct
 
   let apply_ctx : type f r. (f, r) Witness.t -> f -> r = fun wit -> apply_ctx' wit (fun x -> x)
 
-  let rec match_ctx' ~default rs ctx body =
-    match rs with
-    | [] -> default ctx
-    | Route.Route (t, f) :: rs -> (
-        let uri = Brtl_ctx.Request.uri (Brtl_ctx.request ctx) in
-        match test_ctx ctx body t with
-        | Some (idx, wit) when String.length (Uri.path uri) = idx ->
-            (* Ensure the whole URI path has been consumed *)
-            apply_ctx wit f
-        | Some _ | None -> match_ctx' ~default rs ctx body)
+  let match_ctx' ~default rs ctx body =
+    let uri = Brtl_ctx.Request.uri (Brtl_ctx.request ctx) in
+    let path = Uri.path uri in
+    let query = Uri.query uri in
+    let path_len = String.length path in
+    let rec go = function
+      | [] -> default ctx
+      | Route.Route (t, f) :: rs -> (
+          match test_ctx body ~path ~query t with
+          | Some (idx, wit) when path_len = idx ->
+              (* Ensure the whole URI path has been consumed *)
+              apply_ctx wit f
+          | Some _ | None -> go rs)
+    in
+    go rs
 
   let match_ctx ~default rs ctx =
     match Brtl_ctx.Request.meth (Brtl_ctx.request ctx) with
