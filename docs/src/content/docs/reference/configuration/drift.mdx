@@ -16,7 +16,7 @@ drift:
 | Key | Type | Description |
 |-----|------|-------------|
 | enabled | Boolean | Specifies whether drift detection is enabled. If set to false, drift detection and reconciliation will not run. Default is false. |
-| schedules | Object | An object where the key is the unique name of the schedule and the value is the configuration for the schedule. |
+| schedules | Object | An object where the key is the unique name of the schedule and the value is the configuration for the schedule. Required in this form, even when `enabled` is `false` (use `schedules: {}`). |
 
 :::note
 More than one schedule is a SaaS (all plans) and Enterprise Edition feature.
@@ -25,10 +25,10 @@ More than one schedule is a SaaS (all plans) and Enterprise Edition feature.
 ### Schedule
 | Key | Type | Description |
 |-----|------|-------------|
-| schedule | String | The interval to run drift detection and reconciliation: `hourly`, `daily`, `weekly`, `monthly`. |
+| schedule | String | The interval to run drift detection and reconciliation: `hourly`, `daily`, `weekly`, `monthly`. Required. |
 | reconcile | Boolean | Specifies whether reconciliation is enabled. Default is false. |
-| tag_query | String | A tag query that specifies which directories and workspaces drift detection and reconciliation should be applied to. |
-| window | Object | The window that the scheduled drift can run in. Optional. |
+| tag_query | String | A tag query that specifies which directories and workspaces drift detection and reconciliation should be applied to. Required. Use `''` to match everything. |
+| window | Object | The window that the scheduled drift can run in. Optional. When set, both `start` and `end` are required. |
 
 The `schedule` defines how frequently drift can run.  There is no guarantee that drift will run as frequently as specified or when it will run.  In practice, this is only relevant for `hourly`, as a drift run might take longer than an hour to run.
 
@@ -41,8 +41,25 @@ The `schedule` defines how frequently drift can run.  There is no guarantee that
 For a list of valid timezone abbreviations, see [here](https://en.wikipedia.org/wiki/List_of_time_zone_abbreviations).
 
 :::note
-If `end` is less than `start`, it is interpreted as crossing over to the next day.  For example if `start` is `21:00 EST` and `end` is `01:00 EST`, the window wills start at `21:00 EST` today and end at `01:00 EST` tomorrow.
+If `end` is less than `start`, it is interpreted as crossing over to the next day.  For example if `start` is `21:00 EST` and `end` is `01:00 EST`, the window will start at `21:00 EST` today and end at `01:00 EST` tomorrow.
 :::
+
+### Legacy Single Schedule Form
+A single schedule can also be written directly under `drift` with the `schedule`, `reconcile`, and `tag_query` keys. This form is equivalent to a `schedules` entry named `default`; `tag_query` defaults to matching everything and `window` is not available.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| enabled | Boolean | Specifies whether drift detection is enabled. Default is false. |
+| schedule | String | The interval: `hourly`, `daily`, `weekly`, `monthly`. Required. |
+| reconcile | Boolean | Specifies whether reconciliation is enabled. Default is false. |
+| tag_query | String | A tag query limiting the directories and workspaces. Default matches everything. |
+
+```yaml
+drift:
+  enabled: true
+  schedule: daily
+  reconcile: false
+```
 
 
 ## Examples
@@ -87,7 +104,7 @@ The `schedule` key can be set to one of the following values:
 - `weekly`
 - `monthly`
 :::info
-There is no default value for `schedule`, and this key is required when drift detection is enabled.
+There is no default value for `schedule`, and this key is required in every schedule.
 :::
 
 ### Enable drift for production after work hours and development any time

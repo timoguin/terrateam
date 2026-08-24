@@ -42,30 +42,32 @@ dirs:
 
 ## Ignoring Specific Files
 
-You can also ignore specific files by using their path as a key in the `dirs` section and setting `file_patterns` to an empty list:
+Keys of the `dirs` section always name directories. A key that matches a file resolves to the directory that contains the file, so `file_patterns: []` under such a key disables the whole directory, not just the file.
+
+To ignore specific files, keep the directory enabled and exclude the files from `file_patterns` with a `!` pattern. For example, to ignore `foobar/generated.tf` while still planning on the other files in `foobar`:
 
 **Example: Ignore a specific file**
 ```yaml
 dirs:
-  foobar.tf:
+  foobar:
     when_modified:
-      file_patterns: []
+      file_patterns: ["${DIR}/*.tf", "${DIR}/*.tfvars", "!${DIR}/generated.tf"]
 ```
 
 :::tip
-You can use glob patterns to ignore groups of files, such as all dev.*.tfvars files:
+Exclusions also take glob patterns, such as all `dev.*.tfvars` files in a directory:
 :::
 
 ```yaml
 dirs:
-  "dev.*.tfvars":
+  foobar:
     when_modified:
-      file_patterns: []
+      file_patterns: ["${DIR}/*.tf", "${DIR}/*.tfvars", "!${DIR}/dev.*.tfvars"]
 ```
 
 ## Advanced: Ignoring by Pattern
 
-You can use glob patterns to ignore files or directories matching a pattern. For example, to ignore all files in a `test/` directory:
+You can use glob patterns as `dirs` keys to ignore every directory matching a pattern. For example, to ignore all directories under `test/`:
 
 ```yaml
 dirs:
@@ -74,13 +76,11 @@ dirs:
       file_patterns: []
 ```
 
-Or to ignore all files ending in `.example.tf`:
+To ignore files ending in `.example.tf` in every directory, set a top-level `when_modified` with an exclusion. The top-level `file_patterns` applies to every directory that does not override it:
 
 ```yaml
-dirs:
-  "**/*.example.tf":
-    when_modified:
-      file_patterns: []
+when_modified:
+  file_patterns: ["${DIR}/*.tf", "${DIR}/*.tfvars", "!${DIR}/*.example.tf"]
 ```
 
 :::tip

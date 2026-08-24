@@ -174,7 +174,8 @@ stacks:
 workflows:
   - tag_query: ''
     engine:
-      tf_version: '${tf_version}'
+      name: terraform
+      version: '${tf_version}'
     plan:
       - type: init
         extra_args: ['-backend-config=region=${region}']

@@ -30,7 +30,7 @@ tags:
     dev: '^dev$'
 ```
 
-In this configuration, the `dest_branch` tag has three possible values: `main,` `staging,` and `dev.` Each value is associated with a regular expression matching the corresponding branch name.
+In this configuration, the `dest_branch` tag has three possible values: `main`, `staging`, and `dev`. Each value is associated with a [Lua pattern](https://www.lua.org/manual/5.4/manual.html#6.4.1) matching the corresponding destination branch name. The `tags.branch` key defines `branch:<value>` tags from the source branch name in the same way. See the [tags reference](/reference/configuration/tags).
 
 ### Directory-Level Tags
 
@@ -61,7 +61,7 @@ The following operators are supported when creating tag queries:
 - `and`: Matches resources that have all the specified tags. This is the default operator if none is specified.
 - `or`: Matches resources that have at least one of the specified tags.
 - `not`: Matches resources that do not have the specified tag.
-- `in`: Matches resources that have the specified tag as a fragment in their path or name.
+- `in`: `<glob> in dir` matches directories whose path contains a component matching `<glob>` (equivalent to the glob `**/<glob>/**`). Only `dir` is accepted on the right-hand side.
 - Parentheses: Used to group and prioritize expressions. 
 
 The following table presents some examples of tag queries:

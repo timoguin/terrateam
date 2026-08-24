@@ -33,7 +33,7 @@ Plan files are stored within the Terrateam server. This is the default behavior 
 Plan files are stored in an AWS S3 bucket. You need to provide the `bucket` and `region` in your configuration.
 
 ##### `cmd`
-Plan files are stored using a custom command. You need to provide the `store`, `fetch`, and `delete` commands in your configuration.
+Plan files are stored using custom commands. You need to provide the `store` and `fetch` commands in your configuration; `delete` is optional.
 
 ### S3 Storage
 
@@ -43,19 +43,23 @@ To store plan files in an AWS S3 bucket, you need to configure the following opt
 - `path` (optional): The path within the S3 bucket where plan files will be stored. Defaults to `terrateam/plans/$dir/$workspace/$date-$time-$token`.
 - `access_key_id` (optional): The AWS access key ID to use for authentication. If not provided, Terrateam will use the default AWS credentials chain.
 - `secret_access_key` (optional): The AWS secret access key to use for authentication. If not provided, Terrateam will use the default AWS credentials chain.
+- `delete_used_plans` (optional): Delete the plan file from the bucket after it has been applied. Defaults to `true`.
+- `store_extra_args`, `fetch_extra_args`, `delete_extra_args` (optional): Additional arguments passed to `aws s3 cp` when storing or fetching and to `aws s3 rm` when deleting.
+
+See the [storage reference](/reference/configuration/storage) for the full key list.
 
 ### Custom Command Storage
 
-To store plan files using a custom command, you need to configure the following options:
+To store plan files using custom commands, you need to configure the following options:
 
 ##### `store`
-The command to run when storing a plan file. The command should accept the plan file path as an argument.
+The command to run when storing a plan file. Use `$plan_path` in the command for the path of the plan file to store.
 
 ##### `fetch`
-The command to run when fetching a plan file. The command should accept the plan file path as an argument and output the plan file contents to stdout.
+The command to run when fetching a plan file. Use `$plan_dst_path` in the command for the path the command must write the plan file to. Terrateam reads the plan from that path; output on stdout is not used.
 
 ##### `delete` (optional)
-The command to run when deleting a plan file. The command should accept the plan file path as an argument.
+The command to run when deleting a plan file after it has been applied. It runs exactly as stored; `$plan_dst_path` is not substituted in `delete`.
 
 #### Examples
 ##### Example 1: Using Gsutil for Google Cloud Storage
@@ -75,7 +79,7 @@ storage:
     method: cmd
     store: ["curl", "-X", "PUT", "--data-binary", "@$plan_path", "https://plan-storage.example.com/$dir/$workspace/$date-$time-$token"]
     fetch: ["curl", "-X", "GET", "https://plan-storage.example.com/$dir/$workspace/$date-$time-$token", "-o", "$plan_dst_path"]
-    delete: ["curl", "-X", "DELETE", "https://plan-storage.example.com/$dir/$workspace/$date-$time-$token", "-o", "$plan_dst_path"]
+    delete: ["curl", "-X", "DELETE", "https://plan-storage.example.com/$dir/$workspace/$date-$time-$token"]
 ```
 
 These examples illustrate how Terrateam configurations can utilize different commands (`gsutil` and `curl`) to store, fetch, and delete Terraform plan files. Adjustments to `store`, `fetch`, and `delete` commands can tailor the configuration to fit specific storage requirements and workflows effectively.

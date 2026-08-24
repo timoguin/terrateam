@@ -9,8 +9,6 @@ The `workflows` configuration allows you to customize the steps executed during 
 ```yaml
 workflows:
   - tag_query: ""
-    environment: null
-    lock_policy: "strict"
     plan:
       - type: init
       - type: plan
@@ -20,23 +18,21 @@ workflows:
 ```
 
 ## Keys
-| Key | Type | Description |
-| --- | --- | --- |
-| environment | String | The GitHub Environment to associate the workflow with. Default is null. |
-| runs_on | Object | Object describing the runs-on configuration.  Default is `ubuntu-latest`. |
-| lock_policy | String | When the directory should have a lock acquired. Values are strict (acquire a lock if either it is merged or applied), apply (only acquire a lock when it is applied), merge (only acquire a lock when it is merged), and none (never acquire a lock). Defaults to the top-level [lock_policy](/reference/configuration/lock-policy), which itself defaults to strict. |
+`workflows` is a list of workflow entries. The first entry whose `tag_query` matches a directory and workspace is used. Each entry has the following keys:
 
-### Tag Query
-A [tag query](/advanced-workflows/tags) is a list of all tags that must be present in a tag set to match the workflow.
-Each `tag_query` consists of a map with the following attributes:
 | Key | Type | Description |
 |-----|------|-------------|
-| plan | `plan` | `plan` steps. |
-| apply | `apply` | `apply` steps. |
-| terragrunt | Boolean | Override the `terraform` command with `terragrunt`. Default is `false`. |
-| lock_policy | String | When the directory should have a lock acquired. Values are `strict` (acquire a lock if either it is merged or applied), `apply` (only acquire a lock when it is applied), `merge` (only acquire a lock when it is merged), and `none` (never acquire a lock). Defaults to the top-level [`lock_policy`](/reference/configuration/lock-policy), which itself defaults to `strict`. |
+| tag_query | String | A [tag query](/advanced-workflows/tags) that must match the tag set of a directory and workspace for this workflow to apply. Required. An empty string matches everything. |
+| plan | List | `plan` steps. Default is `init` followed by `plan`. |
+| apply | List | `apply` steps. Default is `init` followed by `apply`. |
 | engine | [Engine](/reference/configuration/engine) | Configuration to override which engine to use for operations. |
-| environment | String | GitHub environment to use for the operation. Default is `null`. |
+| environment | String | GitHub environment to use for the operation. Not set by default. |
+| runs_on | Object | Object describing the [runs-on](/workflows/advanced/runs-on) configuration. Default is `ubuntu-latest`. |
+| lock_policy | String | When the directory should have a lock acquired. Values are `strict` (acquire a lock if either it is merged or applied), `apply` (only acquire a lock when it is applied), `merge` (only acquire a lock when it is merged), and `none` (never acquire a lock). Defaults to the top-level [`lock_policy`](/reference/configuration/lock-policy), which itself defaults to `strict`. |
+| terragrunt | Boolean | Legacy. `true` is equivalent to `engine: { name: terragrunt }`. Default is `false`. Prefer `engine`. |
+| cdktf | Boolean | Legacy. `true` is equivalent to `engine: { name: cdktf }`. Default is `false`. Prefer `engine`. |
+| terraform_version | String | Legacy. Equivalent to `engine: { name: terraform, version: <value> }`. Prefer `engine`. |
+
 :::note
 Be careful when modifying `lock_policy`. Any value other than `strict` is considered less safe, but can be useful in the right situation.
 :::
@@ -51,6 +47,10 @@ Workflows consist of a series of steps that are executed in order. The available
 - `oidc`: Initiates an OIDC connection to a cloud provider.
 - `checkov`: Runs Checkov security scanning on the Terraform plan.
 - `conftest`: Runs Conftest policy validation on the Terraform plan.
+- `opa`: Evaluates an OPA policy against the Terraform plan.
+- `gates`: Runs a command that creates [Gatekeeper](/governance/gatekeeper) gates.
+
+Every step type is accepted in both the `plan` and the `apply` list.
 
 :::caution
 If a workflow specifies `plan` steps, at least one of them must be a `plan` step.  If it specifies `apply` steps, at least one of them must be an `apply` step.  A configuration that violates this is rejected with a repository configuration error.
@@ -62,16 +62,17 @@ Omitting the `plan` or `apply` key uses the default steps, which already satisfy
 
 ### Plan
 Plan steps are defined under the `plan` key in a workflow.  The list must contain at least one step of `type: plan`.
-| Key | Type | Description |
-|-----|------|-------------|
-| type | String | Terrateam step type: `init`, `plan`, `env`, `run`, `oidc`, `checkov`, `conftest`. |
-| extra_args | List | Extra command line arguments passed to the `terraform` command. |
 
 ### Apply
 Apply steps are defined under the `apply` key in a workflow.  The list must contain at least one step of `type: apply`.
+
+### Init, Plan, and Apply steps
+The `init`, `plan`, and `apply` step types run the corresponding command of the [engine](/reference/configuration/engine). They accept the following keys:
 | Key | Type | Description |
 |-----|------|-------------|
-| type | String | Terrateam step type: `init`, `apply`, `env`, `run`, `oidc`. |
+| type | String | `init`, `plan`, or `apply`. |
+| extra_args | List | Extra command line arguments passed to the command. |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
 
 ### Env
 Environment variables can be set two ways:
@@ -99,12 +100,12 @@ Custom commands can be run using the `run` step type.
 |-----|------|-------------|
 | cmd | List | Command to run from the directory that Terrateam is operating against. |
 | run_on | String | Run the command depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
-| capture_output | Boolean | When set to `true`, command output is recorded.  Secrets are masked with `***`.  Default is `true`. |
+| capture_output | Boolean | When set to `true`, command output is recorded.  Secrets are masked with `***`.  Default is `false`. |
 | env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
-| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false.` |
+| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false`, except when `on_error` contains a gate, in which case it is `true`. |
 | visible_on | String | When the output of the command should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure`. |
 | format | String or Object | Controls how captured command output is rendered in PR comments. String values: `code` (default, fenced code block), `raw` (rendered as-is), `markdown` (rendered as markdown). Object form `{ type: code, lang: <language> }` produces a fenced code block with syntax highlighting for `<language>`. |
-| gate | Object | Gate configuration for manual approval if the command fails (see Gate section below) |
+| on_error | List | Actions to take if the command fails. Each entry is an object with a `type`. The only supported type is `gate`, which creates a [Gatekeeper](/governance/gatekeeper) gate with the keys described in the Gate section below. |
 
 ### Checkov
 Runs Checkov security scanning against the generated Terraform plan to detect misconfigurations and security issues.
@@ -118,7 +119,11 @@ The `checkov` step type automatically:
 |-----|------|-------------|
 | type | String | Must be `checkov` |
 | extra_args | List | Extra command line arguments passed to the checkov command |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
 | gate | Object | Gate configuration for manual approval if Checkov fails (see Gate section below) |
+| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false`, except when `gate` is set, in which case it is `true`. |
+| run_on | String | Run the step depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
+| visible_on | String | When the output should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure`. |
 
 Configuration is done through environment variables. Common Checkov environment variables include:
 - `CKV_SKIP_CHECK`: Comma-separated list of check IDs to skip
@@ -139,7 +144,11 @@ The `conftest` step type automatically:
 |-----|------|-------------|
 | type | String | Must be `conftest` |
 | extra_args | List | Extra command line arguments passed to the conftest command |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
 | gate | Object | Gate configuration for manual approval if Conftest fails (see Gate section below) |
+| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false`, except when `gate` is set, in which case it is `true`. |
+| run_on | String | Run the step depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
+| visible_on | String | When the output should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure`. |
 
 By default, Conftest looks for policies in the `policy/` directory relative to the Terraform configuration. This can be customized using the `CONFTEST_POLICY` environment variable.
 
@@ -150,33 +159,59 @@ Common Conftest environment variables include:
 
 For more information on writing policies and configuration options, see the [Conftest documentation](https://www.conftest.dev/).
 
-### Gate
-The `gate` configuration allows you to require manual approval when certain workflow steps fail, particularly useful for security scanning, policy checks, and custom validation scripts. When a gated step fails, instead of immediately failing the workflow, Terrateam creates an approval request that authorized users can approve to continue the workflow.
-
-Gates are supported on the following step types:
-- `run`: Gate custom command failures
-- `checkov`: Gate security scan failures
-- `conftest`: Gate policy violations
+### OPA
+Runs `opa eval` against the JSON representation of the generated Terraform plan. Use `extra_args` to pass the policy and the query, for example `['-d', 'policy.rego', 'data.terraform.deny']`.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| token | String | A unique identifier for this gate request |
-| name | String | A name to give to the gate |
-| all_of | List | List of users/teams that must all approve the gate |
-| any_of | List | List of users/teams where any one can approve the gate |
-| any_of_count | Integer | Number of approvals required from the `any_of` list (default: 1) |
+| type | String | Must be `opa` |
+| extra_args | List | Extra command line arguments passed to `opa eval`, typically the policy file (`-d`) and the query. |
+| fail_on | String | `undefined` fails the step when the query result is undefined. `defined` fails the step when the query result is defined. Default is `undefined`. |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
+| gate | Object | Gate configuration for manual approval if the step fails (see Gate section below) |
+| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false`, except when `gate` is set, in which case it is `true`. |
+| run_on | String | Run the step depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
+| visible_on | String | When the output should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure`. |
 
-To approve a gate, authorized users can comment:
+### Gate
+The `gate` configuration allows you to require manual approval when certain workflow steps fail, particularly useful for security scanning, policy checks, and custom validation scripts. When a gated step fails, Terrateam records a gate instead of failing the plan, and blocks the apply until authorized users approve the gate. See [Gatekeeper](/governance/gatekeeper) for details.
+
+The `gate` key is supported on the following step types:
+- `checkov`: Gate security scan failures
+- `conftest`: Gate policy violations
+- `opa`: Gate policy violations
+
+The `run` step type does not accept `gate`. Use `on_error` with an entry of `type: gate` and the same keys instead.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| token | String | A unique identifier for this gate request. Gates without a token are approved by approving the pull request. |
+| name | String | A name to give to the gate |
+| all_of | List | List of users/teams/roles that must all approve the gate |
+| any_of | List | List of users/teams/roles from which `any_of_count` approvals are required |
+| any_of_count | Integer | Number of approvals required from the `any_of` list. Default is `0`, which requires no approval from `any_of`. Set it to `1` or more when using `any_of`. |
+
+To approve a gate with a token, authorized users can comment:
 ```
 terrateam gate approve <token>
 ```
 
+### Gates
+The `gates` step type runs a command and creates a [Gatekeeper](/governance/gatekeeper) gate for each entry of the `gates` list in the JSON the command prints to standard output. The step never fails the workflow.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| type | String | Must be `gates` |
+| cmd | List | Command to run. Its standard output must be a JSON object of the form `{"gates": [ ... ]}`. Each gate accepts `token`, `name`, `all_of`, `any_of`, `any_of_count`, and `add_reviewers` (Boolean, default `true`: request a review from the `user:` and `team:` entries). |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
+| run_on | String | Run the step depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
+
 ### OIDC
-An OIDC connection to a cloud provider can be initiated using the `oidc` step type, which supports AWS and GCP providers.
+An OIDC connection to a cloud provider can be initiated using the `oidc` step type, which supports the AWS, Azure, and GCP providers.
 | Key | Type | Provider | Description |
 |-----|------|----------|-------------|
 | oidc | List | | Initiate an OIDC connection to a cloud provider. |
-| provider | String | | Name of provider: `aws` or `gcp`. |
+| provider | String | | Name of provider: `aws`, `azure`, or `gcp`. Required for `azure` and `gcp`; default is `aws`. |
 | role_arn | String | aws | Specifies the ARN of an IAM role that you want to use. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
 | assume_role_arn | String | aws | Specifies the ARN of an IAM role that you want to assume into. Default is the value of `role_arn`. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
 | assume_role_enabled | Boolean | aws | Retrieve a set of temporary security credentials from AWS and set the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` environment variables. Default is `true`. |
@@ -189,6 +224,11 @@ An OIDC connection to a cloud provider can be initiated using the `oidc` step ty
 | access_token_lifetime | Integer | gcp | Desired lifetime duration of the access token, in seconds. Default is `3600`. |
 | audience | String | gcp | Specifies the GCP audience name to use. Default is `https://iam.googleapis.com/` + `workload_identity_provider`. |
 | access_token_subject | String | gcp | Email address of a user to impersonate for [Domain-Wide Delegation](https://developers.google.com/workspace/guides/create-credentials). Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
+| project_id | String | gcp | The Google Cloud project ID. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
+| client_id | String | azure | App Registration client ID. Required. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
+| tenant_id | String | azure | Azure AD (Entra ID) tenant ID. Required. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
+| subscription_id | String | azure | Default Azure subscription ID. Value can be specified using a GitHub Secret / environment variable with `${ENV_VAR}`. |
+| audience | String | azure | Specifies the Azure audience name to use. Default is `api://AzureADTokenExchange`. |
 
 ## Examples
 ### Setting an Environment Variable with a Command
@@ -378,11 +418,13 @@ workflows:
         gate:
           token: "checkov-override"
           any_of: ["team:security", "team:platform"]
+          any_of_count: 1
       - type: conftest
         gate:
           token: "policy-override"
           all_of: ["team:compliance"]
           any_of: ["user:cto", "user:security-lead"]
+          any_of_count: 1
 ```
 This workflow allows security or platform team members to approve Checkov failures, and requires both compliance team approval and either CTO or security lead approval for Conftest policy violations.
 
@@ -395,10 +437,11 @@ workflows:
       - type: plan
       - type: run
         cmd: ['./scripts/cost-check.sh']
-        gate:
-          token: "cost-approval"
-          any_of: ["team:finance", "user:budget-owner"]
-          any_of_count: 1
+        on_error:
+          - type: gate
+            token: "cost-approval"
+            any_of: ["team:finance", "user:budget-owner"]
+            any_of_count: 1
 ```
 This workflow runs a custom cost validation script and allows finance team members or the budget owner to approve if costs exceed thresholds.
 

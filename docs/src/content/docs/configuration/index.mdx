@@ -16,16 +16,16 @@ Terrateam uses sensible defaults if `.terrateam/config.yml` doesn’t exist. Add
 The `config.yml` file is written in YAML and has the following basic structure:
 
 ```yaml
-access_control:
-  # Specifies user permissions for operations
-apply_requirements:
-  # Defines preconditions for applying changes
-dirs:
-  # Maps directories to tags, workspaces, and behaviors
-hooks:
-  # Executes custom commands before or after operations
-workflows:
-  # Configures specialized plan and apply steps
+access_control:      # Specifies user permissions for operations
+  policies: []
+apply_requirements:  # Defines preconditions for applying changes
+  checks: []
+dirs: {}             # Maps directories to tags, workspaces, and behaviors
+hooks:               # Executes custom commands before or after operations
+  all:
+    pre: []
+    post: []
+workflows: []        # Configures specialized plan and apply steps
 ```
 
 Each section serves a specific purpose in customizing Terrateam's behavior:
@@ -82,7 +82,7 @@ apply_requirements:
       # Requires all status checks to pass
       status_checks:
         enabled: true              # Enable status check verification
-        ignore_matching:           # Regex patterns for checks to ignore
+        ignore_matching:           # Patterns of check names to ignore
           - "ci/.*"                # Ignores all CI status checks
 ```
 

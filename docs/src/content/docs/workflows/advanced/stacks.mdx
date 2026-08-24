@@ -108,7 +108,7 @@ This configuration ensures changes flow from dev → staging → production, but
 
 The above configuration allows each component within the `dev`, `staging`, and `production` stacks to be run at the same time.  In reality, we likely want some ordering of operations within a stack, such as the database component should be run before the compute and compute component should be run before the application.
 
-Now let's add dependency management within each environment.  This creates one stack per layer, and `dev`, `staging`, and `production` stacks which nest the layers.  It also moves the `environment` variable to the nested stack, rather than defining it in each nested stack.  Finally, it also moves the rules which define when the `dev`, `staging`, and `production` stacks can be applied relative to each other into each stack's definition.
+Now let's add dependency management within each environment.  This creates one stack per layer, and `dev`, `staging`, and `production` stacks which nest the layers.  It also moves the `environment` variable to the parent stack, rather than defining it in each nested layer stack.  Finally, it also moves the rules which define when the `dev`, `staging`, and `production` stacks can be applied relative to each other into each stack's definition.
 
 ```yaml
 stacks:

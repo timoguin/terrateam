@@ -10,6 +10,7 @@ Release directory locks held by a pull request to allow other operations to proc
 ```
 terrateam unlock
 terrateam unlock <pull-request-number> [pull-request-number...]
+terrateam unlock drift
 ```
 
 ## Examples
@@ -30,9 +31,15 @@ terrateam unlock 123 456 789
 ```
 Useful for cleaning up locks from closed or abandoned pull requests.
 
+### Unlock Drift Locks
+```
+terrateam unlock drift
+```
+Releases the locks held by [drift detection](/reference/configuration/drift) runs. `drift` can be combined with pull request numbers in one command.
+
 ## Scope
 
-The unlock command releases all locks owned by the specified pull request(s).
+The unlock command releases all locks owned by the specified pull request(s), or by drift runs when `drift` is given.
 
 ## Access Control
 
@@ -48,5 +55,5 @@ For more information about lock behavior and configuration, see [lock management
 
 ## Related Commands
 
-- [terrateam plan](/reference/commands/plan) - Creates read locks
-- [terrateam apply](/reference/commands/apply) - Creates write locks
+- [terrateam apply](/reference/commands/apply) - Acquires locks on the applied directories and workspaces
+- [lock_policy](/reference/configuration/lock-policy) - Controls when locks are acquired

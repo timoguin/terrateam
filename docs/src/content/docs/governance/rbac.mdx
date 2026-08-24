@@ -94,21 +94,22 @@ For example:
 ```yaml
 apply_requirements:
   checks:
-    approved:
-      enabled: true
-      count: 2
-    merge_conflicts:
-      enabled: true
-    status_checks:
-      enabled: true
-      ignore_matching:
-        - "ci/.*"
+    - tag_query: ''
+      approved:
+        enabled: true
+        any_of_count: 2
+      merge_conflicts:
+        enabled: true
+      status_checks:
+        enabled: true
+        ignore_matching:
+          - "ci/.*"
 ```
 
 In this example, the apply requirements are configured as follows:
 - The pull request must have at least 2 approvals.
 - The pull request must not have any merge conflicts.
-- All status checks associated with the pull request must have passed, except for those matching the regular expression `ci/.*`.
+- All status checks associated with the pull request must have passed, except for those matching the pattern `ci/.*`.
 
 ### Apply Overrides
 In some situations, you may need to override the apply requirements and force an apply operation. Terrateam provides two ways to override the apply requirements:
@@ -123,7 +124,7 @@ Users with the `apply_autoapprove` capability can use this command to automatica
 Override capabilities should be granted only to trusted users who understand the potential risks and consequences of bypassing apply requirements.
 :::
 
-## Combining Plan and App Permissions
+## Combining Plan and Apply Permissions
 By combining plan and apply permissions, you can create a granular and secure permission system that reflects your organization's roles and responsibilities. For example, you can grant plan permissions to a wider group of users, allowing them to propose and review changes, while restricting apply permissions to a smaller group of trusted users who can approve and execute those changes.
 
 Here's an example configuration that demonstrates this approach:

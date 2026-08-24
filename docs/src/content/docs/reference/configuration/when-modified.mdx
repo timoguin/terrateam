@@ -28,7 +28,7 @@ when_modified:
 ## Keys
 | Key                  | Type    | Description                                                                                       |
 |----------------------|---------|---------------------------------------------------------------------------------------------------|
-| file_patterns        | List    | List of file globs to identify changes in a directory. Always relative to the root of the repository. Prefix with `!` to exclude a file glob. Default is `["${DIR}/*.tf", "${DIR}/*.tfvars"]`. |
+| file_patterns        | List    | List of file globs to identify changes in a directory. Always relative to the root of the repository. Prefix with `!` to exclude a file glob. Default is `["${DIR}/*.tf", "${DIR}/*.tfvars"]`. The configuration schema spells the default `["**/*.tf", "**/*.tfvars"]`; a leading `**/` is treated as `${DIR}/`, so the two forms are equivalent. |
 | autoplan             | Boolean | Automatically run a plan operation on a new pull request or an update on an existing one. Default is true. |
 | autoplan_draft_pr    | Boolean | Automatically run a plan operation on a new draft pull request or an update on an existing one. Default is true. |
 | autoapply            | Boolean | Automatically run an apply operation after merging a pull request. Default is false. |
