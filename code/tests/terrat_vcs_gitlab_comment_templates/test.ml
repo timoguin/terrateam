@@ -95,7 +95,7 @@ let test_apply_complete2_details_few_dirspaces_compact_view =
     ~num_dirspaces:3
 
 (* A call the VCS never answered is a separate comment from a call that failed,
-   so that the reader is told GitLab is unresponsive rather than that Terrateam
+   so that the reader is told GitLab is unresponsive rather than that Stategraph
    broke. *)
 let test_operation_failed_vcs_api_timeout_err =
   Oth.test ~name:"Operation failed vcs api timeout err" (fun _ ->

@@ -106,6 +106,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
   module Tmpl = struct
     let read s =
       s
+      |> Terrat_brand.rewrite_template
       |> Snabela.Template.of_utf8_string
       |> CCResult.get_exn
       |> fun tmpl -> Snabela.of_template tmpl []
@@ -113,7 +114,8 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     let terrateam_comment_tag_query_error =
       read [%blob "tmpl/terrateam_comment_tag_query_error.tmpl"]
 
-    let terrateam_comment_unknown_action = [%blob "tmpl/terrateam_comment_unknown_action.tmpl"]
+    let terrateam_comment_unknown_action =
+      Terrat_brand.rewrite_template [%blob "tmpl/terrateam_comment_unknown_action.tmpl"]
   end
 
   let target_of_user_type = function

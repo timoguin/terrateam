@@ -3,7 +3,7 @@ An apply is already queued or running against directories and workspaces this op
 
 The State column below says whether that apply runs now or still waits.  A queued apply starts on its own once the work ahead of it finishes.
 
-Wait for the apply below to finish, then comment `terrateam apply` again.  If that apply belongs to another pull request, plan again first, because an apply supersedes any plan made against those directories and workspaces before it ran.
+Wait for the apply below to finish, then comment `stategraph apply` again.  If that apply belongs to another pull request, plan again first, because an apply supersedes any plan made against those directories and workspaces before it ran.
 
 Plans do not have to wait like this.  A plan against those directories and workspaces is queued automatically and runs once the apply has completed.
 
@@ -19,7 +19,7 @@ Plans do not have to wait like this.  A plan against those directories and works
 If this appears to be stuck, unlock it by commenting in any pull request:
 
 ```
-terrateam unlock@-#work_manifests@ @id@@/work_manifests@
+stategraph unlock@-#work_manifests@ @id@@/work_manifests@
 ```
 
 **Be careful when unlocking.**  Make sure that these runs are actually stuck by verifying if there are any running GitLab CI workflows.
@@ -28,7 +28,7 @@ If this persists, verify the GitLab CI workflow matches the [documentation](http
 
 For further support:
 
-- Join our [Slack community](https://slack.terrateam.io/) (Fastest)
-- Email us directly at support@@terrateam.io
+- Join our [Slack community](https://stategraph.com/slack) (Fastest)
+- Email us directly at support@@stategraph.com
 
 </details>

@@ -1,5 +1,5 @@
-Terrateam handed this operation to your GitLab CI pipeline {{ num_aborts }} times and every job ended without reporting a result, so it has stopped retrying.
+Stategraph handed this operation to your GitLab CI pipeline {{ num_aborts }} times and every job ended without reporting a result, so it has stopped retrying.
 
-That usually means the job cannot start at all: the Terrateam job is missing from `.gitlab-ci.yml` on the default branch, `runs_on` names a tag that no runner carries, or CI/CD is disabled for this project.  Open **Build > Pipelines** in this project and look for jobs that were cancelled or failed at startup.
+That usually means the job cannot start at all: the Stategraph job is missing from `.gitlab-ci.yml` on the default branch, `runs_on` names a tag that no runner carries, or CI/CD is disabled for this project.  Open **Build > Pipelines** in this project and look for jobs that were cancelled or failed at startup.
 
 Running the command again will not help until the job can start.  Request id `{{ request_id }}`.
