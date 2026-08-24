@@ -16,7 +16,7 @@ The three configurations that come from the default branch by default are:
 - **`apply_requirements`**: What approvals and checks are needed before applying
 - **`destination_branches`**: Which branches changes can be merged into
 
-All other configuration settings (workflows, hooks, etc.) are always read from the feature branch.
+By default, all other configuration settings (workflows, hooks, etc.) are read from the feature branch. Any top-level key can be added to `default_branch_overrides` to pin it to the default branch as well. The `default_branch_overrides` key itself is always read from the default branch, so a feature branch cannot remove a key from the list.
 
 ## Configuring Default Branch Overrides
 

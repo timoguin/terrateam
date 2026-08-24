@@ -62,10 +62,12 @@ Logical operators such as `or` and `and` can be used to combine multiple depende
 
 **Example snippet for `.terrateam/config.yml`:**
 ```yaml
-when_modified:
-  depends_on: 'dir:network or dir:database'
+dirs:
+  application:
+    when_modified:
+      depends_on: 'dir:network or dir:database'
 ```
-In this example, changes to either the `network` or `database` directory will trigger the operation.
+In this example, changes to either the `network` or `database` directory will trigger the operation for `application`. Set `depends_on` under `dirs.<directory>.when_modified`; under the top-level `when_modified` it would apply to every directory, including the dependencies themselves.
 
 #### Directory References
 
@@ -73,16 +75,20 @@ In this example, changes to either the `network` or `database` directory will tr
   This prefix is used to define an absolute path to a directory within your repository. It is useful when you have a clear and fixed structure for your directories.
 
   ```yaml
-  when_modified:
-    depends_on: 'dir:network'
+  dirs:
+    database:
+      when_modified:
+        depends_on: 'dir:network'
   ```
 
 **`relative_dir:`**
   This prefix allows you to specify a path relative to the current directory. It is particularly useful when your directory structure might change, or when you need to maintain flexibility in your dependency definitions.
 
   ```yaml
-  when_modified:
-    depends_on: 'relative_dir:../network'
+  dirs:
+    envs/prod/database:
+      when_modified:
+        depends_on: 'relative_dir:../network'
   ```
 
 #### Pruning Layers Without Changes

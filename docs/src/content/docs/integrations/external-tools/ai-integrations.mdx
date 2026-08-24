@@ -5,12 +5,12 @@ description: Get AI-powered feedback on Terraform plan and apply results directl
 
 import { Steps } from '@astrojs/starlight/components';
 
-Terrateam's [hooks](/reference/configuration/hooks) and [workflow](/reference/configuration/workflows) steps give you access to full plan and apply results via `$TERRATEAM_RESULTS_FILE`. Pair this with any LLM API to get AI-powered feedback directly in your pull requests — summarizing changes, flagging risks, diagnosing errors, and more.
+Terrateam's [hooks](/reference/configuration/hooks) give you access to full plan and apply results via `$TERRATEAM_RESULTS_FILE`, and [workflow](/reference/configuration/workflows) steps give you access to the plan file of each directory via `$TERRATEAM_PLAN_FILE`. Pair this with any LLM API to get AI-powered feedback directly in your pull requests — summarizing changes, flagging risks, diagnosing errors, and more.
 
 ## How It Works
 
-1. Terrateam writes operation results to `$TERRATEAM_RESULTS_FILE` (JSON) after plan or apply operations complete
-2. A hook or workflow step script reads that file, extracts relevant data, and sends it to an LLM provider
+1. Terrateam writes operation results to `$TERRATEAM_RESULTS_FILE` (JSON) after all directories of a plan or apply operation complete, right before the post hooks run
+2. A post hook script reads that file, extracts relevant data, and sends it to an LLM provider
 3. The script prints the LLM response to stdout
 4. Setting `capture_output: true` and `visible_on: always` makes the response appear in the PR comment
 
@@ -74,7 +74,7 @@ hooks:
 
 ### Workflow Approach
 
-Workflow steps run **per dirspace**. Use this when you want individual AI feedback for each directory/workspace combination.
+Workflow steps run **per dirspace**. Use this when you want individual AI feedback for each directory/workspace combination. `$TERRATEAM_RESULTS_FILE` is not set inside workflow steps; instead, the step has access to the plan file of the current directory through `$TERRATEAM_PLAN_FILE`. A per-dirspace script therefore builds its own input, for example with `terraform show -json "$TERRATEAM_PLAN_FILE"`, and sends that to the LLM.
 
 ```yaml
 # .terrateam/config.yml
@@ -84,7 +84,7 @@ workflows:
       - type: init
       - type: plan
       - type: run
-        cmd: ['bash', '${TERRATEAM_ROOT}/scripts/ai-feedback.sh']
+        cmd: ['bash', '${TERRATEAM_ROOT}/scripts/ai-plan-feedback.sh']
         capture_output: true
         run_on: always
         visible_on: always
@@ -102,7 +102,7 @@ workflows:
 
 ## Example Scripts
 
-The following examples show how to send `$TERRATEAM_RESULTS_FILE` to an LLM provider. The results file contains everything — plan/apply output, success/failure status, cost estimation data — so you can pass it directly and let the LLM interpret it. Store your script at `scripts/ai-feedback.sh` in your repository.
+The following examples show how to send `$TERRATEAM_RESULTS_FILE` to an LLM provider from a post hook. The results file contains everything — plan/apply output, success/failure status, cost estimation data — so you can pass it directly and let the LLM interpret it. Store your script at `scripts/ai-feedback.sh` in your repository. For the workflow approach, replace the `RESULTS=$(cat "$TERRATEAM_RESULTS_FILE")` line with `RESULTS=$(terraform show -json "$TERRATEAM_PLAN_FILE")`.
 
 ### Anthropic (Claude)
 
@@ -178,7 +178,6 @@ Store your LLM provider API key as a [GitHub Secret](https://docs.github.com/en/
 1. Go to your repository **Settings** → **Secrets and variables** → **Actions**
 2. Click **New repository secret**
 3. Add your key (e.g., `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`)
-4. Set the `AI_PROVIDER` environment variable to match your provider
 </Steps>
 
 You can reference secrets directly in your Terrateam configuration — they are available as environment variables during workflow execution. For environment-specific keys, use [GitHub Environments](/integrations/external-tools/github-environments) to scope secrets to specific environments like `production` or `staging`.
@@ -188,6 +187,6 @@ You can reference secrets directly in your Terrateam configuration — they are 
 - **Use `run_on: always`** to get AI feedback on both success and failure. This is especially valuable for error analysis.
 - **Use `visible_on: always`** so the AI response always appears in the PR comment, regardless of operation outcome.
 - **Use `ignore_errors: true`** so LLM API failures don't block your Terraform workflow. AI feedback is helpful but should never prevent a plan or apply from completing.
-- **Truncate large plans** before sending to the LLM. The example script limits output to 30,000 characters by default. Adjust `MAX_CHARS` based on your provider's token limits.
+- **Truncate large plans** before sending to the LLM. The example scripts send the whole results file; add a `head -c` or `jq` filter to stay within your provider's token limits.
 - **Customize prompts per environment** — use stricter security-focused prompts for production directories and lighter summaries for development.
 - **Use `jq` for safe JSON construction** — the example script uses `jq -n` to build request payloads, which properly escapes special characters in Terraform output.

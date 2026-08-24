@@ -75,6 +75,6 @@ destination_branches:
 ## Considerations
 When configuring destination branches, keep the following in mind:
 
-- The `destination_branches` configuration is always read from the repository's default branch.
+- The `destination_branches` configuration is read from the repository's default branch as long as it is listed in [`default_branch_overrides`](/reference/configuration/default-branch-overrides), which it is by default.
 - If no matching destination branch is found, Terrateam will not execute any operations on the pull request.
 - Be cautious when using globs and not patterns, as they can have unintended consequences if not carefully reviewed.

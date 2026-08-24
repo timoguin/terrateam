@@ -41,7 +41,7 @@ The `TERRATEAM_ROOT` environment variable points to the absolute path of your ch
 
 ## Custom Step Types
 
-Terrateam supports the following types of steps in workflows:
+Besides the engine steps `init`, `plan`, and `apply`, Terrateam supports the `run`, `env`, `oidc`, `checkov`, `conftest`, `opa`, and `gates` step types in workflows. See the [workflows reference](/reference/configuration/workflows#workflow-steps) for the full list. The most common custom steps are:
 
 ### Run
 
@@ -109,16 +109,16 @@ This example demonstrates how the [above configuration](#configuring-custom-step
 1. Open a pull request with Terraform code changes in the `prod` directory.
 
 2. Terrateam executes the custom plan workflow:
-   ###### `pre-plan.sh` is executed
    ###### `terraform init` is executed
+   ###### `pre-plan.sh` is executed
    ###### `terraform plan` is executed
    ###### `post-plan.sh` is executed
 
 3. Review the plan output and collaborate with your team.
 
-4. After approval and merge, Terrateam executes the custom apply workflow:
-   ###### `pre-apply.sh` is executed
+4. After approval, comment `terrateam apply` (or merge, if `when_modified.autoapply` is `true`). Terrateam executes the custom apply workflow:
    ###### `terraform init` is executed
+   ###### `pre-apply.sh` is executed
    ###### `terraform apply` is executed
    ###### `post-apply.sh` is executed
 

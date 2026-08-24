@@ -51,18 +51,33 @@ The `run` hook type executes a command from the directory that Terrateam is oper
 |-----|------|-------------|
 | cmd | List | Command to run. |
 | run_on | String | Run the command depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
-| capture_output | Boolean | When set to `true`, command output is recorded.  Secrets are masked with `***`.  Default is `true`. |
+| capture_output | Boolean | When set to `true`, command output is recorded.  Secrets are masked with `***`.  Default is `false`. |
 | env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
-| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false.` |
+| ignore_errors | Boolean | Set to `true` if failure should be ignored.  Default is `false`, except when `on_error` contains a gate, in which case it is `true`. |
 | visible_on | String | When the output of the command should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure`. |
 | format | String or Object | Controls how captured command output is rendered in PR comments. String values: `code` (default, fenced code block), `raw` (rendered as-is), `markdown` (rendered as markdown). Object form `{ type: code, lang: <language> }` produces a fenced code block with syntax highlighting for `<language>`. |
+| on_error | List | Actions to take if the command fails. Each entry is an object with a `type`. The only supported type is `gate`, which creates a [Gatekeeper](/governance/gatekeeper) gate with the keys `token`, `name`, `all_of`, `any_of`, and `any_of_count`. |
+
+### `gates`
+The `gates` hook type runs a command and creates a [Gatekeeper](/governance/gatekeeper) gate for each entry of the `gates` list in the JSON the command prints to standard output. The hook never fails the operation.
+| Key | Type | Description |
+|-----|------|-------------|
+| cmd | List | Command to run. Its standard output must be a JSON object of the form `{"gates": [ ... ]}`. Each gate accepts `token`, `name`, `all_of`, `any_of`, `any_of_count`, and `add_reviewers`. |
+| env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
+| run_on | String | Run the command depending on the state of the workflow.  Options are `success`, `failure`, or `always`. Default is `success`. |
+
+### `drift_create_issue`
+The `drift_create_issue` hook type creates an issue in the repository when a [drift detection](/reference/configuration/drift) run finds drift. It is only meaningful as a `plan` post-hook of a drift run; it does nothing in other runs. It runs regardless of the success of the workflow.
+| Key | Type | Description |
+|-----|------|-------------|
+| group_by | String | `all` creates one issue that lists every directory and workspace with drift. `dirspace` creates one issue per directory and workspace. Default is `all`. |
 
 ### `oidc`
 The `oidc` hook type can be used to initiate an OIDC connection to a cloud provider.
 | Key | Type | Provider | Description |
 |-----|------|----------|-------------|
 | oidc | List | | Initiate an OIDC connection to a cloud provider. |
-| provider | String | | Name of provider: aws, azure, or gcp. |
+| provider | String | | Name of provider: aws, azure, or gcp. Required for `azure` and `gcp`; default is `aws`. |
 | role_arn | String | aws | Specifies the ARN of an IAM role that you want to use. Value can be specified using a GitHub Secret / environment variable. |
 | assume_role_arn | String | aws | Specifies the ARN of an IAM role that you want to assume into. Default is the value of `role_arn`. Value can be specified using a GitHub Secret / environment variable. |
 | assume_role_enabled | Boolean | aws | Retrieve a set of temporary security credentials from AWS and set the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN environment variables. Default is true. |
@@ -140,6 +155,16 @@ hooks:
         subscription_id: ${ARM_SUBSCRIPTION_ID}
 ```
 This pre-hook for all operations initiates an OIDC connection to Azure using the client ID, tenant ID, and subscription ID specified in the corresponding environment variables.
+
+### Creating an Issue on Drift
+```yaml
+hooks:
+  plan:
+    post:
+      - type: drift_create_issue
+        group_by: dirspace
+```
+This post-hook for the `plan` operation creates one issue per directory and workspace with drift when a drift detection run finds changes.
 
 ## Considerations
 When using hooks in your Terrateam configuration, keep the following considerations in mind:

@@ -9,7 +9,6 @@ The `engine` configuration allows you to specify which tool should be used for e
 ```yaml
 engine:
   name: terraform
-  tf_version: latest
 ```
 
 ## Keys
@@ -18,7 +17,9 @@ There are different valid keys depending on the engine `name`.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| name | String | The name of the tool to use for executing Terraform operations. Can be `terraform`, `tofu`, `terragrunt`, `cdktf`, `pulumi`, `stategraph`, or `custom`. Default is `terraform`. |
+| name | String | The name of the tool to use for executing Terraform operations. Can be `terraform`, `tofu`, `terragrunt`, `cdktf`, `pulumi`, `stategraph`, or `custom`. Default is `terraform`. Required when `engine` is set. |
+
+The top-level `default_tf_version` key (String) is a legacy alternative to `engine`. When `engine` is not set, `default_tf_version: "1.5.0"` is equivalent to `engine: { name: terraform, version: "1.5.0" }`. When `engine` is set, `default_tf_version` is used as the Terraform version of the `terragrunt`, `cdktf`, and `stategraph` engines if they do not set `tf_version`. Prefer `engine`.
 
 ### terraform and tofu
 
@@ -65,9 +66,17 @@ Use [Stategraph](https://stategraph.com) as the execution engine. Requires a Sta
 
 The runner reads `STATEGRAPH_API_BASE`, `STATEGRAPH_API_KEY`, and `STATEGRAPH_TENANT_ID` from the environment. All three are required.
 
+### pulumi
+
+| Key | Type | Description |
+|-----|------|-------------|
+| name | String | `pulumi` |
+
+The `pulumi` engine takes no other keys.
+
 ## custom
 
-All custom engine steps are optionally and will simply be skipped if they are not specified.
+All custom engine steps are optional and will simply be skipped if they are not specified.
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -75,11 +84,12 @@ All custom engine steps are optionally and will simply be skipped if they are no
 | plan | Array | The command to run during the plan step. The `TERRATEAM_PLAN_FILE` environment variable is available to write a plan file that will be accessible in the apply step.  This plan file is up to the engine to define and use as it needs. |
 | diff | Array | The command to produce a human-readable diff of the plan output. |
 | apply | Array | The command to run during the apply step. |
+| unsafe_apply | Array | The command to run for [`terrateam apply-autoapprove`](/reference/commands/apply-autoapprove), which applies without a previously stored plan file. |
 | outputs | Array | The command to return output values as a JSON string. |
 
 ## outputs
 
-By default, Terrateam collects the outputs of all apply runs an stores them.  The `outputs` configuration controls this behaviour.
+By default, Terrateam collects the outputs of all apply runs and stores them.  The `outputs` configuration controls this behaviour.
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -104,7 +114,7 @@ engine:
 ```yaml
 engine:
   name: terragrunt
-  tf_version: '1.11.1'
+  tf_version: '1.5.7'
 ```
 
 ### Using Terragrunt with OpenTofu

@@ -87,6 +87,7 @@ The configurations that are rejected on Open Source are:
 - `access_control.enabled: true`
 - More than one entry under `drift.schedules`
 - Any `apply_requirements.checks[].approved.require_completed_reviews: true`
+- `notifications.summary.enabled: true`
 - Calling `terrateam gate approve <token>` (or any workflow gate with a token)
 
 Centralized Configuration and the API access-token endpoints are simply not present on Open Source — the Open Source server only reads each repo's local `.terrateam/config.yml`, and the access-token routes are not registered.

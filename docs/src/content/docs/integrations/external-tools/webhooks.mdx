@@ -14,7 +14,7 @@ hooks:
   apply:
     post:
       - type: run
-        cmd: ['curl', '-X', 'POST', '-d', '{"text":"Apply completed for directory: $TERRATEAM_DIR"}', 'https://example.com/webhook']
+        cmd: ['curl', '-X', 'POST', '-d', '{"text":"Apply completed"}', 'https://example.com/webhook']
 ```
 
 In this example, the `hooks.apply.post` section defines a `run` step that uses the `curl` command to send an HTTP POST request to the specified URL with a JSON payload containing a message.
@@ -23,15 +23,27 @@ In this example, the `hooks.apply.post` section defines a `run` step that uses t
 
 You can configure webhooks to be triggered at various points in the Terrateam workflow, such as:
 
-- Before or after a plan operation
-- Before or after an apply operation
-- On success or failure of a plan or apply step (via `workflows`)
+- Before or after a plan operation (`hooks`, once per operation)
+- Before or after an apply operation (`hooks`, once per operation)
+- Before or after the plan or apply of each directory and workspace (`workflows`)
 
 To trigger webhooks at different events, use the appropriate `hooks` or define custom steps in `workflows`.
 
 ## Distinguishing Between Success and Failure
 
-Terrateam's `hooks` run after a complete operation but cannot distinguish between success and failure. For conditional behavior, use the `workflows` section with the `run_on` attribute:
+Both `hooks` and `workflows` `run` steps accept the `run_on` attribute (`success`, `failure`, or `always`; default `success`). In a post hook, `run_on` reflects the result of the whole operation; in a workflow step, it reflects the result of the steps before it for that directory and workspace:
+
+```yaml
+hooks:
+  apply:
+    post:
+      - type: run
+        run_on: success
+        cmd: ['curl', '-X', 'POST', '-d', '{"text":"Apply succeeded"}', 'https://example.com/webhook']
+      - type: run
+        run_on: failure
+        cmd: ['curl', '-X', 'POST', '-d', '{"text":"Apply failed"}', 'https://example.com/webhook']
+```
 
 ```yaml
 workflows:
@@ -49,12 +61,18 @@ workflows:
 
 ## Using Environment Variables in Webhooks
 
-Terrateam provides built-in environment variables for context-aware payloads:
+Terrateam provides built-in environment variables for context-aware payloads. Which variables are set depends on where the `run` step executes:
 
-- `TERRATEAM_DIR`: Directory being processed
-- `TERRATEAM_WORKSPACE`: Workspace in use
-- `TERRATEAM_PLAN_FILE`: Path to the plan file
-- `TERRATEAM_ROOT`: Root path of the repository
+- In `workflows` steps (per directory and workspace):
+  - `TERRATEAM_DIR`: Directory being processed
+  - `TERRATEAM_WORKSPACE`: Workspace in use
+  - `TERRATEAM_PLAN_FILE`: Path to the plan file
+  - `TERRATEAM_ROOT`: Root path of the repository
+- In `hooks` (once per operation):
+  - `TERRATEAM_ROOT`: Root path of the repository
+  - `TERRATEAM_RESULTS_FILE` (post hooks only): Path to a JSON file with the results of every directory and workspace
+
+A `run` step whose `cmd` references an environment variable that is not set fails with a missing environment variable error, so do not use the per-directory variables in `hooks`.
 
 ## Securing Webhooks
 
@@ -98,4 +116,6 @@ hooks:
   plan:
     post:
       - type: run
-        cmd: ['curl', '-X', 'POST', '-H', 'Content-type: application/json', '--data', '{"event":"plan_completed", "directory":"$TERRATEAM_DIR", "workspace":"$TERRATEAM_WORKSPACE", "plan_file":"$TERRATEAM_PLAN_FILE"}', 'https://hooks.example.com/terrateam-webhook']
+        run_on: always
+        cmd: ['curl', '-X', 'POST', '-H', 'Content-type: application/json', '--data-binary', '@$TERRATEAM_RESULTS_FILE', 'https://hooks.example.com/terrateam-webhook']
+```

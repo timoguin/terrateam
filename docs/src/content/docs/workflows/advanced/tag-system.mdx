@@ -68,7 +68,7 @@ Tag queries are boolean expressions that use a combination of tags, operators, a
 | `and`         | Matches resources that have all the specified tags. This is the default if none is specified. | `prod and api`                 |
 | `or`          | Matches resources that have at least one of the specified tags.                             | `staging or dev`               |
 | `not`         | Matches resources that do not have the specified tag.                                       | `not deprecated`               |
-| `in`          | Matches resources that have the specified tag as a fragment in their path or name.           | `app in dir`                   |
+| `in`          | `<glob> in dir` matches directories whose path contains a component matching `<glob>` (`**/<glob>/**`). Only `dir` is accepted on the right-hand side. | `app in dir`                   |
 | Parentheses   | Used to group and prioritize expressions.                                                   | `(web or api) and prod`        |
 
 #### Example Queries
@@ -78,7 +78,7 @@ Tag queries are boolean expressions that use a combination of tags, operators, a
 | `prod and api`               | Matches resources that have both the `prod` and `api` tags.                  |
 | `staging or dev`             | Matches resources that have either the `staging` or `dev` tags.              |
 | `not deprecated`             | Matches resources that do not have the `deprecated` tag.                     |
-| `app in dir`                 | Matches resources that have the `app` tag as a fragment in their directory path. |
+| `app in dir`                 | Matches directories that have a path component named `app`, such as `services/app/prod`. |
 | `(web or api) and prod`      | Matches resources that have either the `web` or `api` tags, and also have the `prod` tag. |
 
 ### Combining Top-level and Directory-level Tags

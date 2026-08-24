@@ -28,7 +28,7 @@ engine:
 ```yaml
 engine:
   name: terragrunt
-  tf_version: '1.11.1'
+  tf_version: '1.5.7'
 ```
 
 ### CDKTF
@@ -43,6 +43,14 @@ engine:
 engine:
   name: pulumi
 ```
+
+### Stategraph
+```yaml
+engine:
+  name: stategraph
+  tf_cmd: tofu
+```
+See the [Stategraph integration guide](/integrations/iac-tools/stategraph/) for the required secrets and `stategraph.json`.
 
 ## Custom Engine
 
@@ -67,12 +75,14 @@ engine:
   diff: ['printf', '+ added foo\n- removed bar\n~ updated bar\n']
   # The command to run during the apply step (optional)
   apply: ['my-custom-apply']
+  # The command to run for terrateam apply-autoapprove, which has no stored plan (optional)
+  unsafe_apply: ['my-custom-apply', '--no-plan']
   # The command to return output values as a JSON string (optional)
   outputs: ['echo', '{"foo": "bar"}']
 ```
 
 **Highlights:**
-- All steps (`init`, `plan`, `diff`, `apply`, `outputs`) are optional
+- All steps (`init`, `plan`, `diff`, `apply`, `unsafe_apply`, `outputs`) are optional
 - Define only the steps that make sense for your use case
 - `$TERRATEAM_PLAN_FILE` environment variable is available to pass data from plan to apply
 - Use this pattern to integrate with any tool or custom process
@@ -84,12 +94,13 @@ Each key corresponds to a step in the Terrateam workflow:
 * `plan` The command to run during the plan step. Optional.
 * `diff` The command to produce a human-readable diff of the plan output. Optional.
 * `apply` The command to run during the apply step. Optional.
+* `unsafe_apply` The command to run for [`terrateam apply-autoapprove`](/reference/commands/apply-autoapprove), which applies without a previously stored plan. Optional.
 * `outputs` The command to return output values as a JSON string. Optional.
 
 All steps are optional - you can define any combination of steps that makes sense for your use case.
 
 :::note
-The exit code of the `plan` script is important.  Custom engine uses the OpenTofu detailed exit code standard in that an exit code of `0` means there are changes in the plan and `2` means the plan was successful but there are no changes.  Any other exit code is considered a failure.
+The exit code of the `plan` script is important.  An exit code of `0` means the plan succeeded and there are changes, and `2` means the plan succeeded but there are no changes.  Any other exit code is considered a failure.  Note that this is the reverse of the `-detailed-exitcode` convention of Terraform and OpenTofu, where `2` means changes; wrap those tools if you pass their exit code through.
 :::
 
 ## Per Workflow Engines
@@ -107,5 +118,5 @@ workflows:
 
 ## Best Practices
 * Use per-workflow engine configurations to maximize flexibility.
-* Use `tf_version` and `tf_cmd` to control which Terraform compatible CLI is invoked.
+* Use `version` on the `terraform` and `tofu` engines, and `tf_cmd` and `tf_version` on the `terragrunt`, `cdktf`, and `stategraph` engines, to control which Terraform compatible CLI is invoked.
 * For custom engines, test locally with the same environment variables Terrateam uses (especially `TERRATEAM_PLAN_FILE`).

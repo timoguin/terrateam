@@ -16,17 +16,29 @@ Use YAML anchors when you have:
 
 ## Basic Syntax
 
-Define anchors in the `definitions` section and reference them throughout your configuration:
+Define anchors in the [`definitions`](/reference/configuration/definitions) section and reference them throughout your configuration. Terrateam ignores the contents of `definitions`; every other key is validated against the configuration schema, so an anchored value must be valid where it is used.
 
 ```yaml
 definitions:
-  my_config: &my_config
-    key: value
+  std_plan: &std_plan
+    - type: init
+    - type: plan
 
 workflows:
-  - name: default
-    custom: *my_config
+  - tag_query: ""
+    plan: *std_plan
 ```
+
+## How Terrateam Resolves Anchors
+
+Terrateam resolves anchors, aliases, and the `<<` merge key when it parses the file:
+
+- `*anchor` inserts the anchored value (scalar, list, or map).
+- `<<: *anchor` merges the keys of an anchored map into the current map. Keys written in the current map win over merged keys.
+- `<<: [*first, *second]` merges several maps. Writing `<<:` twice in one map is a parse error.
+- Merging is shallow. Nested maps are replaced, not merged.
+- `*anchor.key` is not valid YAML. Anchor the nested value separately.
+- A list alias inside another list creates a nested list, which Terrateam rejects. Use the alias as the whole value or anchor the individual entries.
 
 ## Common Patterns
 
@@ -37,23 +49,17 @@ Define once, use everywhere:
 ```yaml
 definitions:
   standard_engine: &standard_engine
-    version: 1.6.0
-    environment:
-      TF_IN_AUTOMATION: "true"
-      TF_INPUT: "false"
+    name: terraform
+    version: "1.5.7"
 
 workflows:
-  - name: development
-    tag_query: "dev"
+  - tag_query: "dev"
     engine: *standard_engine
-    
-  - name: production
-    tag_query: "prod"
-    engine: 
+
+  - tag_query: "prod"
+    engine:
       <<: *standard_engine
-      environment:
-        <<: *standard_engine.environment
-        PRODUCTION: "true"
+      version: "1.5.5"
 ```
 
 ### Reusable Workflow Steps
@@ -78,15 +84,14 @@ definitions:
     cmd: ["tfsec", "."]
 
 workflows:
-  - name: default
+  - tag_query: ""
     plan:
       - *step_init
       - *step_fmt
       - *step_validate
+      - type: plan
       - *step_checkov
       - *step_tfsec
-      - type: plan
-      - type: cost_estimation
 ```
 
 If you want to reuse a complete step list, anchor it and reference it as the entire value (not as one entry in a larger list):
@@ -99,13 +104,13 @@ definitions:
     - type: checkov
 
 workflows:
-  - name: default
+  - tag_query: ""
     plan: *full_plan
 ```
 
 ### Environment-Specific Configurations
 
-Manage multiple environments efficiently:
+Environment variables for a step are set with the step's `env` key. Define the variables once per environment and reference them from the steps that need them:
 
 ```yaml
 definitions:
@@ -114,48 +119,70 @@ definitions:
     AWS_REGION: us-east-1
     AWS_ROLE_ARN: arn:aws:iam::123456789012:role/terrateam-dev
     ENVIRONMENT: development
-    
+
   aws_staging: &aws_staging
     AWS_REGION: us-east-1
     AWS_ROLE_ARN: arn:aws:iam::123456789012:role/terrateam-staging
     ENVIRONMENT: staging
-    
+
   aws_prod: &aws_prod
     AWS_REGION: us-east-1
     AWS_ROLE_ARN: arn:aws:iam::123456789012:role/terrateam-prod
     ENVIRONMENT: production
 
-  # Standard requirements
-  basic_requirements: &basic_requirements
-    - approved
-    - status_checks
-    
-  strict_requirements: &strict_requirements
-    - approved: 2
-    - status_checks
-    - merge_conflicts
-
 workflows:
-  - name: development
-    tag_query: "dev"
-    engine:
-      version: 1.6.0
-      environment: *aws_dev
-    apply_requirements: *basic_requirements
-    
-  - name: staging
-    tag_query: "staging"
-    engine:
-      version: 1.6.0
-      environment: *aws_staging
-    apply_requirements: *basic_requirements
-    
-  - name: production
-    tag_query: "production"
-    engine:
-      version: 1.6.0
-      environment: *aws_prod
-    apply_requirements: *strict_requirements
+  - tag_query: "dev"
+    plan:
+      - type: init
+        env: *aws_dev
+      - type: plan
+        env: *aws_dev
+
+  - tag_query: "staging"
+    plan:
+      - type: init
+        env: *aws_staging
+      - type: plan
+        env: *aws_staging
+
+  - tag_query: "production"
+    plan:
+      - type: init
+        env: *aws_prod
+      - type: plan
+        env: *aws_prod
+```
+
+Approval rules live in [`apply_requirements`](/reference/configuration/apply-requirements), not in `workflows`. Anchor them the same way:
+
+```yaml
+definitions:
+  basic_requirements: &basic_requirements
+    approved:
+      enabled: true
+      any_of: ["team:developers"]
+      any_of_count: 1
+    status_checks:
+      enabled: true
+
+  strict_requirements: &strict_requirements
+    approved:
+      enabled: true
+      any_of: ["team:platform"]
+      any_of_count: 2
+    status_checks:
+      enabled: true
+    merge_conflicts:
+      enabled: true
+
+apply_requirements:
+  checks:
+    - tag_query: "dev"
+      <<: *basic_requirements
+    - tag_query: "staging"
+      <<: *basic_requirements
+    - tag_query: "production"
+      <<: *strict_requirements
 ```
 
 ### Standardized Access Control
@@ -167,7 +194,7 @@ definitions:
   dev_team_access: &dev_team_access
     plan: ["*"]
     apply: ["team:developers", "team:platform"]
-    
+
   platform_only: &platform_only
     plan: ["*"]
     apply: ["team:platform"]
@@ -178,27 +205,24 @@ access_control:
   policies:
     - tag_query: "dev or staging"
       <<: *dev_team_access
-      
+
     - tag_query: "production"
       <<: *platform_only
-      
+
     - tag_query: "infrastructure"
       <<: *platform_only
 ```
 
 ### Complex Workflow Templates
 
-Build sophisticated reusable patterns:
-
-Anchor individual steps so you can compose them into different workflow lists without producing nested arrays:
+Anchor individual steps so you can compose them into different workflow lists without producing nested arrays. Steps that should run even after an earlier failure use `run_on: always`:
 
 ```yaml
 definitions:
   # Base configuration for all workflows
-  base_config: &base_config
-    engine:
-      version: 1.6.0
-      tf_version: 1.5.0
+  base_engine: &base_engine
+    name: terraform
+    version: "1.5.7"
 
   # Individual step anchors (compose these into flat lists)
   step_init: &step_init
@@ -213,23 +237,19 @@ definitions:
     type: plan
   step_checkov: &step_checkov
     type: checkov
-    when: always
+    run_on: always
   step_tfsec: &step_tfsec
     type: run
     cmd: ["tfsec", ".", "--format", "json"]
-    when: always
-  step_cost: &step_cost
-    type: cost_estimation
-    when: always
+    run_on: always
   step_notify: &step_notify
     type: run
     cmd: ["echo", "Deployment complete"]
-    when: apply_succeeded
+    run_on: success
 
 workflows:
-  - name: feature-branch
-    <<: *base_config
-    tag_query: "feature"
+  - tag_query: "feature"
+    engine: *base_engine
     plan:
       - *step_init
       - *step_fmt
@@ -237,11 +257,9 @@ workflows:
       - *step_plan
       - *step_checkov
       - *step_tfsec
-      - *step_cost
 
-  - name: main-branch
-    <<: *base_config
-    tag_query: "main"
+  - tag_query: "main"
+    engine: *base_engine
     plan:
       - *step_init
       - *step_fmt
@@ -249,7 +267,6 @@ workflows:
       - *step_plan
       - *step_checkov
       - *step_tfsec
-      - *step_cost
     apply:
       - type: init
       - type: apply
@@ -258,49 +275,43 @@ workflows:
 
 ### Directory Configuration Templates
 
-Share configurations across directories:
+Share `when_modified` settings and tags across directories. `dirs` is a map keyed by directory path (globs are allowed):
 
 ```yaml
 definitions:
-  # S3 backend configuration
-  s3_backend: &s3_backend
-    backend: s3
-    backend_config:
-      bucket: terraform-state
-      region: us-east-1
-      encrypt: true
-      
   # Anchor individual tag values so they can be composed into flat lists
-  tag_dir: &tag_dir "$dir"
-  tag_workspace: &tag_workspace "$workspace"
+  tag_aws: &tag_aws aws
+  tag_managed: &tag_managed managed
 
-  # Module directories configuration
+  # Shared when_modified configuration
+  with_shared_modules: &with_shared_modules
+    file_patterns: ["${DIR}/*.tf", "shared/*.tf"]
+    autoplan: true
+    autoapply: false
+
+  # Module directories are never planned on their own
   module_config: &module_config
-    autoplan: false
-    tags:
-      - *tag_dir
-      - *tag_workspace
-      - "module"
+    file_patterns: []
 
 dirs:
-  - path: terraform/networking
-    <<: *s3_backend
+  terraform/networking:
     tags:
-      - *tag_dir
-      - *tag_workspace
+      - *tag_aws
+      - *tag_managed
       - "networking"
       - "core"
+    when_modified: *with_shared_modules
 
-  - path: terraform/compute
-    <<: *s3_backend
+  terraform/compute:
     tags:
-      - *tag_dir
-      - *tag_workspace
+      - *tag_aws
+      - *tag_managed
       - "compute"
       - "application"
+    when_modified: *with_shared_modules
 
-  - path: modules/**
-    <<: *module_config
+  modules/**:
+    when_modified: *module_config
 ```
 
 :::note
@@ -311,36 +322,30 @@ You cannot anchor a list and splice it into another list (`- *base_tags` inside 
 
 ### Merging Multiple Anchors
 
-Combine configurations using the merge operator:
+Combine several maps with one `<<:` key that takes a list. A key written after the merge overrides the merged value:
 
 ```yaml
 definitions:
   base: &base
-    version: 1.6.0
-    
-  aws: &aws
-    environment:
-      AWS_REGION: us-east-1
-      
-  monitoring: &monitoring
-    environment:
-      DATADOG_API_KEY: ${DATADOG_API_KEY}
-      
-  complete: &complete
-    <<: *base
-    <<: *aws
-    <<: *monitoring
-    environment:
-      CUSTOM: value
+    name: terraform
+
+  pinned: &pinned
+    version: "1.5.5"
+
+  no_outputs: &no_outputs
+    outputs:
+      collect: false
 
 workflows:
-  - name: monitored
-    engine: *complete
+  - tag_query: "production"
+    engine:
+      <<: [*base, *pinned, *no_outputs]
+      version: "1.5.7"
 ```
 
 ### Conditional Patterns
 
-Anchor each step individually and assemble per-environment lists from those steps. YAML cannot merge two lists into one, so the production list has to repeat the base entries — but each step is still defined exactly once.
+Anchor each step individually and assemble per-environment lists from those steps. YAML cannot merge two lists into one, so the production list has to repeat the base entries, but each step is still defined exactly once.
 
 ```yaml
 definitions:
@@ -351,8 +356,6 @@ definitions:
     type: plan
   step_checkov: &step_checkov
     type: checkov
-  step_cost: &step_cost
-    type: cost_estimation
   step_compliance: &step_compliance
     type: run
     cmd: ["compliance-check"]
@@ -367,16 +370,13 @@ definitions:
     - *step_init
     - *step_plan
     - *step_checkov
-    - *step_cost
     - *step_compliance
 
 workflows:
-  - name: development
-    tag_query: "dev"
+  - tag_query: "dev"
     plan: *dev_plan
 
-  - name: production
-    tag_query: "production"
+  - tag_query: "production"
     plan: *prod_plan
 ```
 
@@ -390,17 +390,17 @@ Avoid `- *required_steps` inside another list. Because YAML has no list-merge op
 2. **Group related anchors** - Keep similar configurations together
 3. **Document complex anchors** - Add comments explaining usage
 4. **Start simple** - Begin with basic patterns and evolve as needed
-5. **Test thoroughly** - Verify anchors resolve correctly before deploying
+5. **Test thoroughly** - Run `terrateam repo-config` on a pull request to verify the resolved configuration before relying on it
 
 ## Example: Complete Multi-Environment Setup
 
 ```yaml
 definitions:
-  # Terraform versions
-  tf_latest: &tf_latest
-    version: 1.6.0
-    tf_version: 1.5.0
-    
+  # Terraform version
+  tf_engine: &tf_engine
+    name: terraform
+    version: "1.5.7"
+
   # Individual step anchors (compose into flat lists below)
   step_init: &step_init
     type: init
@@ -414,62 +414,76 @@ definitions:
     type: plan
   step_checkov: &step_checkov
     type: checkov
-  step_cost: &step_cost
-    type: cost_estimation
 
   # Environment credentials
   dev_env: &dev_env
     AWS_ROLE_ARN: arn:aws:iam::111111111111:role/terrateam-dev
     AWS_REGION: us-east-1
-    
+
   prod_env: &prod_env
     AWS_ROLE_ARN: arn:aws:iam::222222222222:role/terrateam-prod
     AWS_REGION: us-east-1
-    
+
   # Access patterns
   dev_access: &dev_access
     plan: ["*"]
     apply: ["team:developers"]
-    
+
   prod_access: &prod_access
     plan: ["*"]
     apply: ["team:platform"]
     apply_force: ["team:sre"]
 
-# Apply configurations
-workflows:
-  - name: development
-    <<: *tf_latest
-    tag_query: "dev"
-    engine:
-      <<: *tf_latest
-      environment: *dev_env
-    plan:
-      - *step_init
-      - *step_fmt
-      - *step_validate
-      - *step_plan
-      - *step_checkov
-      - *step_cost
-    apply_requirements:
-      - approved
+  # Approval rules
+  dev_checks: &dev_checks
+    approved:
+      enabled: true
+      any_of: ["team:developers"]
+      any_of_count: 1
 
-  - name: production
-    <<: *tf_latest
-    tag_query: "production"
-    engine:
-      <<: *tf_latest
-      environment: *prod_env
+  prod_checks: &prod_checks
+    approved:
+      enabled: true
+      any_of: ["team:platform"]
+      any_of_count: 2
+    status_checks:
+      enabled: true
+
+workflows:
+  - tag_query: "dev"
+    engine: *tf_engine
     plan:
       - *step_init
       - *step_fmt
       - *step_validate
-      - *step_plan
+      - type: plan
+        env: *dev_env
       - *step_checkov
-      - *step_cost
-    apply_requirements:
-      - approved: 2
-      - status_checks
+    apply:
+      - *step_init
+      - type: apply
+        env: *dev_env
+
+  - tag_query: "production"
+    engine: *tf_engine
+    plan:
+      - *step_init
+      - *step_fmt
+      - *step_validate
+      - type: plan
+        env: *prod_env
+      - *step_checkov
+    apply:
+      - *step_init
+      - type: apply
+        env: *prod_env
+
+apply_requirements:
+  checks:
+    - tag_query: "dev"
+      <<: *dev_checks
+    - tag_query: "production"
+      <<: *prod_checks
 
 access_control:
   enabled: true
@@ -480,4 +494,4 @@ access_control:
       <<: *prod_access
 ```
 
-This approach reduces a 200+ line configuration to under 100 lines while improving maintainability and consistency.
+This approach keeps every setting defined once while producing a configuration Terrateam accepts as written.

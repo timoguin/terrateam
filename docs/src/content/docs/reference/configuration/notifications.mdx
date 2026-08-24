@@ -3,7 +3,7 @@ title: notifications
 description: The notifications configuration reference
 ---
 
-The `notifications` configuration can be used to set different comment update strategies, 
+The `notifications` configuration can be used to set different comment update strategies for different directories and workspaces, and to enable the summary header on plan and apply comments.
 
 ## Default Configuration
 ```yaml
@@ -24,8 +24,8 @@ notifications:
 ### Policies
 | Key | Type | Description |
 | --- | --- | --- |
-| `comment_strategy` | string | Specifies the strategy Terrateam will when creating new comments. Values are `append` (don't modify old comments, just keep apending), `minimize` (old comments get minimized) or `delete` (old comments get removed). Default is `minimize`. |
-| `tag_query` | string | See [tag queries](/advanced-workflows/tags). |
+| `comment_strategy` | string | Specifies the strategy Terrateam will use when creating new comments. Values are `append` (don't modify old comments, just keep appending), `minimize` (old comments get minimized) or `delete` (old comments get removed). Default is `minimize`. |
+| `tag_query` | string | See [tag queries](/advanced-workflows/tags). Required. |
 
 ### Summary
 
@@ -46,7 +46,7 @@ notifications:
 ```
 
 ## Examples
-### Multiple Comment Strategies for Diferent Dirspaces
+### Multiple Comment Strategies for Different Dirspaces
 ```yaml
 notifications:
   policies:

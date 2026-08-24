@@ -13,12 +13,11 @@ Gatekeeper allows you to create manual approval gates in your Terrateam workflow
 
 ## Understanding Gatekeeper
 
-When a gated workflow step fails (such as a security scan detecting issues or a policy check finding violations), instead of immediately failing the entire workflow, Gatekeeper:
+When a gated workflow step fails (such as a security scan detecting issues or a policy check finding violations), instead of failing the plan, Gatekeeper:
 
-1. Pauses the workflow execution
-2. Creates an approval request
-3. Notifies authorized approvers
-4. Waits for manual approval before continuing
+1. Records a gate for the directory and workspace the step ran in
+2. Lets the rest of the plan workflow continue
+3. Blocks the apply of that directory and workspace until the gate is approved
 
 This allows teams to maintain strict automated checks while providing flexibility for legitimate exceptions.
 
@@ -29,45 +28,56 @@ Gates that are not associated with a token require all requested approvers to ap
 ## How Gatekeeper Works
 
 <Steps>
-1. **A gated step fails**: A workflow step configured with a gate encounters a failure condition
+1. **A gated step fails**: A workflow step configured with a gate encounters a failure condition during the plan.
 
-2. **Approval request created**: Terrateam posts a comment in the pull request with:
-   - Details about what failed
-   - The gate token identifier
-   - Who can approve the gate
+2. **Gate recorded**: Terrateam records the gate for the directory and workspace. The failure of the step is ignored and the plan continues.
 
-3. **Authorized user reviews**: Team members review the failure and determine if it's acceptable
+3. **Apply is blocked**: When an apply is attempted, Terrateam checks every gate for the directories and workspaces being applied. If any gate is not satisfied, Terrateam posts a comment that lists:
+   - The gate token or name
+   - The directory and workspace
+   - Who can approve the gate and how many approvals are still required
 
-4. **Approval granted**: An authorized user comments with the approval command:
+4. **Authorized user reviews**: Team members review the failure and determine if it's acceptable.
+
+5. **Approval granted**: An authorized user approves the gate. For gates with a token, comment:
    ```
    terrateam gate approve <token>
    ```
-   
-   Or approve the pull request if the gate does not have a token.
 
-5. **Workflow continues**: Once approved, the workflow proceeds as if the step had succeeded
+   Multiple tokens can be approved in one comment: `terrateam gate approve <token1> <token2>`.
+
+   For gates without a token, approve the pull request.
+
+6. **Apply continues**: Once every gate is satisfied, the apply proceeds.
 </Steps>
 
 :::note[Force applies bypass gates]
-A force apply ([`terrateam apply-force`](/reference/commands/apply-force/)) bypasses all gates. Gated steps are skipped and no gate approval is requested.
+A force apply ([`terrateam apply-force`](/reference/commands/apply-force/)) bypasses all gates. Gates are not checked and no gate approval is requested.
 :::
 
 ## Configuring Gates
 
-Gates can be added to the following workflow step types:
-- `run`: Gate failures from custom scripts and commands
-- `checkov`: Gate security scan violations
-- `conftest`: Gate policy check failures
+There are three ways to create gates:
+
+- The `gate` key on the `checkov`, `conftest`, and `opa` workflow step types. The gate is created when the step fails.
+- The `on_error` key on the `run` workflow step and hook type, with an entry of `type: gate`. The gate is created when the command exits non-zero.
+- The `gates` workflow step and hook type, which runs a command that outputs the gates to create. Use this to compute gates dynamically, for example based on the plan output.
 
 ### Gate Configuration Options
 
+These keys are accepted in the `gate` object, in an `on_error` entry of `type: gate`, and in each gate output by a `gates` step.
+
 | Key | Type | Description |
 |-----|------|-------------|
-| `token` | String | A unique identifier for this gate request |
-| `name` | String | A name to give the gate.  This is useful for identifying why the gate was created when a token is not used |
-| `all_of` | List | List of users/teams that must ALL approve the gate |
-| `any_of` | List | List of users/teams where ANY ONE can approve the gate |
-| `any_of_count` | Integer | Number of approvals required from the `any_of` list (default: 1) |
+| `token` | String | A unique identifier for this gate. Gates with a token are approved with `terrateam gate approve <token>`. Gates without a token are approved by approving the pull request. |
+| `name` | String | A name to give the gate. This is useful for identifying why the gate was created when a token is not used. |
+| `all_of` | List | List of users, teams, or roles that must ALL approve the gate. |
+| `any_of` | List | List of users, teams, or roles from which `any_of_count` approvals are required. |
+| `any_of_count` | Integer | Number of approvals required from the `any_of` list. Default is `0`, which means no approval from the `any_of` list is required. Set it to `1` or more when using `any_of`. |
+
+Entries in `all_of` and `any_of` use the same syntax as [access control](/reference/configuration/access-control): `user:<username>`, `team:<team-slug>`, `role:<repository-role>`, or `*`.
+
+A gate is satisfied when every entry in `all_of` has approved and at least `any_of_count` distinct approvers matching `any_of` have approved.
 
 ### Authorization Patterns
 
@@ -78,6 +88,7 @@ Gatekeeper supports flexible authorization patterns:
 gate:
   token: "security-override"
   any_of: ["user:security-lead"]
+  any_of_count: 1
 ```
 
 **Any Team Member**:
@@ -85,6 +96,7 @@ gate:
 gate:
   token: "platform-approval"
   any_of: ["team:platform", "team:sre"]
+  any_of_count: 1
 ```
 
 **Multiple Required Approvers**:
@@ -101,6 +113,63 @@ gate:
   any_of: ["user:cfo", "user:cto", "user:eng-director", "user:finance-lead"]
   any_of_count: 2
 ```
+
+### Gating a `run` step
+
+The `run` step does not accept a `gate` key. Use `on_error` instead. When a `run` step has a gate in `on_error`, `ignore_errors` defaults to `true` for that step so the failed command does not fail the plan.
+
+```yaml
+workflows:
+  - tag_query: ""
+    plan:
+      - type: init
+      - type: plan
+      - type: run
+        cmd: ['./scripts/cost-check.sh']
+        on_error:
+          - type: gate
+            token: "cost-threshold"
+            any_of: ["team:finance", "user:budget-owner"]
+            any_of_count: 1
+```
+
+### Creating gates dynamically with the `gates` step
+
+The `gates` step runs a command and reads the gates to create from its standard output. The command must print a JSON object with a `gates` list. Each gate accepts the keys above plus `add_reviewers` (default `true`), which requests a review on the pull request from the `user:` and `team:` entries in `all_of` and `any_of`. The step always counts as failed so that its gates are recorded; it never fails the plan.
+
+```yaml
+workflows:
+  - tag_query: ""
+    plan:
+      - type: init
+      - type: plan
+      - type: gates
+        cmd: ['./scripts/compute-gates.sh']
+```
+
+Example output of `./scripts/compute-gates.sh`:
+
+```json
+{
+  "gates": [
+    {
+      "token": "database-change",
+      "name": "Database schema change",
+      "any_of": ["team:dba"],
+      "any_of_count": 1,
+      "add_reviewers": true
+    }
+  ]
+}
+```
+
+The `gates` step accepts these keys:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `cmd` | List | Command to run. Required. |
+| `env` | Object | Environment variables to set for this execution. |
+| `run_on` | String | When to run the step: `success`, `failure`, or `always`. Default is `success`. |
 
 ## Common Use Cases
 
@@ -123,6 +192,7 @@ workflows:
         extra_args: ['-d', 'policy.rego', 'data.terraform.networking_team_resources_modifed']
         gate:
           any_of: ["team:networking"]
+          any_of_count: 1
 ```
 
 ### Security Scan Overrides
@@ -139,6 +209,7 @@ workflows:
         gate:
           token: "checkov-override"
           any_of: ["team:security", "team:platform"]
+          any_of_count: 1
 ```
 
 When Checkov detects issues, security or platform team members can review and approve if the findings are acceptable.
@@ -158,6 +229,7 @@ workflows:
           token: "policy-exception"
           all_of: ["team:compliance"]
           any_of: ["user:compliance-lead", "user:ciso"]
+          any_of_count: 1
 ```
 
 This requires both general compliance team approval and approval from either the compliance lead or CISO.
@@ -174,9 +246,11 @@ workflows:
       - type: plan
       - type: run
         cmd: ['./scripts/cost-check.sh']
-        gate:
-          token: "cost-threshold"
-          any_of: ["team:finance", "user:budget-owner"]
+        on_error:
+          - type: gate
+            token: "cost-threshold"
+            any_of: ["team:finance", "user:budget-owner"]
+            any_of_count: 1
 ```
 
 If the cost check script fails (indicating costs exceed thresholds), finance team members can review and approve the changes.
@@ -191,25 +265,28 @@ workflows:
     plan:
       - type: init
       - type: plan
-      
+
       # Security scanning with override capability
       - type: checkov
         gate:
           token: "security-scan"
           any_of: ["team:security"]
-      
+          any_of_count: 1
+
       # Compliance validation with stricter approval
       - type: conftest
         gate:
           token: "compliance-check"
           all_of: ["team:compliance"]
           any_of: ["user:compliance-lead"]
-      
+          any_of_count: 1
+
       # Custom validation with multiple approvers required
       - type: run
         cmd: ['./scripts/validate-production.sh']
-        gate:
-          token: "prod-validation"
-          any_of: ["team:platform", "team:sre", "team:devops"]
-          any_of_count: 2
+        on_error:
+          - type: gate
+            token: "prod-validation"
+            any_of: ["team:platform", "team:sre", "team:devops"]
+            any_of_count: 2
 ```

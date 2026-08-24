@@ -100,46 +100,46 @@ workflows:
   - tag_query: 'dest_branch:main'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'main']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'main']
       - type: init
       - type: apply
   - tag_query: 'dest_branch:staging'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'staging']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'staging']
       - type: init
       - type: apply
   - tag_query: 'dest_branch:dev'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'dev']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'dev']
       - type: init
       - type: apply
 ```
 **What it does:**
 - Runs different Terraform workflows depending on the destination branch.
-- Sets an environment variable for each environment, then runs `init`, `plan`, and `apply` as appropriate.
+- Sets the `ENVIRONMENT` environment variable for each environment, then runs `init`, `plan`, and `apply` as appropriate.
 
 <details>
 <summary>Full Example: Complete .terrateam/config.yml for Gitflow</summary>
@@ -161,39 +161,39 @@ workflows:
   - tag_query: 'dest_branch:main'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'main']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'main']
       - type: init
       - type: apply
   - tag_query: 'dest_branch:staging'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'staging']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'staging']
       - type: init
       - type: apply
   - tag_query: 'dest_branch:dev'
     plan:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'dev']
       - type: init
       - type: plan
     apply:
       - type: env
-        method: source
+        name: ENVIRONMENT
         cmd: ['echo', 'dev']
       - type: init
       - type: apply

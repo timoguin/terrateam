@@ -50,6 +50,36 @@ apply_requirements:
 In this configuration, changes in the "tf1" directory require an approval from the user "alice", while changes in the "tf2" directory require an approval from the user "bob".
 By adjusting these settings, you can customize the apply requirements to match your team's workflows and policies.
 
+### `apply_requirements` Keys
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `checks` | list | List of check entries. The first entry whose `tag_query` matches a directory and workspace is used. `checks` may also be a single object with the `approved`, `merge_conflicts`, and `status_checks` keys, which applies to every directory and workspace. |
+| `create_pending_apply_check` | boolean | Create a pending `terrateam apply` commit status on the pull request until every directory and workspace with changes has been applied. Use it with branch protection to block merging until the apply completes. Default `true`. |
+| `create_completed_apply_check_on_noop` | boolean | Also create a completed `terrateam apply` commit status when the pull request changes nothing that Terrateam manages, so the pull request can be merged when branch protection requires the check. Default `false`. |
+
+### Check Entry Keys
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `tag_query` | string | [Tag query](/advanced-workflows/tags) selecting the directories and workspaces this entry applies to. Required. |
+| `approved` | object | The approval requirement. See below. |
+| `merge_conflicts` | object | `enabled` (boolean, default `true`): the pull request must not have merge conflicts. |
+| `status_checks` | object | `enabled` (boolean, default `true`): all status checks must have passed. `ignore_matching` (list): patterns of status check names to ignore. |
+| `apply_after_merge` | object | `enabled` (boolean, default `false`): when `true`, the apply can only be run after the pull request is merged. |
+| `require_ready_for_review_pr` | boolean | When `true`, draft pull requests cannot be applied. Default `true`. |
+
+Example that requires applies to happen after merge and allows applies of draft pull requests:
+
+```yaml
+apply_requirements:
+  checks:
+    - tag_query: ""
+      apply_after_merge:
+        enabled: true
+      require_ready_for_review_pr: false
+```
+
 ### `approved` Check Keys
 
 | Key | Type | Description |

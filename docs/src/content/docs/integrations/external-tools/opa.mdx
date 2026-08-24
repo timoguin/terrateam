@@ -38,6 +38,23 @@ In this configuration:
 The `conftest` step type is a Terrateam workflow step that automatically handles running Conftest with the appropriate configuration against your Terraform plan.
 :::
 
+### Running OPA Directly
+
+Terrateam also has an `opa` step type that runs `opa eval` against the JSON representation of the plan without Conftest. Pass the policy and the query with `extra_args`, and choose with `fail_on` whether a `defined` or an `undefined` query result fails the step (default `undefined`):
+
+```yaml
+workflows:
+  - tag_query: ''
+    plan:
+      - type: init
+      - type: plan
+      - type: opa
+        fail_on: defined
+        extra_args: ['-d', 'policy/main.rego', 'data.main.violation']
+```
+
+In this configuration the step fails when `data.main.violation` evaluates to a defined value, so `violation` must be a rule that is only defined when the plan violates the policy (a partial set rule such as `deny` is always defined, even when empty). See the [workflows reference](/reference/configuration/workflows#opa) for all keys.
+
 ## Defining Policies with Rego
 
 Conftest policies are written using the [Rego](https://www.openpolicyagent.org/docs/latest/policy-language/) query language. Rego allows you to define rules and constraints that your Terraform configurations must satisfy.
@@ -80,8 +97,7 @@ foo
 └── bar
     ├── main.tf
     └── policy
-└── main.rego
-
+        └── main.rego
 ```
 You can customize the policy directory by setting the `CONFTEST_POLICY` environment variable in your Terrateam workflow configuration.
 

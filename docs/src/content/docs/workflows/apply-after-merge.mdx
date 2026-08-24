@@ -100,7 +100,6 @@ hooks:
   apply:
     post:
       - type: run
-        name: "Slack Notification"
         cmd: ['curl', '-X', 'POST', '--data', '{"text":"Auto-apply completed for ${TERRATEAM_PR_TITLE}"}', '${SLACK_WEBHOOK_URL}']
 ```
 

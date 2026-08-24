@@ -5,6 +5,8 @@ description: Reusable configuration templates using YAML anchors
 
 The `definitions` configuration provides a dedicated section for defining YAML anchors that can be referenced throughout your Terrateam configuration. This enables DRY (Don't Repeat Yourself) principles by allowing you to define reusable configuration templates.
 
+Terrateam does not interpret the contents of `definitions`. It is a free-form object whose only purpose is to hold anchors. Every other top-level key is validated against the configuration schema, so the values you reference from an anchor must be valid at the place where they are used.
+
 ## Purpose
 
 YAML anchors allow you to:
@@ -18,12 +20,26 @@ YAML anchors allow you to:
 ```yaml
 definitions:
   # Define anchors here using &anchor_name
-  anchor_name: &anchor_name
-    key: value
+  std_plan: &std_plan
+    - type: init
+    - type: plan
 
 # Reference anchors elsewhere using *anchor_name
-some_config: *anchor_name
+workflows:
+  - tag_query: ""
+    plan: *std_plan
 ```
+
+## Rules
+
+Terrateam resolves anchors, aliases, and the `<<` merge key when it parses the file. The following rules apply:
+
+- `*anchor` inserts the anchored value. It can be a scalar, a list, or a map.
+- `<<: *anchor` merges the keys of an anchored map into the current map. Keys written in the current map override merged keys.
+- To merge several maps, use a list: `<<: [*first, *second]`. Writing `<<:` twice in the same map is a parse error.
+- Merging is shallow. A key in the current map replaces the merged key of the same name; nested maps are not merged.
+- An alias cannot address a nested value. `*anchor.key` is a parse error. Anchor the nested value separately.
+- A list alias inside a list produces a nested list. Use the alias as the entire value (`plan: *std_plan`) or anchor the individual entries.
 
 ## Examples
 
@@ -34,23 +50,17 @@ Define a standard engine configuration once and reuse it across workflows:
 ```yaml
 definitions:
   default_engine: &default_engine
-    version: 1.5.0
-    environment:
-      TF_IN_AUTOMATION: "true"
-      TF_INPUT: "false"
+    name: terraform
+    version: "1.5.0"
 
 workflows:
-  - name: development
-    tag_query: "dev"
+  - tag_query: "dev"
     engine: *default_engine
 
-  - name: staging
-    tag_query: "staging"
+  - tag_query: "staging"
     engine:
       <<: *default_engine
-      environment:
-        <<: *default_engine.environment
-        ENVIRONMENT: "staging"
+      version: "1.5.7"
 ```
 
 ### Standard Workflow Steps
@@ -59,23 +69,43 @@ Define common workflow step sequences:
 
 ```yaml
 definitions:
-  standard_checks: &standard_checks
+  standard_plan: &standard_plan
     - type: init
     - type: run
       cmd: ["terraform", "fmt", "-check"]
     - type: run
       cmd: ["terraform", "validate"]
+    - type: plan
     - type: checkov
-    - type: cost_estimation
 
 workflows:
-  - name: default
+  - tag_query: "dev"
+    plan: *standard_plan
+  - tag_query: "production"
+    plan: *standard_plan
+```
+
+To compose different step lists from the same building blocks, anchor the individual steps:
+
+```yaml
+definitions:
+  step_init: &step_init
+    type: init
+  step_plan: &step_plan
+    type: plan
+  step_checkov: &step_checkov
+    type: checkov
+
+workflows:
+  - tag_query: "dev"
     plan:
-      - *standard_checks
-      - type: plan
-    apply:
-      - type: init
-      - type: apply
+      - *step_init
+      - *step_plan
+  - tag_query: "production"
+    plan:
+      - *step_init
+      - *step_plan
+      - *step_checkov
 ```
 
 ### Common Access Control Policies
@@ -105,7 +135,7 @@ access_control:
 
 ### Environment-Specific Settings
 
-Define environment configurations:
+Environment variables for a step are set with the `env` key. Define the variables once per environment:
 
 ```yaml
 definitions:
@@ -118,132 +148,99 @@ definitions:
     AWS_ROLE_ARN: arn:aws:iam::123456789012:role/terrateam-prod
 
 workflows:
-  - name: development
-    tag_query: "dev"
-    engine:
-      version: 1.5.0
-      environment: *aws_dev
+  - tag_query: "dev"
+    plan:
+      - type: init
+        env: *aws_dev
+      - type: plan
+        env: *aws_dev
 
-  - name: production
-    tag_query: "production"
-    engine:
-      version: 1.5.0
-      environment: *aws_prod
+  - tag_query: "production"
+    plan:
+      - type: init
+        env: *aws_prod
+      - type: plan
+        env: *aws_prod
 ```
 
-### Complex Workflow Templates
+### Shared Apply Requirements
 
-Create sophisticated reusable workflow patterns:
+Define approval rules once and apply them to several tag queries:
 
 ```yaml
 definitions:
-  # Base security scanning
-  security_scan: &security_scan
-    - type: checkov
-      when: always
-    - type: run
-      cmd: ["tfsec", "."]
-      when: always
+  strict_checks: &strict_checks
+    approved:
+      enabled: true
+      any_of: ["team:platform"]
+      any_of_count: 2
+    merge_conflicts:
+      enabled: true
+    status_checks:
+      enabled: true
 
-  # Standard plan workflow
-  standard_plan: &standard_plan
-    - type: init
-    - type: plan
-    - <<: *security_scan
-    - type: cost_estimation
-
-  # Production approval requirements
-  prod_requirements: &prod_requirements
-    - approved: 2
-    - status_checks
-    - merge_conflicts
-
-workflows:
-  - name: development
-    tag_query: "dev"
-    plan: *standard_plan
-    apply_requirements:
-      - approved
-
-  - name: production
-    tag_query: "production"
-    plan: *standard_plan
-    apply_requirements: *prod_requirements
+apply_requirements:
+  checks:
+    - tag_query: "production"
+      <<: *strict_checks
+    - tag_query: "staging"
+      <<: *strict_checks
 ```
 
 ### Shared Directory Configuration
 
-Define common directory settings:
+Define common `when_modified` settings and tags:
 
 ```yaml
 definitions:
-  base_tags: &base_tags
-    - "$dir"
-    - "$workspace"
-
-  standard_backend: &standard_backend
-    backend: s3
-    backend_config:
-      bucket: terraform-state
-      region: us-east-1
+  shared_modules: &shared_modules
+    file_patterns: ["${DIR}/*.tf", "modules/**/*.tf"]
+    autoplan: true
+    autoapply: false
 
 dirs:
-  - path: terraform/networking
-    <<: *standard_backend
-    tags:
-      - *base_tags
-      - networking
+  terraform/networking:
+    tags: [networking]
+    when_modified: *shared_modules
 
-  - path: terraform/compute
-    <<: *standard_backend
-    tags:
-      - *base_tags
-      - compute
+  terraform/compute:
+    tags: [compute]
+    when_modified: *shared_modules
 ```
 
 ## Advanced Usage
 
-### Merging Anchors
+### Merging Multiple Anchors
 
-You can merge multiple anchors using the `<<:` merge operator:
+You can merge several anchors with one `<<:` key that takes a list:
 
 ```yaml
 definitions:
-  base_config: &base_config
-    version: 1.5.0
+  base_engine: &base_engine
+    name: terraform
 
-  aws_config: &aws_config
-    environment:
-      AWS_REGION: us-east-1
-
-  extended_config: &extended_config
-    <<: *base_config
-    <<: *aws_config
-    environment:
-      CUSTOM_VAR: value
+  pinned_version: &pinned_version
+    version: "1.5.0"
 
 workflows:
-  - name: default
-    engine: *extended_config
+  - tag_query: ""
+    engine:
+      <<: [*base_engine, *pinned_version]
 ```
 
 ### Anchor Scoping
 
-Anchors defined in `definitions` are available throughout the entire configuration file:
+Anchors defined in `definitions` are available throughout the entire configuration file, as long as `definitions` comes before the first reference:
 
 ```yaml
 definitions:
-  my_anchor: &my_anchor
-    key: value
+  shared_tags: &shared_tags [aws, managed]
 
-# Can be used anywhere in the config
 dirs:
-  - path: terraform
-    custom: *my_anchor
-
-workflows:
-  - name: default
-    custom: *my_anchor
+  networking:
+    tags: *shared_tags
+  compute:
+    tags: *shared_tags
 ```
 
 ## Best Practices
@@ -252,7 +249,7 @@ workflows:
 2. **Group related anchors** together in the definitions section
 3. **Document complex anchors** with comments explaining their use
 4. **Keep anchors focused** on a single responsibility
-5. **Test anchor references** to ensure they resolve correctly
+5. **Test anchor references** with `terrateam repo-config` to ensure they resolve correctly
 
 ## Limitations
 
