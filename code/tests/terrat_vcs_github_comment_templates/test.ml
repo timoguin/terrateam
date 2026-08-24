@@ -47,7 +47,7 @@ let test_apply_warning_with_suggestion =
             "There are no matching changes that are pending apply.";
             "[!WARNING]";
             "Did you mean `or`?";
-            "terrateam apply dir:foo or dir:bar";
+            "stategraph apply dir:foo or dir:bar";
           ])
 
 let test_apply_warning_without_suggestion =
@@ -61,7 +61,7 @@ let test_apply_warning_without_suggestion =
         ~haystack:body
         ~needles:[ "Did you mean `or`?"; "`dir:foo workspace:prod`" ];
       (* Without a rewrite the only command offered is the unfiltered one. *)
-      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"terrateam apply dir:")
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"stategraph apply dir:")
 
 let test_plan_no_warning =
   Oth.test ~name:"Plan no warning" (fun _ ->
@@ -89,7 +89,7 @@ let test_plan_warning_with_suggestion =
           [
             "There are no matching changes to plan.";
             "Did you mean `or`?";
-            "terrateam plan dir:foo or dir:bar";
+            "stategraph plan dir:foo or dir:bar";
           ])
 
 let test_tag_query_dropped_dirspaces =
@@ -141,7 +141,7 @@ let test_matches_in_later_layer =
             "Waiting On An Earlier Layer";
             "| `tql/app` | `default` |";
             "| `tql/web` | `prod` |";
-            "terrateam plan";
+            "stategraph plan";
           ])
 
 (* Every [Operation_failed] template renders the request id, because it is the
@@ -191,7 +191,7 @@ let test_operation_failed_vcs_api_err =
       Oth.Assert.str_contains_all ~haystack:body ~needles:[ "req-123"; "CREATE_COMMIT_CHECKS" ])
 
 (* A call the VCS never answered is a separate comment from a call that failed,
-   so that the reader is told GitHub is unresponsive rather than that Terrateam
+   so that the reader is told GitHub is unresponsive rather than that Stategraph
    broke. *)
 let test_operation_failed_vcs_api_timeout_err =
   Oth.test ~name:"Operation failed vcs api timeout err" (fun _ ->
@@ -329,10 +329,12 @@ let test_missing_plans_mixed_reasons =
       Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #12";
       Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed")
 
-(* These templates open on the word "Terrateam", which is a command trigger
-   word, so the bodies this system publishes come back as commands.  The self
-   marker is what keeps this system from answering its own comment.  See
-   [Terrat_comment.is_from_self] and the guard in the event endpoints. *)
+(* Under TERRAT_BRAND=terrateam these templates open on the word "Terrateam",
+   which is a command trigger word, so the bodies those images publish come back
+   as commands.  The self marker is what keeps this system from answering its own
+   comment.  See [Terrat_comment.is_from_self] and the guard in the event
+   endpoints.  The parse runs on the Terrateam rendering because "stategraph" is
+   not a trigger word yet, see #1593. *)
 let test_published_bodies_carry_the_self_marker =
   Oth.test ~name:"Published bodies carry the self marker" (fun _ ->
       let templates =
@@ -348,7 +350,7 @@ let test_published_bodies_carry_the_self_marker =
         "a shipped template still parses as a command"
         (CCList.exists
            (fun (_, tmpl) ->
-             match Terrat_comment.parse tmpl with
+             match Terrat_comment.parse (Terrat_brand.to_terrateam tmpl) with
              | Ok _ -> true
              | Error (`Unknown_action _) -> true
              | Error (`Tag_query_error _) -> true
@@ -400,9 +402,9 @@ let test_apply_queued_behind_pull_request =
       Oth.Assert.str_contains ~haystack:body ~needle:"Apply queued";
       Oth.Assert.str_contains_all
         ~haystack:body
-        ~needles:[ "#42"; "Plan"; "Running"; "terrateam unlock 42" ])
+        ~needles:[ "#42"; "Plan"; "Running"; "stategraph unlock 42" ])
 
-(* A drift blocker unlocks with [terrateam unlock drift], not with a number.  A drift run has no
+(* A drift blocker unlocks with [stategraph unlock drift], not with a number.  A drift run has no
    pull request, so it must not be printed as one. *)
 let test_apply_queued_behind_drift =
   Oth.test ~name:"Apply queued behind drift" (fun _ ->
@@ -411,7 +413,7 @@ let test_apply_queued_behind_drift =
           Tmpl.apply_queued_behind_work_manifests
           (work_manifests_kv [ ("drift", false, "Plan", "Running", "2026-8-21 0:02") ])
       in
-      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam unlock drift";
+      Oth.Assert.str_contains ~haystack:body ~needle:"stategraph unlock drift";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"#drift")
 
 (* One command unlocks both kinds of blocker at the same time. *)
@@ -426,7 +428,7 @@ let test_apply_queued_behind_both_kinds =
                ("drift", false, "Plan", "Running", "2026-8-21 0:02");
              ])
       in
-      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam unlock 42 drift")
+      Oth.Assert.str_contains ~haystack:body ~needle:"stategraph unlock 42 drift")
 
 (* The conflict message covers a queued apply as well as a running one, so it must not claim the
    apply is in progress.  The system tests match on this title. *)
@@ -542,6 +544,23 @@ let test_apply_complete2_details_many_dirspaces_applied =
     ~applied:true
     ~num_dirspaces:10
 
+(* TERRAT_BRAND=terrateam turns the shipped Stategraph text back into the
+   Terrateam text the terrat-ee / terrat-oss images publish. *)
+let test_terrateam_brand_rewrite =
+  Oth.test ~tags:[ "brand" ] ~name:"Terrateam brand rewrite" (fun _ ->
+      let body =
+        render
+          Tmpl.apply_no_matching_dirspaces
+          (kv
+             ~tag_query:"dir:foo dir:bar"
+             ~implicit_and:true
+             ~suggestion:(Some "dir:foo or dir:bar"))
+      in
+      let body = Terrat_brand.to_terrateam body in
+      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam apply dir:foo or dir:bar";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"stategraph";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Stategraph")
+
 let test =
   Oth.parallel
     [
@@ -574,6 +593,7 @@ let test =
       test_apply_complete2_details_few_dirspaces;
       test_apply_complete2_details_few_dirspaces_compact_view;
       test_apply_complete2_details_many_dirspaces_applied;
+      test_terrateam_brand_rewrite;
     ]
 
 let () =

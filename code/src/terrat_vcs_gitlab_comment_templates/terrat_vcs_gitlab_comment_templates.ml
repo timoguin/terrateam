@@ -37,6 +37,7 @@ module Tmpl = struct
 
   let read s =
     s
+    |> Terrat_brand.rewrite_template
     |> Snabela.Template.of_utf8_string
     |> (function
     | Ok tmpl -> tmpl
@@ -44,7 +45,7 @@ module Tmpl = struct
     |> fun tmpl ->
     Snabela.of_template tmpl Transformers.[ money; compact_plan; plan_diff; minus_one ]
 
-  let jinja s = s
+  let jinja s = Terrat_brand.rewrite_template s
   let terrateam_comment_help = read [%blob "tmpl/terrateam_comment_help.tmpl"]
 
   let apply_requirements_config_err_tag_query =
