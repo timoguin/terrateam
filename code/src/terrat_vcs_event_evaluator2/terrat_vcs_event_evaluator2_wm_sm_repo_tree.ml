@@ -180,6 +180,21 @@ struct
     in
     fetch repo_config_raw'
     >>= fun (_, repo_config_raw) ->
+    (* The two trees are compared through the ids that the script writes, so the
+       same script has to build both.  The rest of the configuration stays the
+       one of the branch being built, but the tree builder -- both the flag and
+       the script -- comes from the working branch, matching the branch that
+       decided the tree would be built at all. *)
+    fetch Keys.repo_config_raw'
+    >>= fun (_, working_repo_config_raw) ->
+    let module V1 = Terrat_base_repo_config_v1 in
+    let repo_config_raw =
+      V1.of_view
+        {
+          (V1.to_view repo_config_raw) with
+          V1.View.tree_builder = V1.tree_builder working_repo_config_raw;
+        }
+    in
     Builder.run_db s ~f:(fun db -> create_token s db account id)
     >>= fun token ->
     let module B = Terrat_api_components.Work_manifest_build_tree in

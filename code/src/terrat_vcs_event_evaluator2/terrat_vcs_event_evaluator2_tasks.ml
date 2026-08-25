@@ -1137,7 +1137,15 @@ struct
       run ~name:"repo_tree_dest_branch" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
           let module V1 = Terrat_base_repo_config_v1 in
-          fetch Keys.repo_config_dest_branch_raw'
+          (* The tree of the working branch and the tree of the destination
+             branch are compared through the ids that the tree builder script
+             writes, so the same script has to build both.  That makes the tree
+             builder of the working branch decide for the destination branch as
+             well.  Asking the destination branch instead is what made a
+             destination branch that does not enable the tree builder store no
+             tree at all: every path of the working branch then had nothing to
+             compare against and came back changed. *)
+          fetch Keys.repo_config_raw'
           >>= fun (_, repo_config_raw) ->
           let tree_builder = V1.tree_builder repo_config_raw in
           if tree_builder.V1.Tree_builder.enabled then fetch Keys.built_repo_tree_dest_branch
