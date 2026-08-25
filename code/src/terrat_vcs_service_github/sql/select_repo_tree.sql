@@ -3,9 +3,12 @@ rt1 as (
     select * from github_repo_trees where installation_id = $installation_id and sha = $sha
 ),
 base_shas as (
-    -- The shas the base tree may be stored under.  A pull request carries its
-    -- head sha and, once merged, its merge sha, and the tree may have been
-    -- built under either.
+    -- The shas the base tree may be stored under.  The base sha itself is one
+    -- of them: a tree built for the destination branch is stored under the sha
+    -- of that branch, and a destination branch that is pushed to directly has
+    -- no pull request row to be found through.  A pull request carries its head
+    -- sha and, once merged, its merge sha, and the tree may have been built
+    -- under either.
     --
     -- Collecting them into a set first is what lets the lookup below use the
     -- (installation, sha, path) index.  Expressed as a join condition,
@@ -14,6 +17,8 @@ base_shas as (
     -- installation had ever stored and discarding almost all of them, so the
     -- cost grew with every sha ever built rather than with the size of one
     -- tree.
+    select $base_sha::text as sha
+    union
     select bsp.sha as sha
     from github_pull_requests as bsp
     where bsp.sha = $base_sha or bsp.merged_sha = $base_sha
