@@ -1172,9 +1172,15 @@ module Storage = struct
       [@@deriving make, show, yojson, eq]
     end
 
+    module Disabled = struct
+      type t = { unsafe_apply_without_plan : bool [@default false] }
+      [@@deriving make, show, yojson, eq]
+    end
+
     type t =
       | Terrateam
       | Cmd of Cmd.t
+      | Disabled of Disabled.t
       | S3 of S3.t
     [@@deriving show, yojson, eq]
   end
@@ -1243,6 +1249,7 @@ module Workflows = struct
       plan : Op_list.t;
           [@default [ Op.Init (Workflow_step.Init.make ()); Op.Plan (Workflow_step.Plan.make ()) ]]
       runs_on : Yojson.Safe.t option; [@default None]
+      storage : Storage.t option; [@default None]
       tag_query : Tag_query.t;
     }
     [@@deriving make, show, yojson, eq]
@@ -2556,6 +2563,47 @@ let of_version_1_notifications notifications =
   CCResult.map_l of_version_1_notification_policy policies
   >>= fun policies -> Ok { Notifications.policies; summary }
 
+let of_version_1_storage_plan_cmd v =
+  let module Cmd = Terrat_repo_config_storage_plan_cmd in
+  let { Cmd.delete; fetch; store; method_ = _ } = v in
+  Ok Storage.Plans.(Cmd { Cmd.delete; fetch; store })
+
+let of_version_1_storage_plan_s3 v =
+  let module S3 = Terrat_repo_config_storage_plan_s3 in
+  let {
+    S3.access_key_id;
+    bucket;
+    delete_extra_args;
+    delete_used_plans;
+    fetch_extra_args;
+    path;
+    region;
+    secret_access_key;
+    store_extra_args;
+    method_ = _;
+  } =
+    v
+  in
+  Ok
+    Storage.Plans.(
+      S3
+        (S3.make
+           ?access_key_id
+           ~bucket
+           ?delete_extra_args
+           ~delete_used_plans
+           ?fetch_extra_args
+           ?path
+           ~region
+           ?secret_access_key
+           ?store_extra_args
+           ()))
+
+let of_version_1_storage_plan_none v =
+  let module S = Terrat_repo_config_storage_plan_none in
+  let { S.unsafe_apply_without_plan; method_ = _ } = v in
+  Ok Storage.Plans.(Disabled (Disabled.make ~unsafe_apply_without_plan ()))
+
 let of_version_1_storage storage =
   let open CCResult.Infix in
   let { V1.Storage.plans } = storage in
@@ -2563,40 +2611,23 @@ let of_version_1_storage storage =
     ~default:(Ok Storage.Plans.Terrateam)
     (function
       | V1.Storage.Plans.Storage_plan_terrateam _ -> Ok Storage.Plans.Terrateam
-      | V1.Storage.Plans.Storage_plan_cmd v ->
-          let module Cmd = Terrat_repo_config_storage_plan_cmd in
-          let { Cmd.delete; fetch; store; method_ = _ } = v in
-          Ok Storage.Plans.(Cmd { Cmd.delete; fetch; store })
-      | V1.Storage.Plans.Storage_plan_s3 v ->
-          let module S3 = Terrat_repo_config_storage_plan_s3 in
-          let {
-            S3.access_key_id;
-            bucket;
-            delete_extra_args;
-            delete_used_plans;
-            fetch_extra_args;
-            path;
-            region;
-            secret_access_key;
-            store_extra_args;
-            method_ = _;
-          } =
-            v
-          in
-          Ok
-            Storage.Plans.(
-              S3
-                (S3.make
-                   ?access_key_id
-                   ~bucket
-                   ?delete_extra_args
-                   ~delete_used_plans
-                   ?fetch_extra_args
-                   ?path
-                   ~region
-                   ?secret_access_key
-                   ?store_extra_args
-                   ())))
+      | V1.Storage.Plans.Storage_plan_cmd v -> of_version_1_storage_plan_cmd v
+      | V1.Storage.Plans.Storage_plan_none v -> of_version_1_storage_plan_none v
+      | V1.Storage.Plans.Storage_plan_s3 v -> of_version_1_storage_plan_s3 v)
+    plans
+  >>= fun plans -> Ok { Storage.plans }
+
+let of_version_1_workflow_storage storage =
+  let open CCResult.Infix in
+  let module S = Terrat_repo_config_workflow_entry.Storage in
+  let { S.plans } = storage in
+  CCOption.map_or
+    ~default:(Ok Storage.Plans.Terrateam)
+    (function
+      | S.Plans.Storage_plan_terrateam _ -> Ok Storage.Plans.Terrateam
+      | S.Plans.Storage_plan_cmd v -> of_version_1_storage_plan_cmd v
+      | S.Plans.Storage_plan_none v -> of_version_1_storage_plan_none v
+      | S.Plans.Storage_plan_s3 v -> of_version_1_storage_plan_s3 v)
     plans
   >>= fun plans -> Ok { Storage.plans }
 
@@ -2638,6 +2669,7 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
              lock_policy;
              plan;
              runs_on;
+             storage;
              tag_query;
              terraform_version;
              terragrunt;
@@ -2664,6 +2696,8 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
             Error (`Workflows_missing_plan_step_err (idx, tag_query))
         | Some _ | None -> Ok ())
       >>= fun () ->
+      map_opt of_version_1_workflow_storage storage
+      >>= fun storage ->
       CCResult.map_err
         (function
           | `Tag_query_error err -> `Workflows_tag_query_parse_err err)
@@ -2676,6 +2710,7 @@ let of_version_1_workflows default_engine default_integrations default_lock_poli
            ?environment
            ?integrations
            ?plan
+           ~storage
            ~runs_on
            ~lock_policy
            ~tag_query
@@ -3410,6 +3445,10 @@ let to_version_1_storage_plans plans =
       let module S = Terrat_repo_config.Storage_plan_cmd in
       let { Storage.Plans.Cmd.delete; fetch; store } = cmd in
       V1.Storage.Plans.Storage_plan_cmd { S.delete; fetch; method_ = `Cmd; store }
+  | Storage.Plans.Disabled disabled ->
+      let module S = Terrat_repo_config.Storage_plan_none in
+      let { Storage.Plans.Disabled.unsafe_apply_without_plan } = disabled in
+      V1.Storage.Plans.Storage_plan_none { S.method_ = `None; unsafe_apply_without_plan }
   | Storage.Plans.S3 s3 ->
       let module S = Terrat_repo_config.Storage_plan_s3 in
       let {
@@ -3442,6 +3481,54 @@ let to_version_1_storage_plans plans =
 let to_version_1_storage storage =
   let { Storage.plans } = storage in
   { V1.Storage.plans = Some (to_version_1_storage_plans plans) }
+
+let to_version_1_workflow_storage_plans plans =
+  let module E = Terrat_repo_config.Workflow_entry in
+  match plans with
+  | Storage.Plans.Terrateam ->
+      let module S = Terrat_repo_config.Storage_plan_terrateam in
+      E.Storage.Plans.Storage_plan_terrateam { S.method_ = `Terrateam }
+  | Storage.Plans.Cmd cmd ->
+      let module S = Terrat_repo_config.Storage_plan_cmd in
+      let { Storage.Plans.Cmd.delete; fetch; store } = cmd in
+      E.Storage.Plans.Storage_plan_cmd { S.delete; fetch; method_ = `Cmd; store }
+  | Storage.Plans.Disabled disabled ->
+      let module S = Terrat_repo_config.Storage_plan_none in
+      let { Storage.Plans.Disabled.unsafe_apply_without_plan } = disabled in
+      E.Storage.Plans.Storage_plan_none { S.method_ = `None; unsafe_apply_without_plan }
+  | Storage.Plans.S3 s3 ->
+      let module S = Terrat_repo_config.Storage_plan_s3 in
+      let {
+        Storage.Plans.S3.access_key_id;
+        bucket;
+        delete_extra_args;
+        delete_used_plans;
+        fetch_extra_args;
+        path;
+        region;
+        secret_access_key;
+        store_extra_args;
+      } =
+        s3
+      in
+      E.Storage.Plans.Storage_plan_s3
+        {
+          S.access_key_id;
+          bucket;
+          delete_extra_args = Some delete_extra_args;
+          delete_used_plans;
+          fetch_extra_args = Some fetch_extra_args;
+          method_ = `S3;
+          path;
+          region;
+          secret_access_key;
+          store_extra_args = Some store_extra_args;
+        }
+
+let to_version_1_workflow_storage storage =
+  let module E = Terrat_repo_config.Workflow_entry in
+  let { Storage.plans } = storage in
+  { E.Storage.plans = Some (to_version_1_workflow_storage_plans plans) }
 
 let to_version_1_tags_branch branch =
   Terrat_repo_config.Custom_tags_branch.make
@@ -3587,6 +3674,7 @@ let to_version_1_workflows =
         plan;
         tag_query;
         runs_on;
+        storage;
       } =
         entry
       in
@@ -3603,6 +3691,7 @@ let to_version_1_workflows =
         lock_policy = Some (to_version_1_lock_policy lock_policy);
         plan = Some (to_version_1_workflows_op plan);
         runs_on;
+        storage = CCOption.map to_version_1_workflow_storage storage;
         tag_query = Terrat_tag_query.to_string tag_query;
         terraform_version = None;
         terragrunt = false;

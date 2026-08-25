@@ -2,6 +2,8 @@
 
 module E = Terrat_repo_config.Engine
 module Sg = Terrat_repo_config.Engine_stategraph
+module Spn = Terrat_repo_config.Storage_plan_none
+module W = Terrat_repo_config.Workflow_entry
 
 let test_stategraph_minimal_round_trip =
   Oth.test ~name:"Engine_stategraph: minimal round-trip" (fun _ ->
@@ -97,6 +99,60 @@ let test_engine_chain_unknown_falls_to_other =
       | Error _ ->
           failwith "Expected Engine_other to accept unknown engine names; got Error instead")
 
+let storage_plan_none_json = `Assoc [ ("method", `String "none") ]
+
+let storage_plan_none_unsafe_json =
+  `Assoc [ ("method", `String "none"); ("unsafe_apply_without_plan", `Bool true) ]
+
+let test_storage_plan_none_round_trip =
+  Oth.test ~name:"Storage_plan_none: round-trip" (fun _ ->
+      match Spn.of_yojson storage_plan_none_json with
+      | Ok t ->
+          Oth.Assert.true_ "t.Spn.method_ = `None" (t.Spn.method_ = `None);
+          Oth.Assert.true_
+            "t.Spn.unsafe_apply_without_plan = false"
+            (not t.Spn.unsafe_apply_without_plan);
+          Oth.Assert.true_
+            "Spn.to_yojson t = `Assoc [ (\"method\", `String \"none\") ]"
+            (Spn.to_yojson t = storage_plan_none_json)
+      | Error msg -> failwith msg)
+
+let test_storage_plan_none_unsafe_round_trip =
+  Oth.test ~name:"Storage_plan_none: unsafe_apply_without_plan round-trip" (fun _ ->
+      match Spn.of_yojson storage_plan_none_unsafe_json with
+      | Ok t ->
+          Oth.Assert.true_ "t.Spn.method_ = `None" (t.Spn.method_ = `None);
+          Oth.Assert.true_ "t.Spn.unsafe_apply_without_plan = true" t.Spn.unsafe_apply_without_plan;
+          Oth.Assert.true_
+            "Spn.to_yojson t preserves unsafe_apply_without_plan"
+            (Spn.to_yojson t = storage_plan_none_unsafe_json)
+      | Error msg -> failwith msg)
+
+let test_workflow_entry_storage_plan_none =
+  Oth.test ~name:"Workflow_entry: storage plans method none" (fun _ ->
+      let json =
+        `Assoc
+          [ ("tag_query", `String ""); ("storage", `Assoc [ ("plans", storage_plan_none_json) ]) ]
+      in
+      match W.of_yojson json with
+      | Ok
+          {
+            W.storage =
+              Some
+                {
+                  W.Storage.plans =
+                    Some
+                      (W.Storage.Plans.Storage_plan_none
+                         {
+                           Terrat_repo_config.Storage_plan_none.method_ = `None;
+                           unsafe_apply_without_plan = false;
+                         });
+                };
+            _;
+          } -> ()
+      | Ok _ -> failwith "Expected workflow storage plans method none"
+      | Error msg -> failwith msg)
+
 let test =
   Oth.parallel
     [
@@ -108,6 +164,9 @@ let test =
       test_engine_chain_to_yojson_dispatches;
       test_stategraph_with_tf_fields_round_trip;
       test_engine_chain_unknown_falls_to_other;
+      test_storage_plan_none_round_trip;
+      test_storage_plan_none_unsafe_round_trip;
+      test_workflow_entry_storage_plan_none;
     ]
 
 let () =

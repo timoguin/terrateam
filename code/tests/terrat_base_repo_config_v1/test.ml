@@ -137,6 +137,159 @@ let test_lock_policy_to_version_1_round_trip =
       | `None -> ()
       | _ -> failwith "Round-trip to Version_1 did not preserve lock_policy")
 
+let storage_none_json = `Assoc [ ("plans", `Assoc [ ("method", `String "none") ]) ]
+
+let storage_none_unsafe_json =
+  `Assoc
+    [ ("plans", `Assoc [ ("method", `String "none"); ("unsafe_apply_without_plan", `Bool true) ]) ]
+
+let assert_storage_disabled ?(unsafe_apply_without_plan = false) storage =
+  match storage.V1.Storage.plans with
+  | V1.Storage.Plans.Disabled disabled ->
+      Oth.Assert.eq
+        ~eq:Bool.equal
+        ~pp:(fun ppf v -> Format.pp_print_string ppf (Bool.to_string v))
+        unsafe_apply_without_plan
+        disabled.V1.Storage.Plans.Disabled.unsafe_apply_without_plan
+  | plans ->
+      failwith
+        (Printf.sprintf "Expected storage plans disabled, got %s" (V1.Storage.Plans.show plans))
+
+let test_storage_none =
+  Oth.test ~name:"storage: plans method none is read" (fun _ ->
+      let cfg = config_of_json (`Assoc [ ("storage", storage_none_json) ]) in
+      assert_storage_disabled (V1.storage cfg))
+
+let test_storage_none_unsafe_apply_without_plan =
+  Oth.test ~name:"storage: plans method none unsafe apply is read" (fun _ ->
+      let cfg = config_of_json (`Assoc [ ("storage", storage_none_unsafe_json) ]) in
+      assert_storage_disabled ~unsafe_apply_without_plan:true (V1.storage cfg))
+
+let test_storage_none_to_version_1_round_trip =
+  Oth.test ~name:"storage: plans method none round-trips through Version_1" (fun _ ->
+      let cfg = config_of_json (`Assoc [ ("storage", storage_none_json) ]) in
+      let v1 = V1.to_version_1 cfg in
+      match v1.Repo.Version_1.storage with
+      | Some
+          {
+            Repo.Version_1.Storage.plans =
+              Some
+                (Repo.Version_1.Storage.Plans.Storage_plan_none
+                   { Repo.Storage_plan_none.method_ = `None; unsafe_apply_without_plan = false });
+          } -> ()
+      | _ -> failwith "Round-trip to Version_1 did not preserve storage.plans.method none")
+
+let test_storage_none_unsafe_to_version_1_round_trip =
+  Oth.test ~name:"storage: plans method none unsafe apply round-trips through Version_1" (fun _ ->
+      let cfg = config_of_json (`Assoc [ ("storage", storage_none_unsafe_json) ]) in
+      let v1 = V1.to_version_1 cfg in
+      match v1.Repo.Version_1.storage with
+      | Some
+          {
+            Repo.Version_1.Storage.plans =
+              Some
+                (Repo.Version_1.Storage.Plans.Storage_plan_none
+                   { Repo.Storage_plan_none.method_ = `None; unsafe_apply_without_plan = true });
+          } -> ()
+      | _ ->
+          failwith
+            "Round-trip to Version_1 did not preserve storage.plans.unsafe_apply_without_plan")
+
+let test_workflow_storage_none =
+  Oth.test ~name:"workflows: storage plans method none is read" (fun _ ->
+      let json =
+        `Assoc
+          [
+            ( "workflows",
+              `List [ `Assoc [ ("tag_query", `String ""); ("storage", storage_none_json) ] ] );
+          ]
+      in
+      let cfg = config_of_json json in
+      match V1.workflows cfg with
+      | [ { V1.Workflows.Entry.storage = Some storage; _ } ] -> assert_storage_disabled storage
+      | _ -> failwith "Expected exactly one workflow entry with storage")
+
+let test_workflow_storage_none_unsafe_apply_without_plan =
+  Oth.test ~name:"workflows: storage plans method none unsafe apply is read" (fun _ ->
+      let json =
+        `Assoc
+          [
+            ( "workflows",
+              `List [ `Assoc [ ("tag_query", `String ""); ("storage", storage_none_unsafe_json) ] ]
+            );
+          ]
+      in
+      let cfg = config_of_json json in
+      match V1.workflows cfg with
+      | [ { V1.Workflows.Entry.storage = Some storage; _ } ] ->
+          assert_storage_disabled ~unsafe_apply_without_plan:true storage
+      | _ -> failwith "Expected exactly one workflow entry with storage")
+
+let test_workflow_storage_none_to_version_1_round_trip =
+  Oth.test ~name:"workflows: storage plans method none round-trips through Version_1" (fun _ ->
+      let json =
+        `Assoc
+          [
+            ( "workflows",
+              `List [ `Assoc [ ("tag_query", `String ""); ("storage", storage_none_json) ] ] );
+          ]
+      in
+      let cfg = config_of_json json in
+      let v1 = V1.to_version_1 cfg in
+      match v1.Repo.Version_1.workflows with
+      | Some
+          [
+            {
+              Repo.Workflow_entry.storage =
+                Some
+                  {
+                    Repo.Workflow_entry.Storage.plans =
+                      Some
+                        (Repo.Workflow_entry.Storage.Plans.Storage_plan_none
+                           {
+                             Repo.Storage_plan_none.method_ = `None;
+                             unsafe_apply_without_plan = false;
+                           });
+                  };
+              _;
+            };
+          ] -> ()
+      | _ -> failwith "Round-trip to Version_1 did not preserve workflow storage")
+
+let test_workflow_storage_none_unsafe_to_version_1_round_trip =
+  Oth.test
+    ~name:"workflows: storage plans method none unsafe apply round-trips through Version_1"
+    (fun _ ->
+      let json =
+        `Assoc
+          [
+            ( "workflows",
+              `List [ `Assoc [ ("tag_query", `String ""); ("storage", storage_none_unsafe_json) ] ]
+            );
+          ]
+      in
+      let cfg = config_of_json json in
+      let v1 = V1.to_version_1 cfg in
+      match v1.Repo.Version_1.workflows with
+      | Some
+          [
+            {
+              Repo.Workflow_entry.storage =
+                Some
+                  {
+                    Repo.Workflow_entry.Storage.plans =
+                      Some
+                        (Repo.Workflow_entry.Storage.Plans.Storage_plan_none
+                           {
+                             Repo.Storage_plan_none.method_ = `None;
+                             unsafe_apply_without_plan = true;
+                           });
+                  };
+              _;
+            };
+          ] -> ()
+      | _ -> failwith "Round-trip to Version_1 did not preserve workflow storage")
+
 (* Tests for the requirement that an explicit [plan] step list contains a [plan]
    step and an explicit [apply] step list contains an [apply] step. *)
 
@@ -361,6 +514,14 @@ let test =
       test_lock_policy_workflow_inherits;
       test_lock_policy_workflow_overrides;
       test_lock_policy_to_version_1_round_trip;
+      test_storage_none;
+      test_storage_none_unsafe_apply_without_plan;
+      test_storage_none_to_version_1_round_trip;
+      test_storage_none_unsafe_to_version_1_round_trip;
+      test_workflow_storage_none;
+      test_workflow_storage_none_unsafe_apply_without_plan;
+      test_workflow_storage_none_to_version_1_round_trip;
+      test_workflow_storage_none_unsafe_to_version_1_round_trip;
       test_workflow_plan_requires_plan_step;
       test_workflow_apply_requires_apply_step;
       test_workflow_empty_plan_rejected;

@@ -1416,6 +1416,23 @@
       ],
       "type": "object"
     },
+    "storage-plan-none": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "none",
+          "type": "string"
+        },
+        "unsafe_apply_without_plan": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "type": "object"
+    },
     "storage-plan-s3": {
       "additionalProperties": false,
       "properties": {
@@ -1660,6 +1677,9 @@
                   "$ref": "#/definitions/storage-plan-cmd"
                 },
                 {
+                  "$ref": "#/definitions/storage-plan-none"
+                },
+                {
                   "$ref": "#/definitions/storage-plan-s3"
                 }
               ]
@@ -1786,6 +1806,28 @@
         },
         "runs_on": {
           "$ref": "#/definitions/runs-on"
+        },
+        "storage": {
+          "additionalProperties": false,
+          "properties": {
+            "plans": {
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/storage-plan-terrateam"
+                },
+                {
+                  "$ref": "#/definitions/storage-plan-cmd"
+                },
+                {
+                  "$ref": "#/definitions/storage-plan-none"
+                },
+                {
+                  "$ref": "#/definitions/storage-plan-s3"
+                }
+              ]
+            }
+          },
+          "type": "object"
         },
         "tag_query": {
           "type": "string"

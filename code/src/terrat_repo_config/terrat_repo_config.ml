@@ -80,6 +80,7 @@ module Stack_rules = Terrat_repo_config_stack_rules
 module Stack_variables = Terrat_repo_config_stack_variables
 module Stacks = Terrat_repo_config_stacks
 module Storage_plan_cmd = Terrat_repo_config_storage_plan_cmd
+module Storage_plan_none = Terrat_repo_config_storage_plan_none
 module Storage_plan_s3 = Terrat_repo_config_storage_plan_s3
 module Storage_plan_terrateam = Terrat_repo_config_storage_plan_terrateam
 module Tags = Terrat_repo_config_tags

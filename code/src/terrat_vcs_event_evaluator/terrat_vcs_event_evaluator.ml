@@ -3093,6 +3093,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         lock_policy = _;
         plan = _;
         runs_on = _;
+        storage = _;
         tag_query = _;
       } =
         workflow

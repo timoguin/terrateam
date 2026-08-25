@@ -5,7 +5,7 @@ description: Learn how to configure and use plan file storage in Terrateam
 
 import { Steps } from '@astrojs/starlight/components';
 
-Terrateam offers flexibility in storing Terraform plan files across various locations, providing precise control over their management and accessibility. Configuring plan file storage ensures secure retention and convenient access as needed.
+Terrateam offers flexibility in storing Terraform plan files across various locations, providing precise control over their management and accessibility. Configuring plan file storage ensures secure retention and convenient access as needed. Workflows can override the top-level `storage` configuration when different tools need different plan handling.
 
 Plan files are essential during the apply process to verify that executed changes align with previously planned and reviewed changes. Storing these files adds an additional layer of security.
 
@@ -34,6 +34,9 @@ Plan files are stored in an AWS S3 bucket. You need to provide the `bucket` and 
 
 ##### `cmd`
 Plan files are stored using custom commands. You need to provide the `store` and `fetch` commands in your configuration; `delete` is optional.
+
+##### `none`
+Plan files are not persisted after the plan workflow completes. Apply fails unless the same storage configuration also sets `unsafe_apply_without_plan: true`. With that opt-in, Terrateam runs a new non-interactive apply instead of applying the exact binary plan reviewed in the pull request.
 
 ### S3 Storage
 
@@ -84,6 +87,27 @@ storage:
 
 These examples illustrate how Terrateam configurations can utilize different commands (`gsutil` and `curl`) to store, fetch, and delete Terraform plan files. Adjustments to `store`, `fetch`, and `delete` commands can tailor the configuration to fit specific storage requirements and workflows effectively.
 
+### Disabling Plan Storage for One Workflow
+
+```yaml
+storage:
+  plans:
+    method: s3
+    bucket: my-terraform-plans
+    region: us-east-1
+
+workflows:
+  - tag_query: "engine:terragrunt"
+    engine:
+      name: terragrunt
+    storage:
+      plans:
+        method: none
+        unsafe_apply_without_plan: true
+```
+
+Use `method: none` for workflows where the saved plan file can carry values that should be recalculated at apply time. This trades away Terrateam's stored-plan guarantee for that workflow, so apply requires the explicit `unsafe_apply_without_plan: true` opt-in.
+
 ### Using Environment Variables
 ```yaml
 workflows:
@@ -128,13 +152,13 @@ Once you've configured plan file storage in your Terrateam configuration file, T
 <Steps>
 1. Open a pull request with changes to your Terraform code.
 
-1. Terrateam automatically runs a plan operation and stores the resulting plan file using the configured storage method.
+1. Terrateam automatically runs a plan operation and stores the resulting plan file using the configured storage method, unless the matching workflow uses `method: none`.
 
 1. Review the plan output and collaborate with your team to ensure the changes are as expected.
 
 1. Once the pull request is approved, comment `terrateam apply` to trigger an apply operation.
 
-1. Terrateam retrieves the stored plan file and uses it during the apply process to ensure the changes match the previously reviewed plan.
+1. Terrateam retrieves the stored plan file and uses it during the apply process to ensure the changes match the previously reviewed plan. If the matching workflow uses `method: none`, Terrateam runs apply without a stored plan file.
 
 1. After the apply is complete, Terrateam deletes the stored plan file (if configured to do so).
 </Steps>
@@ -144,6 +168,7 @@ Once you've configured plan file storage in your Terrateam configuration file, T
 - When using S3 storage, ensure that the AWS credentials used by Terrateam have the necessary permissions to read, write, and delete objects in the specified S3 bucket.
 - If using custom command storage, ensure that the commands are properly secured and have access to the necessary resources (e.g., storage systems, credentials) to store and retrieve plan files.
 - Plan files may contain sensitive information about your infrastructure. Always ensure that your storage method is properly secured and that access to the stored plan files is restricted to authorized users.
+- `method: none` avoids persisted plan files but weakens the reviewed-plan guarantee because apply evaluates the configuration again.
 - Terrateam provides several built-in variables that you can use in your storage configuration, such as `$dir`, `$workspace`, and `$date`. These variables allow you to create dynamic paths for storing plan files based on the current directory, workspace, and timestamp.
 
 ## Best Practices
