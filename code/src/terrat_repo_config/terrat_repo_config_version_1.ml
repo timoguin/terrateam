@@ -139,6 +139,7 @@ module Storage = struct
     type t =
       | Storage_plan_terrateam of Terrat_repo_config_storage_plan_terrateam.t
       | Storage_plan_cmd of Terrat_repo_config_storage_plan_cmd.t
+      | Storage_plan_none of Terrat_repo_config_storage_plan_none.t
       | Storage_plan_s3 of Terrat_repo_config_storage_plan_s3.t
     [@@deriving show, eq]
 
@@ -153,12 +154,15 @@ module Storage = struct
            (fun v ->
              map (fun v -> Storage_plan_cmd v) (Terrat_repo_config_storage_plan_cmd.of_yojson v));
            (fun v ->
+             map (fun v -> Storage_plan_none v) (Terrat_repo_config_storage_plan_none.of_yojson v));
+           (fun v ->
              map (fun v -> Storage_plan_s3 v) (Terrat_repo_config_storage_plan_s3.of_yojson v));
          ])
 
     let to_yojson = function
       | Storage_plan_terrateam v -> Terrat_repo_config_storage_plan_terrateam.to_yojson v
       | Storage_plan_cmd v -> Terrat_repo_config_storage_plan_cmd.to_yojson v
+      | Storage_plan_none v -> Terrat_repo_config_storage_plan_none.to_yojson v
       | Storage_plan_s3 v -> Terrat_repo_config_storage_plan_s3.to_yojson v
   end
 

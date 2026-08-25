@@ -768,9 +768,15 @@ module Storage : sig
       [@@deriving make, show, yojson, eq]
     end
 
+    module Disabled : sig
+      type t = { unsafe_apply_without_plan : bool [@default false] }
+      [@@deriving make, show, yojson, eq]
+    end
+
     type t =
       | Terrateam
       | Cmd of Cmd.t
+      | Disabled of Disabled.t
       | S3 of S3.t
     [@@deriving show, yojson, eq]
   end
@@ -839,6 +845,7 @@ module Workflows : sig
       plan : Op_list.t;
           [@default [ Op.Init (Workflow_step.Init.make ()); Op.Plan (Workflow_step.Plan.make ()) ]]
       runs_on : Yojson.Safe.t option; [@default None]
+      storage : Storage.t option; [@default None]
       tag_query : Tag_query.t;
     }
     [@@deriving make, show, yojson, eq]

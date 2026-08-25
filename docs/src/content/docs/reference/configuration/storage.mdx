@@ -3,7 +3,7 @@ title: storage
 description: The storage configuration reference
 ---
 
-The `storage` configuration allows users to define where plan files are stored, providing control over security and access. By default, plan files are stored on the Terrateam database, but alternative methods are supported.
+The `storage` configuration allows users to define where plan files are stored, providing control over security and access. By default, plan files are stored on the Terrateam database, but alternative methods are supported. Workflows can also set `storage` to override the top-level storage configuration for matching directory spaces.
 
 ## Default Configuration
 ```yaml
@@ -41,6 +41,18 @@ For custom commands to store, fetch, and delete plans, configure:
 | fetch | String list | Command to fetch the plan. Supports environment and template variables. Required. | 
 | store | String list | Command to store the plan. Supports environment and template variables. Required. | 
 
+### No Persistent Plan Storage
+Set `method: none` to skip storing the generated plan file after the plan workflow completes.
+| Key | Type | Description | 
+| --- | --- | --- | 
+| unsafe_apply_without_plan | Boolean | Allow apply to run when no plan file was stored. Default is false. | 
+
+Apply fails when `method: none` is set and `unsafe_apply_without_plan` is false, because no saved plan file is available to apply. Set `unsafe_apply_without_plan: true` to let apply evaluate the configuration again and apply that result.
+
+:::caution
+With `method: none`, Terrateam cannot apply the exact binary plan reviewed in the pull request. The apply workflow runs a new non-interactive apply, so use this only for workflows where avoiding persisted plan files is more important than applying the reviewed plan file.
+:::
+
 ## Template Variables
 Variables available during plan and apply operations:
 | Variable | Description | 
@@ -73,4 +85,22 @@ storage:
     store: ['gsutil', 'cp', '$plan_path', 'gs://my-plan-bucket/terrateam/plans/$dir/$workspace/$date-$time-$token']
     fetch: ['gsutil', 'cp', 'gs://my-plan-bucket/terrateam/plans/$dir/$workspace/$date-$time-$token', '$plan_dst_path']
     delete: ['gsutil', 'rm', 'gs://my-plan-bucket/terrateam/plans/$dir/$workspace/$date-$time-$token']
+```
+
+### Disabling Plan Storage for a Workflow
+```yaml
+storage:
+  plans:
+    method: s3
+    bucket: my-plan-bucket
+    region: us-west-2
+
+workflows:
+  - tag_query: "engine:terragrunt"
+    engine:
+      name: terragrunt
+    storage:
+      plans:
+        method: none
+        unsafe_apply_without_plan: true
 ```

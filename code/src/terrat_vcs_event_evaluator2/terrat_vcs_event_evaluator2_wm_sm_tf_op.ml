@@ -56,6 +56,7 @@ struct
       lock_policy = _;
       plan = _;
       runs_on = _;
+      storage = _;
       tag_query = _;
     } =
       workflow

@@ -4,7 +4,7 @@
 
 The workflow at index `{{ idx }}` (tag query `{{ tag_query }}`) specifies `plan` steps but none of them is a `plan` step.
 
-A workflow's `plan` steps must contain at least one step of `type: plan`.  A custom `run` step that executes a plan does not satisfy this because it does not produce the plan file that Stategraph stores and that later steps use.
+A workflow's `plan` steps must contain at least one step of `type: plan`.  A custom `run` step that executes a plan does not satisfy this because it does not report the plan result that Stategraph tracks for apply.
 
 ## What to do?
 
