@@ -1,4 +1,5 @@
 module Batch = Terrat_vcs_event_evaluator2_batch
+module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Fc = Abbs_future_combinators
 module Irm = Fc.Infix_result_monad
 module Tjc = Terrat_job_context
@@ -735,12 +736,25 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                               work_manifest_id);
                         Abbs_future_combinators.return_err `Error)
                 >>= function
-                | Ok (_, _, _, `Rerun id) when CCList.mem ~eq:CCString.equal id reruns ->
-                    Logs.err (fun m -> m "%s : RERUN : NO_PROGRESS : id=%s" request_id id);
+                (* A guard, not a live path: every producer of [`Rerun] names
+                   what it committed, so the list is never empty.  It is checked
+                   because an empty one adds nothing to [reruns] and the pass
+                   after it would ask for the same nothing, without end. *)
+                | Ok (_, _, _, `Rerun []) ->
+                    Logs.err (fun m -> m "%s : RERUN : NO_PAYLOAD" request_id);
                     Abbs_future_combinators.return_err `Error
-                | Ok (_, _, _, `Rerun id) ->
-                    Logs.info (fun m -> m "%s : RERUN : id=%s" request_id id);
-                    eval_with_reruns (id :: reruns)
+                (* A task only asks to rerun a payload that is not in [reruns]
+                   yet, so one that is already there came back without the write
+                   it names having landed. *)
+                | Ok (_, _, _, `Rerun ids)
+                  when CCList.exists (fun id -> Sln_list.String.mem id reruns) ids ->
+                    Logs.err (fun m ->
+                        m "%s : RERUN : NO_PROGRESS : ids=%s" request_id (CCString.concat "," ids));
+                    Abbs_future_combinators.return_err `Error
+                | Ok (_, _, _, `Rerun ids) ->
+                    Logs.info (fun m ->
+                        m "%s : RERUN : ids=%s" request_id (CCString.concat "," ids));
+                    eval_with_reruns (ids @ reruns)
                 (* Spelled out rather than a wildcard so the loop's result type
                    has no [`Rerun] in it.  The rest of this function then stays
                    exhaustive without an arm for a case the loop has already

@@ -1,6 +1,5 @@
-module Fc = Abbs_future_combinators
 module Irm = Abbs_future_combinators.Infix_result_monad
-module Ira = Abbs_future_combinators.Infix_result_app
+module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module P2 = Terrat_vcs_provider2
 module Msg = P2.Msg
 
@@ -546,7 +545,7 @@ struct
       >>= fun synthesized_config ->
       fetch Keys.dest_branch_name
       >>= fun dest_branch_name ->
-      Ira.(
+      Ee2_fc.Infix_result_app.(
         (fun branch_dirspaces dest_branch_dirspaces -> (branch_dirspaces, dest_branch_dirspaces))
         <$> fetch Keys.branch_dirspaces
         <*> fetch Keys.dest_branch_dirspaces)
@@ -655,7 +654,7 @@ struct
             (* TODO: HUGE HACK, redo this later *)
             let run =
               let open Irm in
-              Fc.Result.all3
+              Ee2_fc.all3
                 (fetch Keys.client)
                 (fetch Keys.repo_config_with_provenance)
                 (fetch Keys.repo_tree_branch)

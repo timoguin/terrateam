@@ -1,3 +1,10 @@
-(test
- (name test)
- (libraries oth terrat_change terrat_vcs_event_evaluator2))
+(tests
+ (names test test_ee2_fc)
+ (libraries
+  abb
+  abbs
+  containers
+  oth
+  oth_abb
+  terrat_change
+  terrat_vcs_event_evaluator2))

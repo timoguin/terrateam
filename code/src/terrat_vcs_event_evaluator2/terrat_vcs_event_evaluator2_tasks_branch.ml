@@ -1,5 +1,5 @@
-module Fc = Abbs_future_combinators
 module Irm = Abbs_future_combinators.Infix_result_monad
+module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module P2 = Terrat_vcs_provider2
 
@@ -115,7 +115,7 @@ struct
       run ~name:"changes" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
           let go () =
-            Fc.Result.all2 (fetch Keys.dest_branch_name) (fetch Keys.branch_name)
+            Ee2_fc.all2 (fetch Keys.dest_branch_name) (fetch Keys.branch_name)
             >>= function
             | dest_branch_name, branch_name when S.Api.Ref.equal dest_branch_name branch_name ->
                 fetch Keys.repo_tree_branch
@@ -201,14 +201,14 @@ struct
     let can_run_plan =
       run ~name:"can_run_plan" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
+          Ee2_fc.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
           >>= fun (_, _) -> Abbs_future_combinators.return_ok ())
 
     let can_run_apply =
       run ~name:"can_run_apply" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.ignore
-          @@ Fc.Result.all3
+          Ee2_fc.ignore
+          @@ Ee2_fc.all3
                (fetch Keys.check_conflicting_apply_work_manifests)
                (fetch Keys.branch_dirspaces)
                (fetch Keys.dest_branch_dirspaces)

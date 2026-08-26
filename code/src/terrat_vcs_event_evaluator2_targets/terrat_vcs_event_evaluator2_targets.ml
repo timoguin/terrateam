@@ -19,10 +19,17 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       (* Not an error.  The evaluation committed something durable and wants the
          transaction closed and the evaluation re-run immediately in a fresh
          one, so the rows it wrote stop being held for the rest of the job.  The
-         payload names the committed fact, so the same payload coming back twice
-         proves the evaluation made no progress.  Only ever returned by a task
-         whose own guard will answer differently on the next pass. *)
-    | `Rerun of string
+         payload names the committed facts, so a payload the driver has already
+         recorded coming back proves the evaluation made no progress.  Only ever
+         returned by a task whose own guard will answer differently on the next
+         pass.
+
+         A list rather than one name because an evaluation runs its tasks
+         concurrently, so more than one of them can commit-and-rerun in a single
+         pass.  Every name has to reach the driver: one that is dropped is one
+         whose task writes again on the next pass, and again on the pass after
+         that. *)
+    | `Rerun of string list
     | `Work_manifest_err of Uuidm.t
     | `Noop
     | Pgsql_io.err
