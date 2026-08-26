@@ -1,5 +1,5 @@
-module Fc = Abbs_future_combinators
 module Irm = Abbs_future_combinators.Infix_result_monad
+module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module Msg = Terrat_vcs_provider2.Msg
 module P2 = Terrat_vcs_provider2
@@ -491,7 +491,7 @@ struct
       run ~name:"publish_index_complete" (fun s { Bs.Fetcher.fetch } ->
           let module I = Terrat_vcs_provider2.Index in
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_index_branch) (fetch Keys.repo_index_dest_branch)
+          Ee2_fc.all2 (fetch Keys.repo_index_branch) (fetch Keys.repo_index_dest_branch)
           >>= fun (_, _) ->
           fetch Keys.account
           >>= fun account ->
@@ -589,7 +589,7 @@ struct
     let publish_repo_config =
       run ~name:"publish_repo_config" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_config_with_provenance) (fetch Keys.store_stacks)
+          Ee2_fc.all2 (fetch Keys.repo_config_with_provenance) (fetch Keys.store_stacks)
           >>= fun (repo_config_with_provenance, ()) ->
           fetch Keys.publish_comment
           >>= fun publish_comment ->
@@ -613,14 +613,14 @@ struct
           fetch Keys.comment_id
           >>= function
           | Some comment_id ->
-              Fc.Result.all2 (fetch Keys.pull_request) (fetch Keys.client)
+              Ee2_fc.all2 (fetch Keys.pull_request) (fetch Keys.client)
               >>= fun (pull_request, client) -> react_to_comment s client pull_request comment_id
           | None -> Abbs_future_combinators.return_ok ())
 
     let pull_request =
       run ~name:"pull_request" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all4
+          Ee2_fc.all4
             (fetch Keys.account)
             (fetch Keys.repo)
             (fetch Keys.client)
@@ -659,7 +659,7 @@ struct
             >>= fun branch_ref ->
             fetch Keys.dest_branch_ref
             >>= fun dest_branch_ref ->
-            Fc.Result.all2 (fetch Keys.repo_tree_branch) (fetch Keys.repo_tree_dest_branch)
+            Ee2_fc.all2 (fetch Keys.repo_tree_branch) (fetch Keys.repo_tree_dest_branch)
             >>= fun (_, _) ->
             Builder.run_db s ~f:(fun db -> query_repo_tree s db account branch_ref dest_branch_ref)
             >>= function
@@ -877,7 +877,7 @@ struct
     let check_apply_requirements =
       run ~name:"check_apply_requirements" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all5
+          Ee2_fc.all5
             (fetch Keys.client)
             (fetch Keys.repo_config)
             (fetch Keys.pull_request)
@@ -926,7 +926,7 @@ struct
           >>= fun _job ->
           fetch Keys.check_apply_requirements
           >>= fun _apply_requirements ->
-          Fc.Result.all6
+          Ee2_fc.all6
             (fetch Keys.access_control)
             (fetch Keys.matches)
             (fetch Keys.client)
@@ -1105,7 +1105,7 @@ struct
                                queued),
                           false )
                   in
-                  Fc.Result.all2
+                  Ee2_fc.all2
                     (fetch Keys.maybe_create_completed_apply_check)
                     (publish_comment' publish_comment msg)
                   >>= fun ((), ()) ->
@@ -1270,7 +1270,7 @@ struct
     let check_gates =
       run ~name:"check_gates" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all4
+          Ee2_fc.all4
             (fetch Keys.client)
             (fetch Keys.pull_request)
             (fetch Keys.working_set_matches)
@@ -1294,7 +1294,7 @@ struct
     let check_dirspaces_owned_by_other_pull_requests =
       run ~name:"check_dirspaces_owned_by_other_pull_requests" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all3 (fetch Keys.repo_config) (fetch Keys.pull_request) (fetch Keys.all_matches)
+          Ee2_fc.all3 (fetch Keys.repo_config) (fetch Keys.pull_request) (fetch Keys.all_matches)
           >>= fun (repo_config, pull_request, all_matches) ->
           Abb.Future.return (H.dirspaceflows_of_changes repo_config (CCList.flatten all_matches))
           >>= fun all_match_dirspaceflows ->
@@ -1317,7 +1317,7 @@ struct
     let check_access_control_repo_config =
       run ~name:"check_access_control_repo_config" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.access_control) (fetch Keys.changes)
+          Ee2_fc.all2 (fetch Keys.access_control) (fetch Keys.changes)
           >>= fun (access_control, diff) ->
           let open Abb.Future.Infix_monad in
           Access_control.eval_repo_config access_control diff
@@ -1347,7 +1347,7 @@ struct
     let check_access_control_files =
       run ~name:"check_access_control_files" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.access_control) (fetch Keys.changes)
+          Ee2_fc.all2 (fetch Keys.access_control) (fetch Keys.changes)
           >>= fun (access_control, diff) ->
           let open Abb.Future.Infix_monad in
           Access_control.eval_files access_control diff
@@ -1377,7 +1377,7 @@ struct
     let check_access_control_ci_change =
       run ~name:"check_access_control_ci_change" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.access_control) (fetch Keys.changes)
+          Ee2_fc.all2 (fetch Keys.access_control) (fetch Keys.changes)
           >>= fun (access_control, diff) ->
           let open Abb.Future.Infix_monad in
           Access_control.eval_ci_change access_control diff
@@ -1431,7 +1431,7 @@ struct
             (* Building these two happens to build all sorts of useful
                dependencies for us, so build those first so the rest can
                efficiently be done concurrently. *)
-            Fc.Result.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
+            Ee2_fc.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
             >>= fun _ ->
             fetch Keys.store_stacks
             >>= fun () ->
@@ -1439,7 +1439,7 @@ struct
             >>= fun () ->
             fetch Keys.warn_tag_query_dropped_dirspaces
             >>= fun () ->
-            Fc.Infix_result_app.(
+            Ee2_fc.Infix_result_app.(
               (fun () () () () () () () () () -> ())
               <$> fetch Keys.check_access_control_ci_change
               <*> fetch Keys.check_access_control_files
@@ -1486,13 +1486,13 @@ struct
             (* Building these two happens to build all sorts of useful
                dependencies for us, so build those first so the rest can
                efficiently be done concurrently. *)
-            Fc.Result.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
+            Ee2_fc.all2 (fetch Keys.branch_dirspaces) (fetch Keys.dest_branch_dirspaces)
             >>= fun _ ->
             fetch Keys.check_dirspaces_to_apply
             >>= fun () ->
             fetch Keys.warn_tag_query_dropped_dirspaces
             >>= fun () ->
-            Fc.Infix_result_app.(
+            Ee2_fc.Infix_result_app.(
               (fun () () () () () () () () () () () _ -> ())
               <$> fetch Keys.check_access_control_ci_change
               <*> fetch Keys.check_access_control_apply

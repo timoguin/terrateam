@@ -1,5 +1,6 @@
 module Fc = Abbs_future_combinators
 module Irm = Abbs_future_combinators.Infix_result_monad
+module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module Msg = Terrat_vcs_provider2.Msg
 
@@ -610,7 +611,7 @@ struct
           let go () =
             let module Tjc = Terrat_job_context in
             let open Irm in
-            Fc.Result.all3
+            Ee2_fc.all3
               (fetch Keys.repo_config)
               (fetch Keys.repo_tree_branch)
               (fetch Keys.repo_index_branch)
@@ -895,7 +896,7 @@ struct
           Fc.List_result.iter
             ~f:(fun (idx, files) ->
               let json = to_yojson files in
-              Fc.Result.ignore @@ Terrat_kv_store.set ~key:data_cache_key ~idx json kv
+              Ee2_fc.ignore @@ Terrat_kv_store.set ~key:data_cache_key ~idx json kv
               >>= function
               | Ok _ as r -> Abb.Future.return r
               | Error (#Terrat_kv_store.err as err) -> Abbs_future_combinators.return_err err)
@@ -904,7 +905,7 @@ struct
 
     let store_ref_key kv cache_key sha256_hex =
       let open Abb.Future.Infix_monad in
-      Fc.Result.ignore @@ Terrat_kv_store.set ~key:cache_key (`String sha256_hex) kv
+      Ee2_fc.ignore @@ Terrat_kv_store.set ~key:cache_key (`String sha256_hex) kv
       >>= function
       | Ok _ -> Abbs_future_combinators.return_ok ()
       | Error (#Terrat_kv_store.err as err) -> Abbs_future_combinators.return_err err
@@ -980,7 +981,7 @@ struct
           let tree_builder = V1.tree_builder repo_config_raw in
           if tree_builder.V1.Tree_builder.enabled then fetch Keys.built_repo_tree_branch
           else
-            Fc.Result.all4
+            Ee2_fc.all4
               (fetch Keys.client)
               (fetch Keys.account)
               (fetch Keys.repo)
@@ -1150,7 +1151,7 @@ struct
           let tree_builder = V1.tree_builder repo_config_raw in
           if tree_builder.V1.Tree_builder.enabled then fetch Keys.built_repo_tree_dest_branch
           else
-            Fc.Result.all4
+            Ee2_fc.all4
               (fetch Keys.client)
               (fetch Keys.account)
               (fetch Keys.repo)
@@ -1261,7 +1262,7 @@ struct
     let repo_config_raw' =
       run ~name:"repo_config_raw'" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all4
+          Ee2_fc.all4
             (fetch Keys.client)
             (fetch Keys.branch_ref)
             (fetch Keys.repo_config_system_defaults)
@@ -1287,7 +1288,7 @@ struct
     let repo_config_raw =
       run ~name:"repo_config_raw" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all5
+          Ee2_fc.all5
             (fetch Keys.client)
             (fetch Keys.branch_ref)
             (fetch Keys.repo_config_system_defaults)
@@ -1315,7 +1316,7 @@ struct
     let derived_repo_config_empty_index =
       run ~name:"derived_repo_config_empty_index" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_config_raw) (fetch Keys.repo_tree_branch)
+          Ee2_fc.all2 (fetch Keys.repo_config_raw) (fetch Keys.repo_tree_branch)
           >>= fun ((provenance, repo_config_raw), repo_tree) ->
           fetch Keys.dest_branch_name
           >>= fun dest_branch_name ->
@@ -1347,7 +1348,7 @@ struct
     let derived_repo_config =
       run ~name:"derived_repo_config" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_config_raw) (fetch Keys.repo_tree_branch)
+          Ee2_fc.all2 (fetch Keys.repo_config_raw) (fetch Keys.repo_tree_branch)
           >>= fun ((provenance, repo_config_raw), repo_tree) ->
           fetch Keys.dest_branch_name
           >>= fun dest_branch_name ->
@@ -1425,7 +1426,7 @@ struct
     let repo_config_dest_branch_raw' =
       run ~name:"repo_config_dest_branch_raw'" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all4
+          Ee2_fc.all4
             (fetch Keys.client)
             (fetch Keys.dest_branch_ref)
             (fetch Keys.repo_config_system_defaults)
@@ -1451,7 +1452,7 @@ struct
     let repo_config_dest_branch_raw =
       run ~name:"repo_config_dest_branch_raw" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all5
+          Ee2_fc.all5
             (fetch Keys.client)
             (fetch Keys.dest_branch_ref)
             (fetch Keys.repo_config_system_defaults)
@@ -1481,7 +1482,7 @@ struct
         ~name:"derived_repo_config_dest_branch_empty_index"
         (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_config_dest_branch_raw) (fetch Keys.repo_tree_dest_branch)
+          Ee2_fc.all2 (fetch Keys.repo_config_dest_branch_raw) (fetch Keys.repo_tree_dest_branch)
           >>= fun ((provenance, repo_config_raw), repo_tree) ->
           fetch Keys.dest_branch_name
           >>= fun dest_branch_name ->
@@ -1513,7 +1514,7 @@ struct
     let derived_repo_config_dest_branch =
       run ~name:"derived_repo_config_dest_branch" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
           let open Irm in
-          Fc.Result.all2 (fetch Keys.repo_config_dest_branch_raw) (fetch Keys.repo_tree_dest_branch)
+          Ee2_fc.all2 (fetch Keys.repo_config_dest_branch_raw) (fetch Keys.repo_tree_dest_branch)
           >>= fun ((provenance, repo_config_raw), repo_tree) ->
           fetch Keys.dest_branch_name
           >>= fun dest_branch_name ->
@@ -1612,7 +1613,7 @@ struct
           >>= fun _dest_branch_ref ->
           fetch Keys.branch_ref
           >>= fun _branch_ref ->
-          Fc.Result.all3
+          Ee2_fc.all3
             (fetch Keys.repo_config_raw)
             (fetch Keys.repo_tree_branch)
             (fetch Keys.synthesized_config_empty_index)
@@ -1697,7 +1698,7 @@ struct
           >>= fun account ->
           fetch Keys.dest_branch_ref
           >>= fun dest_branch_ref ->
-          Fc.Result.all3
+          Ee2_fc.all3
             (fetch Keys.repo_config_dest_branch_raw)
             (fetch Keys.repo_tree_dest_branch)
             (fetch Keys.synthesized_config_empty_index)
@@ -1752,7 +1753,7 @@ struct
     let dest_branch_dirspaces =
       run ~name:"dest_branch_dirspaces" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all3
+          Ee2_fc.all3
             (fetch Keys.repo_config_dest_branch)
             (fetch Keys.synthesized_config_dest_branch)
             (fetch Keys.repo_tree_dest_branch)
@@ -1827,7 +1828,7 @@ struct
     let branch_dirspaces =
       run ~name:"branch_dirspaces" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all3
+          Ee2_fc.all3
             (fetch Keys.repo_config)
             (fetch Keys.synthesized_config)
             (fetch Keys.repo_tree_branch)
@@ -2128,7 +2129,7 @@ struct
           let module Rc = Terrat_base_repo_config_v1 in
           let module Ds = Rc.Destination_branches.Destination_branch in
           let open Irm in
-          Fc.Result.all2 (fetch Keys.client) (fetch Keys.repo_config)
+          Ee2_fc.all2 (fetch Keys.client) (fetch Keys.repo_config)
           >>= fun (client, repo_config) ->
           fetch Keys.repo
           >>= fun repo ->
@@ -2197,7 +2198,7 @@ struct
     let update_context_branch_hashes =
       run ~name:"update_context_branch_hashes" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
-          Fc.Result.all5
+          Ee2_fc.all5
             (fetch Keys.repo)
             (fetch Keys.branch_name)
             (fetch Keys.branch_ref)

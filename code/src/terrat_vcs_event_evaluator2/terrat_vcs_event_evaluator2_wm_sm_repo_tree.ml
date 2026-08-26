@@ -267,7 +267,7 @@ struct
                  (Builder.log_id s)
                  (S.Api.Ref.to_string branch_ref));
            Builder.run_db s ~f:(fun db -> store_repo_tree s db account branch_ref files)
-           >>= fun () -> Abbs_future_combinators.return_err (`Rerun rerun_id)))
+           >>= fun () -> Abbs_future_combinators.return_err (`Rerun [ rerun_id ])))
         >>= fun () ->
         fetch Keys.repo
         >>= fun repo ->
