@@ -7,7 +7,7 @@ reference — its `build-base` stage runs the same setup and is exercised by CI 
 Create a local opam switch from the repository's root:
 
 ```shell
-opam switch create -y 5.3.0 --no-depexts
+opam switch create -y 5.5.0 --no-depexts
 eval $(opam env)
 ```
 
@@ -18,25 +18,25 @@ that aren't in the default opam-repository):
 opam repository add tt-opam-acsl opam
 ```
 
-Pin a couple of packages that need a specific version before the rest of the install can
-solve cleanly:
+Pin the vendored packages so the install below picks them up from `vendor/` rather than
+the upstream opam-repository:
 
 ```shell
-opam pin add -y cmdliner 1.3.0
-opam pin add -y containers 3.12
+opam pin add -n ISO8601 vendor/ISO8601 --no-depexts
+opam pin add -n cohttp vendor/cohttp --no-depexts
 ```
 
 Install dune and menhir, then everything pinned in `code/opam.pins`:
 
 ```shell
-opam install -j$(nproc --all) -y --no-depexts dune menhir
+opam install -j$(nproc --all) -y --no-depexts dune.3.24.2 menhir
 xargs -a code/opam.pins opam install -j$(nproc --all) -y --no-depexts
 ```
 
 For an IDE-friendly setup, also install the LSP server and formatter:
 
 ```shell
-opam install -y ocaml-lsp-server ocamlformat
+opam install -y ocaml-lsp-server.1.27.0 ocamlformat.0.29.0
 ```
 
 You can now build:

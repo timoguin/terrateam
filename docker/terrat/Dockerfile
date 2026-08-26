@@ -85,13 +85,20 @@ RUN apk add --no-cache \
     zstd-static
 # [[[end]]]
 
-# WORKDIR /tmp so the shared `mono/...`-relative opam paths resolve against /tmp/mono.
+# [[[cog emit("opam-init") ]]]
 WORKDIR /tmp
-RUN opam init -ay --disable-sandboxing --bare
+# The opam-repository index is fetched once here.
+# When this layer is reused cached, new packages may seem missing.
+# When you hit that (package published on more recent opam snapshot), bump the date here to re-run this layer.
+# Note that the date has no impact on `opam`. It's just a mean to trigger rebuilding of this layer.
+ARG OPAM_INDEX_DATE=2026-08-26
+RUN echo "opam-repository index refreshed ${OPAM_INDEX_DATE}" && \
+    opam init -ay --disable-sandboxing --bare
+# [[[end]]]
 COPY ./ /tmp/mono
 # [[[cog emit("opam-switch") ]]]
 RUN eval $(opam env) && \
-    opam switch create -y 5.3.0 && \
+    opam switch create -y 5.5.0 && \
     eval $(opam env) && \
     opam repository add opam-acsl mono/opam && \
     opam pin add -n ISO8601 mono/vendor/ISO8601 --no-depexts && \
@@ -99,7 +106,7 @@ RUN eval $(opam env) && \
 # [[[end]]]
 # [[[cog emit("opam-install") ]]]
 RUN eval $(opam env) && cd mono/code && \
-    opam install -j$(nproc --all) -y --no-depexts dune menhir && \
+    opam install -j$(nproc --all) -y --no-depexts dune.3.24.2 menhir && \
     cat opam.pins stategraph.pins | xargs opam install -j$(nproc --all) -y --no-depexts
 # [[[end]]]
 # [[[cog emit("ocamlformat") ]]]
@@ -177,7 +184,7 @@ RUN apk add --no-cache \
     sudo \
     yj
 RUN addgroup -S terrat && adduser -S -G terrat terrat
-RUN mkdir -p /usr/local/bin /etc/service/terrat /etc/service/nginx /usr/local/share/terrat/ui/assets
+RUN mkdir -p /usr/local/bin /etc/service/terrat /etc/service/nginx /etc/service/nginx/control /usr/local/share/terrat/ui/assets
 # CA-cert installer: root-owned, runnable (not writable) by terrat via a narrow
 # sudoers rule; reads the CUSTOM_CA_CERT env var at container start.
 COPY docker/terrat/install-ca-cert.py /usr/local/bin/install-ca-cert
@@ -190,11 +197,16 @@ RUN chown -R terrat:terrat /etc/service /usr/local/share/terrat /etc/nginx /var/
 # `nginx` renders nginx.conf.template (fronts on 8080) and serves the iris SPA.
 COPY docker/terrat/service/terrat /etc/service/terrat/run
 COPY docker/terrat/service/nginx /etc/service/nginx/run
+# Shutdown path. runit-init replaces runsvdir as the container's main process so
+# Fly's stop signal drains the services instead of orphaning them; nginx's
+# control/t hook makes `sv down` send nginx a graceful SIGQUIT, not a fast TERM.
+COPY --chmod=755 docker/terrat/runit-init /usr/local/bin/runit-init
+COPY --chmod=755 docker/terrat/service/nginx-control-t /etc/service/nginx/control/t
 COPY docker/terrat/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY --from=terrat-build /tmp/mono/_build/default/code/src/iris/ui-export/ /usr/local/share/terrat/ui/assets/
 USER terrat
 EXPOSE 8080
-CMD ["runsvdir", "/etc/service"]
+CMD ["/usr/local/bin/runit-init"]
 
 # Final terrat-ee image
 FROM terrat-final-base AS terrat-ee

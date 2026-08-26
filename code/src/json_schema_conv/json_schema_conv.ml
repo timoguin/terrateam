@@ -228,12 +228,13 @@ module Gen = struct
   let list ts = Ast_helper.Typ.constr (Location.mknoloc (ident [ "list" ])) ts
   let option ts = Ast_helper.Typ.constr (Location.mknoloc (ident [ "option" ])) ts
   let qualified_type t = Ast_helper.Typ.constr (Location.mknoloc (ident t)) []
+  let tuple es = Ast_helper.Exp.tuple (CCList.map (fun e -> (None, e)) es)
 
   let deriving derivers =
     [
       Ast_helper.Attr.mk
         (Location.mknoloc "deriving")
-        (Parsetree.PStr [ Ast_helper.Str.eval (Ast_helper.Exp.tuple derivers) ]);
+        (Parsetree.PStr [ Ast_helper.Str.eval (tuple derivers) ]);
     ]
 
   let yojson_deriver ?(strict = false) ?(meta = true) () =
@@ -355,7 +356,7 @@ module Gen = struct
     | v :: vs ->
         Ast_helper.Exp.construct
           (Location.mknoloc (ident [ "::" ]))
-          (Some (Ast_helper.Exp.tuple [ v; make_list vs ]))
+          (Some (tuple [ v; make_list vs ]))
 
   let make_yojson_func_name typ n =
     match typ with
@@ -369,8 +370,10 @@ module Gen = struct
          (Ast_helper.Exp.ident (Location.mknoloc (ident [ "Json_schema"; combinator_name ])))
          [
            ( Asttypes.Nolabel,
-             Ast_helper.Exp.open_
-               (Ast_helper.Opn.mk (Ast_helper.Mod.ident (Location.mknoloc (ident [ "CCResult" ]))))
+             Ast_helper.Exp.struct_item
+               (Ast_helper.Str.open_
+                  (Ast_helper.Opn.mk
+                     (Ast_helper.Mod.ident (Location.mknoloc (ident [ "CCResult" ])))))
                (make_list
                @@ CCList.map
                     (fun (v, conversion) ->
@@ -453,8 +456,8 @@ module Gen = struct
          ]
          None
          (Parsetree.Pfunction_body
-            (Exp.open_
-               (Opn.mk (Mod.ident (Location.mknoloc (ident [ "CCResult" ]))))
+            (Exp.struct_item
+               (Str.open_ (Opn.mk (Mod.ident (Location.mknoloc (ident [ "CCResult" ])))))
                (Exp.apply
                   (Exp.ident (Location.mknoloc (ident [ "flat_map" ])))
                   [
