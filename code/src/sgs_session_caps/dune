@@ -1,0 +1,80 @@
+; The sgs_session_caps modules are generated from
+; api_schemas/stategraph/session-capabilities.json by json_schema_hooks_cli.
+; This rule replaces the old `make session-capabilities-schema` Makefile
+; target: it generates the modules into a `gen` directory target, formats them
+; with ocamlformat, and promotes the formatted files into this directory (where
+; the library below picks them up as ordinary sources). dune does not pre-create
+; directory targets and the generator open_out's without mkdir, so the action
+; creates `gen` first.
+
+(rule
+ (alias generate-api-types)
+ (mode
+  (promote
+   (into .)))
+ (deps
+  ../../.ocamlformat
+  ../../../api_schemas/stategraph/session-capabilities.json)
+ (targets
+  (dir gen))
+ (action
+  (progn
+   (run mkdir -p gen)
+   (run
+    %{exe:../json_schema_hooks_cli/json_schema_hooks_cli.exe}
+    convert
+    --non-strict-records
+    --input
+    ../../../api_schemas/stategraph/session-capabilities.json
+    --name
+    sgs_session_caps
+    --output-dir
+    gen)
+   (run bash -c "ocamlformat -i gen/*.ml"))))
+
+; Normalise the input schema in place with `jq -S`; see sgs_api/dune.
+
+(rule
+ (alias generate-api-types)
+ (mode
+  (promote
+   (into ../../../api_schemas/stategraph)))
+ (deps
+  (file ../../../api_schemas/stategraph/session-capabilities.json))
+ (target session-capabilities.json)
+ (action
+  (with-stdout-to
+   session-capabilities.json
+   (run jq -S . ../../../api_schemas/stategraph/session-capabilities.json))))
+
+; (input schema, destination dir) pair for the codegen manifest; see sgs_api/dune.
+
+(rule
+ (target sgs_session_caps.generate-api-types-pairs)
+ (action
+  (with-stdout-to
+   sgs_session_caps.generate-api-types-pairs
+   (echo
+    "api_schemas/stategraph/session-capabilities.json code/src/sgs_session_caps\n"))))
+
+(library
+ (name sgs_session_caps)
+ (wrapped false)
+ (libraries containers json_schema sln yojson)
+ (preprocess
+  (pps
+   ppx_deriving.eq
+   ppx_deriving.make
+   ppx_deriving.show
+   ppx_deriving_yojson)))
+
+; Make `dune build code/src/<lib>` regenerate from the schema: the package's
+; @all alias depends on the generate-api-types alias, so the input schema is a
+; build input of the package, not only of @.../generate-api-types. (The library
+; is a sibling of that alias, so the compiled artifact settles on the next
+; build after a schema change; the .ml regenerates immediately.)
+
+(alias
+ (name all)
+ (deps
+  (alias generate-api-types)))
