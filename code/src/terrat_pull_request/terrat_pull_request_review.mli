@@ -2,8 +2,8 @@ module Status : sig
   type t =
     | Approved
     | Unknown
+  [@@deriving show, eq]
 end
-[@@deriving show, eq]
 
 module Decision : sig
   type t =

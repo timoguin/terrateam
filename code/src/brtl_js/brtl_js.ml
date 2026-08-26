@@ -128,7 +128,7 @@ module Router_output = struct
                    Abb_js.Future.return ())
            | `Det (`With_cleanup (_, cleanup)) ->
                (* If the iterations do not match, ensure we perform the cleanup  *)
-               Firebug.console##log_3
+               Console.console##log_3
                  (Js.string "Not updating due to iteration mismatch, cleaning up")
                  iteration
                  !curr_iteration;
@@ -140,11 +140,11 @@ module Router_output = struct
                res_set [];
                Abb_js.Future.return ()
            | `Exn exn when iteration = !curr_iteration ->
-               Firebug.console##log_2 (Js.string "Unhandled exn") exn;
+               Console.console##log_2 (Js.string "Unhandled exn") exn;
                res_set [];
                Abb_js.Future.return ()
            | _ ->
-               Firebug.console##log_3
+               Console.console##log_3
                  (Js.string "Not updating due to iteration mismatch")
                  iteration
                  !curr_iteration;
@@ -255,7 +255,7 @@ module Router_output = struct
            should give a div that can change if the URL eventually matches.  But
            perhaps its better to just do this and a user of [Router_output]
            should always match every URL that is valid on that page. *)
-        Firebug.console##log (Js.string "URL does not match any route");
+        Console.console##log (Js.string "URL does not match any route");
         Html.div []
 end
 

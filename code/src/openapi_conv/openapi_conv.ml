@@ -363,10 +363,11 @@ let request_param_of_op_params base_module_name components param_in params =
         | schema -> failwith (Schema.show_t_ schema)
       in
       let open Ast_helper in
-      Exp.open_
-        (Opn.mk (Mod.ident (Location.mknoloc (Gen.ident [ "Openapi"; "Request"; "Var" ]))))
-        (Exp.open_
-           (Opn.mk (Mod.ident (Location.mknoloc (Gen.ident [ "Parameters" ]))))
+      Exp.struct_item
+        (Str.open_
+           (Opn.mk (Mod.ident (Location.mknoloc (Gen.ident [ "Openapi"; "Request"; "Var" ])))))
+        (Exp.struct_item
+           (Str.open_ (Opn.mk (Mod.ident (Location.mknoloc (Gen.ident [ "Parameters" ])))))
            (params
            |> CCList.map (fun p ->
                let param_name =
@@ -403,7 +404,7 @@ let request_param_of_op_params base_module_name components param_in params =
                                (Exp.construct
                                   (Location.mknoloc (Gen.ident [ "Var" ]))
                                   (Some
-                                     (Exp.tuple
+                                     (Gen.tuple
                                         [
                                           Exp.ident (Location.mknoloc (Gen.ident [ "v" ]));
                                           type_desc_of_schema
@@ -419,7 +420,7 @@ let request_param_of_op_params base_module_name components param_in params =
                              (Exp.construct
                                 (Location.mknoloc (Gen.ident [ "Var" ]))
                                 (Some
-                                   (Exp.tuple
+                                   (Gen.tuple
                                       [
                                         Exp.tuple [];
                                         Exp.ident (Location.mknoloc (Gen.ident [ "Null" ]));
@@ -442,9 +443,9 @@ let request_param_of_op_params base_module_name components param_in params =
                      in
                      Exp.construct
                        (Location.mknoloc (Gen.ident [ "Var" ]))
-                       (Some (Exp.tuple [ param_name; type_desc ]))
+                       (Some (Gen.tuple [ param_name; type_desc ]))
                in
-               Exp.tuple [ Exp.constant (Const.string p.Parameter.name); type_desc ])
+               Gen.tuple [ Exp.constant (Const.string p.Parameter.name); type_desc ])
            |> Gen.make_list))
 
 (* To convert an operation we need to convert the parameters, request body, and
@@ -654,7 +655,7 @@ let convert_str_operation strict_records base_module_name components uritmpl op_
                      |> CCList.map (fun (code, r) ->
                          match get_json_media_type r.Response.content with
                          | Some _r ->
-                             Exp.tuple
+                             Gen.tuple
                                [
                                  Exp.constant (Const.string code);
                                  Exp.apply
@@ -688,7 +689,7 @@ let convert_str_operation strict_records base_module_name components uritmpl op_
                                    ];
                                ]
                          | None ->
-                             Exp.tuple
+                             Gen.tuple
                                [
                                  Exp.constant (Const.string code);
                                  Exp.function_
