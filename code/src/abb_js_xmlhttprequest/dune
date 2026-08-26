@@ -1,5 +1,0 @@
-(library
- (name abb_js_xmlhttprequest)
- (libraries abb_fut_js js_of_ocaml)
- (preprocess
-  (pps js_of_ocaml-ppx)))

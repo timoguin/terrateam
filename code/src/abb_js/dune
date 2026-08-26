@@ -1,4 +1,0 @@
-(library
- (name abb_js)
- (wrapped false)
- (libraries abb_fut_js abb_future_combinators containers js_of_ocaml))
