@@ -1,3 +1,0 @@
-(library
- (name abb_js_fetch)
- (libraries abb_fut_js brr containers))

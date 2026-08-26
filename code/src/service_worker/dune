@@ -1,5 +1,0 @@
-(library
- (name service_worker)
- (libraries abb_fut_js abb_js js_of_ocaml)
- (preprocess
-  (pps js_of_ocaml-ppx)))
