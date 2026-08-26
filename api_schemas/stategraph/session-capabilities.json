@@ -1,0 +1,121 @@
+{
+  "$ref": "#/definitions/capabilities",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "access-token-create": {
+      "type": "boolean"
+    },
+    "access-token-refresh": {
+      "type": "boolean"
+    },
+    "admin": {
+      "additionalProperties": false,
+      "description": "Administrative access without explicitly listing every capability. An absent tenants list grants it across the whole installation; a tenants list scopes it to those tenants.",
+      "properties": {
+        "tenants": {
+          "$ref": "#/definitions/tenants"
+        }
+      },
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "access-token-create": {
+          "$ref": "#/definitions/access-token-create"
+        },
+        "access-token-refresh": {
+          "$ref": "#/definitions/access-token-refresh"
+        },
+        "admin": {
+          "$ref": "#/definitions/admin"
+        },
+        "commit": {
+          "$ref": "#/definitions/commit"
+        },
+        "preview": {
+          "$ref": "#/definitions/preview"
+        },
+        "sudo": {
+          "$ref": "#/definitions/sudo"
+        },
+        "users-manage": {
+          "$ref": "#/definitions/users-manage"
+        }
+      },
+      "type": "object"
+    },
+    "commit": {
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "$ref": "#/definitions/states"
+        },
+        "subgraph": {
+          "$ref": "#/definitions/states"
+        },
+        "tenants": {
+          "$ref": "#/definitions/tenants"
+        }
+      },
+      "type": "object"
+    },
+    "preview": {
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "$ref": "#/definitions/states"
+        },
+        "subgraph": {
+          "$ref": "#/definitions/states"
+        },
+        "tenants": {
+          "$ref": "#/definitions/tenants"
+        }
+      },
+      "type": "object"
+    },
+    "states": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
+      },
+      "type": "object"
+    },
+    "sudo": {
+      "additionalProperties": false,
+      "properties": {
+        "users": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "users"
+      ],
+      "type": "object"
+    },
+    "tenants": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "users-manage": {
+      "additionalProperties": false,
+      "properties": {
+        "tenants": {
+          "$ref": "#/definitions/tenants"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

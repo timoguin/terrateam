@@ -1,0 +1,3 @@
+(library
+ (name sgs_session_caps_norm)
+ (libraries containers json_schema sg_caps_match sgs_session_caps sln))

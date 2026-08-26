@@ -1,0 +1,11 @@
+(library
+ (name sg_capabilities_ops)
+ (libraries
+  containers
+  json_schema
+  sg_caps_match
+  sgs_session_caps
+  sgs_session_caps_norm
+  sln)
+ (preprocess
+  (pps ppx_deriving.eq ppx_deriving.show)))

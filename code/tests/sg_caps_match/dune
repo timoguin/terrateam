@@ -1,0 +1,10 @@
+(test
+ (name test)
+ (libraries containers oth qcheck-core sg_caps_match yojson)
+ ; The behavioural fixtures are shared with the TypeScript port of this matcher
+ ; (code/src/hermes/lib/api/capsMatch.test.ts, which reads its own copy under
+ ; code/src/hermes) so a semantic change on either side fails both suites.
+ ; Embedded via ppx_blob so this suite has no runtime path to get wrong.
+ (preprocessor_deps caps-match-fixtures.json)
+ (preprocess
+  (pps ppx_blob ppx_deriving.show)))

@@ -1,0 +1,3 @@
+(library
+ (name sg_caps_match)
+ (libraries containers lua_pattern))
