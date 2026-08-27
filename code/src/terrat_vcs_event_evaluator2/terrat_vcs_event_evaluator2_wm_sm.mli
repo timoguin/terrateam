@@ -5,7 +5,7 @@ module Make
 
   type existing_wm =
     ( S.Api.Account.t,
-      ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+      (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
     Terrat_work_manifest3.Existing.t
 
   val create_token :

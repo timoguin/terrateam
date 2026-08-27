@@ -98,8 +98,7 @@ module Pull_request = struct
 
   include Terrat_pull_request
 
-  type ('diff, 'checks) t = (Id.t, 'diff, 'checks, Repo.t, Ref.t) Terrat_pull_request.t
-  [@@deriving show, to_yojson]
+  type 'diff t = (Id.t, 'diff, Repo.t, Ref.t) Terrat_pull_request.t [@@deriving show, to_yojson]
 end
 
 module Client = struct
@@ -125,6 +124,7 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client = raise (Fail
 let react_to_comment ~request_id client pull_request comment_id = raise (Failure "nyi")
 let create_commit_checks ~request_id client repo ref_ checks = raise (Failure "nyi")
 let fetch_commit_checks ~request_id client repo ref_ = raise (Failure "nyi")
+let fetch_pull_request_mergeable ~request_id repo pull_request_id client = raise (Failure "nyi")
 let fetch_pull_request_reviews ~request_id client repo pull_request = raise (Failure "nyi")
 let fetch_pull_request_requested_reviews ~request_id repo pull_number client = raise (Failure "nyi")
 let fetch_pull_request_review_decision ~request_id repo pull_number client = raise (Failure "nyi")

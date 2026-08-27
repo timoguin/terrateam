@@ -999,16 +999,14 @@ module Db = struct
                           ~base_ref:(Api.Ref.of_string base_ref)
                           ~branch_name:(Api.Ref.of_string branch_name)
                           ~branch_ref:(Api.Ref.of_string branch_ref)
-                          ~checks:()
                           ~diff:()
                           ~draft:false
                           ~id:(CCInt64.to_int pull_number)
-                          ~mergeable:None
                           ~provisional_merge_ref:None
                           ~repo
                           ~state:
                             (match (state, merged_sha, merged_at) with
-                            | "open", _, _ -> Terrat_pull_request.State.(Open Open_status.Mergeable)
+                            | "open", _, _ -> Terrat_pull_request.State.Open
                             | "closed", _, _ -> Terrat_pull_request.State.Closed
                             | "merged", Some merged_hash, Some merged_at ->
                                 Terrat_pull_request.State.(Merged Merged.{ merged_hash; merged_at })
@@ -1134,7 +1132,7 @@ module Db = struct
     let module State = Terrat_pull_request.State in
     let merged_sha, merged_at, state =
       match Pr.state pull_request with
-      | State.Open _ -> (None, None, "open")
+      | State.Open -> (None, None, "open")
       | State.Closed -> (None, None, "closed")
       | State.(Merged { Merged.merged_hash; merged_at }) ->
           (Some merged_hash, Some merged_at, "merged")
@@ -2057,16 +2055,14 @@ module Db = struct
                 ~base_ref:(Api.Ref.of_string base_hash)
                 ~branch_name:(Api.Ref.of_string branch)
                 ~branch_ref:(Api.Ref.of_string hash)
-                ~checks:()
                 ~diff:()
                 ~draft:false
                 ~id:(CCInt64.to_int pull_number)
-                ~mergeable:None
                 ~provisional_merge_ref:None
                 ~repo:(Api.Pull_request.repo pull_request)
                 ~state:
                   (match (state, merged_hash, merged_at) with
-                  | "open", _, _ -> Terrat_pull_request.State.(Open Open_status.Mergeable)
+                  | "open", _, _ -> Terrat_pull_request.State.Open
                   | "closed", _, _ -> Terrat_pull_request.State.Closed
                   | "merged", Some merged_hash, Some merged_at ->
                       Terrat_pull_request.State.(Merged Merged.{ merged_hash; merged_at })
@@ -2433,8 +2429,18 @@ module Apply_requirements = struct
         commit_checks
     in
     let { Ar.checks; _ } = R.apply_requirements repo_config in
+    (* Only worth an extra API call if some check actually asks for it.  A closed or merged pull
+       request has no verdict to give -- the VCS answers "unknown" for ever -- and [passed] does
+       not use one, so do not ask. *)
+    let requires_merge_result =
+      (match Api.Pull_request.state pull_request with
+        | Terrat_pull_request.State.Open -> true
+        | Terrat_pull_request.State.Closed | Terrat_pull_request.State.Merged _ -> false)
+      && CCList.exists (fun { Abc.merge_conflicts = { Mc.enabled; _ }; _ } -> enabled) checks
+    in
     Abbs_future_combinators.Infix_result_app.(
-      (fun reviews commit_checks requested_reviews -> (reviews, commit_checks, requested_reviews))
+      (fun reviews commit_checks requested_reviews mergeable ->
+        (reviews, commit_checks, requested_reviews, mergeable))
       <$> Abbs_time_it.run (log_time request_id "FETCH_APPROVED_TIME") (fun () ->
           Api.fetch_pull_request_reviews
             ~request_id
@@ -2452,8 +2458,16 @@ module Apply_requirements = struct
             ~request_id
             (Api.Pull_request.repo pull_request)
             (Api.Pull_request.id pull_request)
-            client))
-    >>= fun (reviews, commit_checks, requested_reviews) ->
+            client)
+      <*> Abbs_time_it.run (log_time request_id "FETCH_MERGEABLE_TIME") (fun () ->
+          if requires_merge_result then
+            Api.fetch_pull_request_mergeable
+              ~request_id
+              (Api.Pull_request.repo pull_request)
+              (Api.Pull_request.id pull_request)
+              client
+          else Abbs_future_combinators.return_ok None))
+    >>= fun (reviews, commit_checks, requested_reviews, mergeable) ->
     let approved_reviews =
       CCList.filter
         (function
@@ -2461,8 +2475,8 @@ module Apply_requirements = struct
           | _ -> false)
         reviews
     in
-    let merge_result = CCOption.get_or ~default:false @@ Api.Pull_request.mergeable pull_request in
-    if CCOption.is_none @@ Api.Pull_request.mergeable pull_request then
+    let merge_result = CCOption.get_or ~default:false mergeable in
+    if requires_merge_result && CCOption.is_none mergeable then
       Logs.info (fun m -> m "%s : MERGEABLE_NONE" request_id);
     let open Abb.Future.Infix_monad in
     Abbs_future_combinators.List_result.map
@@ -2540,7 +2554,7 @@ module Apply_requirements = struct
                   let module St = Terrat_pull_request.State in
                   match Api.Pull_request.state pull_request with
                   | St.Merged _ -> true
-                  | St.Open _ | St.Closed -> false
+                  | St.Open | St.Closed -> false
                 in
                 let ready_for_review =
                   (not require_ready_for_review_pr)
@@ -2812,9 +2826,7 @@ module Comment = struct
         Tier.runs_usage ~request_id work_manifest.Terrat_work_manifest3.account db
         >>= fun tier_runs ->
         let tier_runs = CCResult.get_or ~default:None tier_runs in
-        let pull_request =
-          Api.Pull_request.set_diff () pull_request |> Api.Pull_request.set_checks ()
-        in
+        let pull_request = Api.Pull_request.set_diff () pull_request in
         let work_manifest = { work_manifest with Terrat_work_manifest3.target = () } in
         let by_scope = By_scope.group result.R2.steps in
         let hooks =
@@ -4609,7 +4621,7 @@ module Work_manifest = struct
     let get_branch = function
       | { Wm.target = Terrat_vcs_provider2.Target.Pr pr; _ } -> (
           match Api.Pull_request.state pr with
-          | Terrat_pull_request.State.(Open _ | Closed) ->
+          | Terrat_pull_request.State.(Open | Closed) ->
               Api.Ref.to_string @@ Terrat_pull_request.branch_name pr
           | Terrat_pull_request.State.Merged _ ->
               Api.Ref.to_string @@ Terrat_pull_request.base_branch_name pr)
@@ -4825,9 +4837,7 @@ module Work_manifest = struct
               Abbs_future_combinators.return_ok
                 {
                   work_manifest with
-                  Wm.target =
-                    Terrat_vcs_provider2.Target.Pr
-                      (Terrat_pull_request.set_diff () @@ Terrat_pull_request.set_checks () pr);
+                  Wm.target = Terrat_vcs_provider2.Target.Pr (Terrat_pull_request.set_diff () pr);
                 }
           | Terrat_vcs_provider2.Target.Drift { repo = _; branch } ->
               Pgsql_io.Prepared_stmt.execute db (Sql.insert_drift_work_manifest ()) id branch

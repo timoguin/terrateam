@@ -158,8 +158,7 @@ module Pull_request = struct
 
   include Terrat_pull_request
 
-  type ('diff, 'checks) t = (Id.t, 'diff, 'checks, Repo.t, Ref.t) Terrat_pull_request.t
-  [@@deriving show, to_yojson]
+  type 'diff t = (Id.t, 'diff, Repo.t, Ref.t) Terrat_pull_request.t [@@deriving show, to_yojson]
 end
 
 module Client = struct
@@ -573,7 +572,6 @@ let fetch_pull_request' request_id _account client repo pull_request_id =
         merged_at;
         merge_commit_sha;
         mergeable_state;
-        mergeable;
         draft;
         title;
         user = User.{ primary = Primary.{ login; _ }; _ };
@@ -604,33 +602,26 @@ let fetch_pull_request' request_id _account client repo pull_request_id =
         (CCOption.get_or ~default:"" merge_commit_sha)
         (CCOption.get_or ~default:"" merged_at));
   Abbs_future_combinators.return_ok
-    ( mergeable_state,
-      Terrat_pull_request.make
-        ~base_branch_name
-        ~base_ref:base_sha
-        ~branch_name
-        ~branch_ref:head_sha
-        ~id:pull_request_id
-        ~state:
-          (match (merge_commit_sha, state, merged, merged_at) with
-          | Some _, `Open, _, _ -> Terrat_pull_request.State.(Open Open_status.Mergeable)
-          | None, `Open, _, _ -> Terrat_pull_request.State.(Open Open_status.Merge_conflict)
-          | Some merge_commit_sha, `Closed, true, Some merged_at ->
-              Terrat_pull_request.State.(
-                Merged Merged.{ merged_hash = merge_commit_sha; merged_at })
-          | _, `Closed, false, _ -> Terrat_pull_request.State.Closed
-          | _, _, _, _ -> assert false)
-        ~title:(Some title)
-        ~user:(Some login)
-        ~repo
-        ~checks:
-          (merged
-          || CCList.mem ~eq:CCString.equal mergeable_state [ "clean"; "unstable"; "has_hooks" ])
-        ~diff
-        ~draft
-        ~mergeable
-        ~provisional_merge_ref:merge_commit_sha
-        () )
+    (Terrat_pull_request.make
+       ~base_branch_name
+       ~base_ref:base_sha
+       ~branch_name
+       ~branch_ref:head_sha
+       ~id:pull_request_id
+       ~state:
+         (match (merge_commit_sha, state, merged, merged_at) with
+         | _, `Open, _, _ -> Terrat_pull_request.State.Open
+         | Some merge_commit_sha, `Closed, true, Some merged_at ->
+             Terrat_pull_request.State.(Merged Merged.{ merged_hash = merge_commit_sha; merged_at })
+         | _, `Closed, false, _ -> Terrat_pull_request.State.Closed
+         | _, _, _, _ -> assert false)
+       ~title:(Some title)
+       ~user:(Some login)
+       ~repo
+       ~diff
+       ~draft
+       ~provisional_merge_ref:merge_commit_sha
+       ())
 
 let fetch_pull_request ~request_id account client repo pull_request_id =
   let open Abb.Future.Infix_monad in
@@ -674,22 +665,83 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
     ~while_:
       (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
         | Error _ -> true
-        | Ok ("unknown", pull_request) -> (
-            match Terrat_pull_request.state pull_request with
-            | Terrat_pull_request.State.Open _ -> true
-            | _ -> false)
         | Ok _ -> false))
     ~betwixt:
       (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
            Prmths.Counter.inc_one Metrics.fetch_pull_request_errors_total;
            Abb.Sys.sleep (CCFloat.min n 8.0)))
   >>= function
-  | Ok (_, ret) -> Abbs_future_combinators.return_ok ret
+  | Ok ret -> Abbs_future_combinators.return_ok ret
   | Error (`Not_found _)
   | Error (`Internal_server_error _)
   | Error `Not_modified
   | Error (`Service_unavailable _)
   | Error (`Not_acceptable _)
+  | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
+
+(* GitHub computes the merge asynchronously and answers [unknown] until it is done, so this call
+   waits for it.  It is its own request, and not part of [fetch_pull_request], because only the
+   apply requirements need the answer: when the wait lived in [fetch_pull_request] every caller paid
+   it, including the plan, tree and index paths that never read the result. *)
+let fetch_pull_request_mergeable ~request_id repo pull_request_id client =
+  let module Ghc_comp = Githubc2_components in
+  let open Abb.Future.Infix_monad in
+  let mergeable_state pr =
+    pr.Ghc_comp.Pull_request.primary.Ghc_comp.Pull_request.Primary.mergeable_state
+  in
+  let f () =
+    Logs.info (fun m ->
+        m
+          "%s : FETCH_PULL_REQUEST_MERGEABLE : repo=%s : pull_request_id=%s"
+          request_id
+          (Repo.to_string repo)
+          (Pull_request.Id.to_string pull_request_id));
+    Terrat_github.fetch_pull_request
+      ~owner:(Repo.owner repo)
+      ~repo:(Repo.name repo)
+      ~pull_number:pull_request_id
+      client.Client.client
+    >>= function
+    | Ok _ as ret -> Abb.Future.return ret
+    | Error `Error ->
+        Prmths.Counter.inc_one Metrics.github_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : repo=%s : ERROR" request_id (Repo.to_string repo));
+        Abbs_future_combinators.return_err `Error
+    | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
+    | Error (#Terrat_github.fetch_pull_request_err as err) ->
+        Prmths.Counter.inc_one Metrics.github_errors_total;
+        Logs.err (fun m ->
+            m
+              "%s : ERROR : repo=%s : %a"
+              request_id
+              (Repo.to_string repo)
+              Terrat_github.pp_fetch_pull_request_err
+              err);
+        Abbs_future_combinators.return_err `Error
+  in
+  Abbs_future_combinators.retry
+    ~f
+    ~while_:
+      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+        | Error _ -> true
+        | Ok pr -> CCString.equal "unknown" (mergeable_state pr)))
+    ~betwixt:
+      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
+           Prmths.Counter.inc_one Metrics.fetch_pull_request_errors_total;
+           Abb.Sys.sleep (CCFloat.min n 8.0)))
+  >>= function
+  | Ok pr ->
+      let mergeable = pr.Ghc_comp.Pull_request.primary.Ghc_comp.Pull_request.Primary.mergeable in
+      Prmths.Counter.inc_one (Metrics.pull_request_mergeable_state_count (mergeable_state pr));
+      Logs.info (fun m ->
+          m
+            "%s : PULL_REQUEST_MERGEABLE : pull_request_id=%s : mergable_state=%s : mergeable=%s"
+            request_id
+            (Pull_request.Id.to_string pull_request_id)
+            (mergeable_state pr)
+            (CCOption.map_or ~default:"<none>" Bool.to_string mergeable));
+      Abbs_future_combinators.return_ok mergeable
   | Error `Error -> Abbs_future_combinators.return_err `Error
   | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
 

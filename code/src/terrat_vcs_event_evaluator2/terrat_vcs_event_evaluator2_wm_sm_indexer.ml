@@ -251,8 +251,29 @@ struct
     let open Irm in
     match result with
     | Wmr.Work_manifest_index_result index ->
-        Builder.run_db s ~f:(fun db -> store_index s db work_manifest.Wm.id index)
-        >>= fun _ ->
+        fetch Keys.reruns
+        >>= fun reruns ->
+        (* The index is a set of rows keyed by this work manifest, and every job
+           that needs the index waits on those rows until this transaction
+           commits -- which is after the rest of the job, GitHub calls included.
+           Commit the index on its own and ask to be re-run, so the rows are
+           held for the write and nothing more.
+
+           On the second pass the payload is in [reruns], which the driver only
+           records after the transaction committed, so the index is durable and
+           the rest of this branch runs exactly once. *)
+        let rerun_id = Printf.sprintf "index:%s" (Uuidm.to_string work_manifest.Wm.id) in
+        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_future_combinators.return_ok ()
+         else (
+           Logs.info (fun m ->
+               m
+                 "%s : INDEX : STORE : work_manifest=%a"
+                 (Builder.log_id s)
+                 Uuidm.pp
+                 work_manifest.Wm.id);
+           Builder.run_db s ~f:(fun db -> store_index s db work_manifest.Wm.id index)
+           >>= fun _ -> Abbs_future_combinators.return_err (`Rerun [ rerun_id ])))
+        >>= fun () ->
         fetch Keys.account
         >>= fun account ->
         fetch Keys.repo

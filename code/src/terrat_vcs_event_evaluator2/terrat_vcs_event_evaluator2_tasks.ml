@@ -307,10 +307,7 @@ struct
               fetch Keys.pull_request
               >>= fun pull_request ->
               Abbs_future_combinators.return_ok
-                (Terrat_vcs_provider2.Target.Pr
-                   (Terrat_pull_request.set_diff ()
-                   @@ Terrat_pull_request.set_checks ()
-                   @@ pull_request))
+                (Terrat_vcs_provider2.Target.Pr (Terrat_pull_request.set_diff () @@ pull_request))
           | { C.scope = C.Scope.Branch (branch, _); _ } ->
               fetch Keys.repo
               >>= fun repo ->
@@ -2051,8 +2048,7 @@ struct
           >>= fun publish_comment ->
           publish_comment'
             publish_comment
-            (Msg.Dest_branch_no_match
-               (S.Api.Pull_request.set_checks () @@ S.Api.Pull_request.set_diff () pull_request)))
+            (Msg.Dest_branch_no_match (S.Api.Pull_request.set_diff () pull_request)))
 
     let check_valid_destination_branch =
       run ~name:"check_valid_destination_branch" (fun s { Bs.Fetcher.fetch } ->

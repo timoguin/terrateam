@@ -60,21 +60,21 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Initiate of {
           work_manifest :
             ( S.Api.Account.t,
-              ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+              (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
             Terrat_work_manifest3.Existing.t;
           run_id : string;
         }
       | Fail of {
           work_manifest :
             ( S.Api.Account.t,
-              ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+              (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
             Terrat_work_manifest3.Existing.t;
           error : Terrat_vcs_provider2.run_work_manifest_err;
         }
       | Result of {
           work_manifest :
             ( S.Api.Account.t,
-              ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+              (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
             Terrat_work_manifest3.Existing.t;
           result : Terrat_api_components.Work_manifest_result.t;
         }
@@ -176,8 +176,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let repo : S.Api.Repo.t Key.t = Hmap.Key.create "repo"
   let pushed_branch : S.Api.Ref.t Key.t = Hmap.Key.create "pushed_branch"
 
-  let target : ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t Key.t
-      =
+  let target : (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t Key.t =
     Hmap.Key.create "target"
 
   let user : S.Api.User.t option Key.t = Hmap.Key.create "user"
@@ -216,7 +215,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let work_manifests_for_job :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -231,7 +230,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   (* Pull request *)
 
-  let pull_request : (Terrat_change.Diff.t list, bool) S.Api.Pull_request.t Key.t =
+  let pull_request : Terrat_change.Diff.t list S.Api.Pull_request.t Key.t =
     Hmap.Key.create "pull_request"
 
   let pull_request_reviews : Terrat_pull_request_review.t list Key.t =
@@ -244,7 +243,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   (* Indexer branch *)
   let repo_index_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -259,7 +258,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   (* Indexer dest branch *)
   let repo_index_dest_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -276,7 +275,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let repo_tree_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -286,7 +285,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let repo_tree_dest_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -303,7 +302,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let built_repo_config_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -351,7 +350,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let built_repo_config_dest_branch_wm_completed :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       list
       Key.t =
@@ -409,7 +408,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let work_manifest :
       ( S.Api.Account.t,
-        ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
+        (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
       Terrat_work_manifest3.Existing.t
       Key.t =
     Hmap.Key.create "work_manifest"
@@ -486,8 +485,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   type msg =
     ( S.Api.Account.t,
       S.Db.t,
-      (unit, unit) S.Api.Pull_request.t,
-      ((unit, unit) S.Api.Pull_request.t, S.Api.Repo.t) P2.Target.t,
+      unit S.Api.Pull_request.t,
+      (unit S.Api.Pull_request.t, S.Api.Repo.t) P2.Target.t,
       S.Apply_requirements.Result.t,
       S.Api.Config.t )
     P2.Msg.t

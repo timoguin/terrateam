@@ -232,8 +232,7 @@ module Pull_request = struct
 
   include Terrat_pull_request
 
-  type ('diff, 'checks) t = (Id.t, 'diff, 'checks, Repo.t, Ref.t) Terrat_pull_request.t
-  [@@deriving show, to_yojson]
+  type 'diff t = (Id.t, 'diff, Repo.t, Ref.t) Terrat_pull_request.t [@@deriving show, to_yojson]
 end
 
 module Client = struct
@@ -537,7 +536,6 @@ let fetch_pull_request' ~request_id:_ ~client ~repo merge_request_iid =
         | Ok resp -> (
             match Openapi.Response.value resp with
             | `OK { Mr.diff_refs = None; _ } -> true
-            | `OK { Mr.detailed_merge_status = Some "checking"; _ } -> true
             | _ -> false)
         | Error _ -> true))
     ~betwixt:
@@ -576,25 +574,9 @@ let fetch_pull_request ~request_id _account client repo merge_request_iid =
     } =
       mr
     in
-    let mergeable =
-      CCOption.map
-        (fun status ->
-          CCList.mem ~eq:CCString.equal status [ "mergeable"; "ci_still_running"; "ci_must_pass" ])
-        detailed_merge_status
-    in
-    let checks =
-      state = "merged"
-      || CCOption.map_or
-           ~default:false
-           (fun status ->
-             not (CCList.mem ~eq:CCString.equal status [ "ci_must_pass"; "ci_still_running" ]))
-           detailed_merge_status
-    in
     let state =
       match (state, detailed_merge_status, merge_commit_sha, merged_at) with
-      | "opened", Some "conflict", _, _ ->
-          Terrat_pull_request.State.(Open Open_status.Merge_conflict)
-      | "opened", _, _, _ -> Terrat_pull_request.State.(Open Open_status.Mergeable)
+      | "opened", _, _, _ -> Terrat_pull_request.State.Open
       | "merged", _, Some merge_commit_sha, Some merged_at ->
           Terrat_pull_request.State.(Merged { Merged.merged_hash = merge_commit_sha; merged_at })
       | "closed", _, _, _ -> Terrat_pull_request.State.Closed
@@ -619,10 +601,8 @@ let fetch_pull_request ~request_id _account client repo merge_request_iid =
          ~title:(Some title)
          ~user:(Some username)
          ~repo
-         ~checks
          ~diff
          ~draft
-         ~mergeable
          ~provisional_merge_ref
          ())
   in
@@ -858,6 +838,57 @@ let fetch_commit_checks ~request_id client repo ref_ =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
+      Abbs_future_combinators.return_err `Error
+
+(* GitLab computes the merge asynchronously and reports [checking] until it is done, so this call
+   waits for it.  It is its own request, and not part of [fetch_pull_request], because only the
+   apply requirements read the answer. *)
+let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
+  let module Gl = Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIid in
+  let module Mr = Gitlabc_components_api_entities_mergerequest in
+  let open Abb.Future.Infix_monad in
+  Abbs_future_combinators.retry
+    ~f:(fun () ->
+      Logs.info (fun m ->
+          m
+            "%s : FETCH_PULL_REQUEST_MERGEABLE : repo=%s : merge_request_iid=%d"
+            request_id
+            (Repo.to_string repo)
+            merge_request_iid);
+      call
+        client.Client.client
+        Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~merge_request_iid ())))
+    ~while_:
+      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+        | Ok resp -> (
+            match Openapi.Response.value resp with
+            | `OK { Mr.detailed_merge_status = Some "checking"; _ } -> true
+            | _ -> false)
+        | Error _ -> true))
+    ~betwixt:
+      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
+           Abb.Sys.sleep (CCFloat.min n 8.0)))
+  >>= function
+  | Ok resp -> (
+      match Openapi.Response.value resp with
+      | `OK { Mr.detailed_merge_status; _ } ->
+          Logs.info (fun m ->
+              m
+                "%s : PULL_REQUEST_MERGEABLE : merge_request_iid=%d : detailed_merge_status=%s"
+                request_id
+                merge_request_iid
+                (CCOption.get_or ~default:"<none>" detailed_merge_status));
+          Abbs_future_combinators.return_ok
+            (CCOption.map
+               (fun status ->
+                 CCList.mem
+                   ~eq:CCString.equal
+                   status
+                   [ "mergeable"; "ci_still_running"; "ci_must_pass" ])
+               detailed_merge_status)
+      | `Not_found -> Abbs_future_combinators.return_err `Error)
+  | Error _ ->
+      Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_MERGEABLE" request_id);
       Abbs_future_combinators.return_err `Error
 
 let fetch_pull_request_approvals' ~request_id repo pull_number client =
