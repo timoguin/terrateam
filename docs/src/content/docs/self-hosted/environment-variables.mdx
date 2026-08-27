@@ -158,4 +158,7 @@ converted first:
 openssl x509 -inform DER -in your-ca.der -out your-ca.pem
 ```
 
-For troubleshooting configuration issues, see the [Troubleshooting Guide](/self-hosted/troubleshooting/).
+If a configuration change does not take effect, check
+[`terrat_errors_total` and the other server metrics](/self-hosted/observability-metrics)
+first. If that does not explain it, [contact support](/support) with your server
+logs and your deployment version.

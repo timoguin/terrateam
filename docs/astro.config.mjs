@@ -84,6 +84,7 @@ export default defineConfig({
             { label: "PR Workflows", link: "/workflows/pull-request/" },
             { label: "Apply After Merge", link: "/workflows/apply-after-merge" },
             { label: "Rollbacks", link: "/workflows/rollbacks" },
+            { label: "Performance Optimization", link: "/workflows/performance" },
             {
               label: "Advanced Patterns",
               collapsed: true,
@@ -300,6 +301,19 @@ export default defineConfig({
     '/self-hosted': '/quickstart/self-hosted/',
     // Old structure redirects
     '/how-it-works': '/overview/how-it-works',
+    // Troubleshooting section removed; performance became a workflows guide and
+    // the rest were stubs whose only real content was how to get help.
+    // Bare section roots. Starlight generates no directory index, so these
+    // 404 despite every leaf path under them having a redirect.
+    '/reference/configuration': '/configuration/',
+    '/configuration-reference': '/configuration/',
+    '/command-reference': '/reference/commands/plan',
+    '/advanced-workflows': '/workflows/pull-request/',
+    '/troubleshooting/performance': '/workflows/performance',
+    '/troubleshooting': '/support',
+    '/troubleshooting/common-errors': '/support',
+    '/troubleshooting/debugging-guide': '/support',
+    '/troubleshooting/faq': '/support',
     '/quickstart-guide': '/quickstart/',
     '/getting-started/quickstart-guide': '/quickstart/',
     '/getting-started/concepts': '/overview/core-concepts',
