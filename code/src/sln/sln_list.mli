@@ -7,6 +7,9 @@ module String : sig
 
   (** [CCList.equal CCString.equal] *)
   val equal : string list -> string list -> bool
+
+  (** [CCList.uniq ~eq:CCString.equal] *)
+  val uniq : string list -> string list
 end
 
 module Uuidm : sig

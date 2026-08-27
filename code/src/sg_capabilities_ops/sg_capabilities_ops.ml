@@ -492,3 +492,98 @@ let revoke_tenant ~grants ~tenant caps =
             | Ok tenants -> Ok (set_tenant_scope caps g tenants)))
   in
   CCResult.map Sgs_session_caps_norm.normalize (CCList.fold_left apply (Ok caps) grants)
+
+type tenant_scope_err =
+  | Instance_capability of string
+  | Grants_beyond_tenant of string
+[@@deriving show, eq]
+
+let tenant_scope_err_to_string = function
+  | Instance_capability c ->
+      Printf.sprintf
+        {|the %s capability is installation-wide and cannot be granted by a tenant-scoped rule|}
+        c
+  | Grants_beyond_tenant c ->
+      Printf.sprintf
+        {|the %s grant reaches beyond this tenant; a tenant rule may only grant capabilities scoped to this tenant|}
+        c
+
+(* [names_exactly_tenant] is true when [list] permits [tenant] and nothing else -- the sole shape a
+   tenant-scoped grant may carry in a [tenants] allow-list.  [Exact] alone is not enough: ["T"; "U"]
+   covers [T] exactly yet still grants [U], so we also require that removing [T] leaves a list that
+   grants nothing (an absent list, a glob, or any other tenant all fail this). *)
+let names_exactly_tenant ~tenant list =
+  match Tenant_scope.coverage ~list ~value:tenant with
+  | Tenant_scope.Exact -> (
+      match Tenant_scope.revoke ~list ~value:tenant with
+      | Ok remaining -> Tenant_scope.grants_nothing remaining
+      | Error `Wider_grant_err -> false)
+  | Tenant_scope.Not_covered | Tenant_scope.Wider -> false
+
+(* The one place a [tenants] allow-list is judged against the single tenant a rule may grant to. *)
+let confined_to_tenant ~tenant ~name tenants =
+  if names_exactly_tenant ~tenant tenants then Ok () else Error (Grants_beyond_tenant name)
+
+(* The state ids a [commit]/[preview] grant names across its [states] and [subgraph] maps. *)
+let state_ids_of states subgraph =
+  let ids = function
+    | None -> []
+    | Some s -> CCList.map fst (Sln_map.String.to_list (Sgs_session_caps_states.additional s))
+  in
+  ids states @ ids subgraph
+
+(* First of all, return [Error Grants_beyond_tenant] if [tenants] is more than the single [tenant].
+
+   If this is fine, return the state_ids whose membership must be in [tenant] for
+   the combination [(states; subgraph; tenants)] to be bounded to [tenant]. *)
+let state_ids_to_check ~tenant ~name ~states ~subgraph ~tenants =
+  let ids = state_ids_of states subgraph in
+  match tenants with
+  (* No tenant scope, but explicit states: bounded once those states are confirmed to be [tenant]'s. *)
+  | None when not (CCList.is_empty ids) -> Ok ids
+  (* Otherwise the [tenants] list itself must name exactly [tenant] (this also rejects the fully
+     unbounded case -- no tenant scope and no states). *)
+  | None | Some _ -> CCResult.map (fun () -> ids) (confined_to_tenant ~tenant ~name tenants)
+
+let scoped_to_tenant ~tenant caps =
+  let open CCResult.Infix in
+  let module Caps = Sgs_session_caps_capabilities in
+  let check_absent name ~present = if present then Error (Instance_capability name) else Ok () in
+  let check_tenant_only name = function
+    | None -> Ok ()
+    | Some tenants -> confined_to_tenant ~tenant ~name tenants
+  in
+  check_absent "access-token-create" ~present:Caps.(caps.access_token_create = Some true)
+  >>= fun () ->
+  check_absent "access-token-refresh" ~present:Caps.(caps.access_token_refresh = Some true)
+  >>= fun () ->
+  check_absent "sudo" ~present:Caps.(CCOption.is_some caps.sudo)
+  >>= fun () ->
+  check_tenant_only
+    "admin"
+    (CCOption.map (fun a -> a.Sgs_session_caps_admin.tenants) caps.Caps.admin)
+  >>= fun () ->
+  check_tenant_only
+    "users-manage"
+    (CCOption.map (fun u -> u.Sgs_session_caps_users_manage.tenants) caps.Caps.users_manage)
+  >>= fun () ->
+  (match caps.Caps.commit with
+    | None -> Ok []
+    | Some c ->
+        state_ids_to_check
+          ~tenant
+          ~name:"commit"
+          ~states:c.Sgs_session_caps_commit.states
+          ~subgraph:c.Sgs_session_caps_commit.subgraph
+          ~tenants:c.Sgs_session_caps_commit.tenants)
+  >>= fun commit_ids ->
+  (match caps.Caps.preview with
+    | None -> Ok []
+    | Some p ->
+        state_ids_to_check
+          ~tenant
+          ~name:"preview"
+          ~states:p.Sgs_session_caps_preview.states
+          ~subgraph:p.Sgs_session_caps_preview.subgraph
+          ~tenants:p.Sgs_session_caps_preview.tenants)
+  >>= fun preview_ids -> Ok (commit_ids @ preview_ids)

@@ -142,3 +142,32 @@ val revoke_tenant :
   tenant:string ->
   Sgs_session_caps_capabilities.t ->
   (Sgs_session_caps_capabilities.t, [> `Wider_grant_err of tenant_grant ]) result
+
+(** Why a capability set is not confined to a single tenant.
+
+    - [Instance_capability name]: an installation-level capability that has no tenant scope at all
+      ([access-token-create], [access-token-refresh], [sudo]) is present.
+    - [Grants_beyond_tenant name]: a tenant-scopable capability ([admin], [users-manage], [commit],
+      [preview]) reaches past the tenant -- an absent/glob/other-tenant [tenants] list, or a
+      [commit]/[preview] left unbounded on both the tenant and state axes. *)
+type tenant_scope_err =
+  | Instance_capability of string
+  | Grants_beyond_tenant of string
+[@@deriving show, eq]
+
+(** A human-readable, admin-facing explanation of a {!tenant_scope_err}, suitable for an API error
+    body. *)
+val tenant_scope_err_to_string : tenant_scope_err -> string
+
+(** [scoped_to_tenant ~tenant caps] decides whether [caps] grants nothing beyond [tenant], as
+    required of a capability-group rule owned by that tenant.
+
+    A grant is in scope when: no installation-level capability is present; [admin] and
+    [users-manage] (when present) name exactly [tenant]; and each [commit]/[preview] grant is
+    bounded to [tenant] either by a [tenants] list naming exactly it or by an explicit set of
+    states. Because a state's tenant is not encoded in the capability JSON, this cannot itself
+    confirm those states belong to [tenant]: on [Ok state_ids] it returns every state id the
+    [commit]/[preview] grants name, which the caller must verify are owned by [tenant] (rejecting
+    the grant otherwise). *)
+val scoped_to_tenant :
+  tenant:string -> Sgs_session_caps_capabilities.t -> (string list, tenant_scope_err) result
