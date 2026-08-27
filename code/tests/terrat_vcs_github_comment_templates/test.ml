@@ -561,9 +561,124 @@ let test_terrateam_brand_rewrite =
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"stategraph";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Stategraph")
 
+(* #2038: a plan whose dirspaces all came back with no changes must not tell the
+   reader to apply, and a layered run must say the next layer follows on its
+   own. *)
+let plan_complete2_kv ~changes ~is_layered_run ~num_more_layers =
+  `Assoc
+    [
+      ("overall_success", `Bool true);
+      ("summary", `Bool true);
+      ("account_status", `String "active");
+      ("trial_end_days", `Int 0);
+      ("is_layered_run", `Bool is_layered_run);
+      ("num_more_layers", `Int num_more_layers);
+      ("denied_dirspaces", `List []);
+      ("pre_hooks", `List []);
+      ("post_hooks", `List []);
+      ("gates", `List []);
+      ("compact_view", `Bool false);
+      ("compact_dirspaces", `Bool false);
+      ( "dirspaces",
+        `List
+          (CCList.mapi
+             (fun idx has_changes ->
+               `Assoc
+                 [
+                   ("dir", `String (Printf.sprintf "dir-%d" idx));
+                   ("workspace", `String "default");
+                   ("success", `Bool true);
+                   ( "steps",
+                     `List
+                       [
+                         `Assoc
+                           [
+                             ("name", `String "tf/plan");
+                             ("text", `String "No changes.");
+                             ("show_output", `Bool true);
+                             ("success", `Bool true);
+                             ("raw", `Bool false);
+                             ("text_decorator", `String "diff");
+                           ];
+                       ] );
+                   ("has_changes", `Bool has_changes);
+                   ("run_url", `Null);
+                   ("applied", `Bool false);
+                 ])
+             changes) );
+    ]
+
+let apply_footer = "To apply all these changes, comment:"
+let no_changes_layer = "There are no changes in this layer."
+let next_layer = "The next layer will now be planned."
+
+let test_plan_complete2_no_changes_more_layers =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: no changes, more layers" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:3)
+      in
+      Oth.Assert.str_contains_all ~haystack:body ~needles:[ no_changes_layer; next_layer ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
+
+(* [num_more_layers] counts the layer just planned, so one remaining layer means
+   this is the last one. *)
+let test_plan_complete2_no_changes_last_layer =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: no changes, last layer" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:1)
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:no_changes_layer;
+      Oth.Assert.str_contains ~haystack:body ~needle:"with 1 layer remaining to apply";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:next_layer;
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
+
+let test_plan_complete2_no_changes_not_layered =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: no changes, not layered" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:false ~num_more_layers:0)
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"There are no changes.";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"in this layer";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
+
+let test_plan_complete2_changes_keep_apply =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: changes keep the apply footer" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:true ~num_more_layers:3)
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"There are no changes")
+
+(* One dirspace with changes is enough to make the apply instruction correct. *)
+let test_plan_complete2_mixed_keeps_apply =
+  Oth.test
+    ~tags:[ "plan_complete" ]
+    ~name:"Plan complete: mixed dirspaces keep the apply footer"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ true; false ] ~is_layered_run:true ~num_more_layers:3)
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:no_changes_layer)
+
 let test =
   Oth.parallel
     [
+      test_plan_complete2_no_changes_more_layers;
+      test_plan_complete2_no_changes_last_layer;
+      test_plan_complete2_no_changes_not_layered;
+      test_plan_complete2_changes_keep_apply;
+      test_plan_complete2_mixed_keeps_apply;
       test_published_bodies_carry_the_self_marker;
       test_operation_failed_branch_not_found;
       test_operation_failed_compute_aborted;

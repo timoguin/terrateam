@@ -49,7 +49,7 @@ Not all [dirspaces](https://docs.terrateam.io/getting-started/concepts/#dirspace
   {%- if is_layered_run %}
 
 > [!NOTE]
-> This is a **layered run** with {{ num_more_layers }} {% if num_layers == 1 %}layer{% else %}layers{% endif %} remaining to apply.  Layered runs require multiple rounds of planning and applying.
+> This is a **layered run** with {{ num_more_layers }} {% if num_more_layers == 1 %}layer{% else %}layers{% endif %} remaining to apply.  Layered runs require multiple rounds of planning and applying.
 
   {%- endif %}
   {%- if gates %}
@@ -292,6 +292,8 @@ No output shown due to comment size.
 </details>
 {%- endif %}
 {%- if overall_success %}
+{%- set changed = dirspaces | selectattr("success") | selectattr("has_changes") | list %}
+  {%- if changed %}
 
 ---
 
@@ -301,6 +303,13 @@ To apply all these changes, comment:
 stategraph apply
 ```
 
+  {%- else %}
+
+---
+
+There are no changes{% if is_layered_run %} in this layer{% endif %}.{% if is_layered_run and num_more_layers > 1 %}  The next layer will now be planned.{% endif %}
+
+  {%- endif %}
 {%- endif %}
 
 ---
