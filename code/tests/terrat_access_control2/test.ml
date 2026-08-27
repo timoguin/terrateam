@@ -7,7 +7,7 @@
 
 let test_add_change_remove_each_config_file =
   Oth.test ~name:"add/change/remove of every config spelling is a repo config change" (fun _ ->
-      Oth.Assert.List.all_true
+      Oth.Assert.List.all
         ~pp:Format.pp_print_string
         (fun filename ->
           CCList.for_all
@@ -19,7 +19,7 @@ let test_add_change_remove_each_config_file =
 
 let test_move_to_and_from_config_file =
   Oth.test ~name:"a move whose either side is a config file is a repo config change" (fun _ ->
-      Oth.Assert.List.all_true
+      Oth.Assert.List.all
         ~pp:Format.pp_print_string
         (fun filename ->
           Terrat_access_control2.Tests.is_repo_config_change

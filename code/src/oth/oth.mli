@@ -82,7 +82,11 @@ module type ASSERT = sig
 
     (** Asserts that [p] holds for every element of the list, otherwise fails the test naming the
         elements (rendered with [pp]) for which it does not. *)
-    val all_true : pp:(Format.formatter -> 'a -> unit) -> ('a -> bool) -> 'a list -> unit
+    val all : pp:(Format.formatter -> 'a -> unit) -> ('a -> bool) -> 'a list -> unit
+
+    (** Asserts that [p] holds for at least one element of the list, otherwise prints [fail_msg] and
+        fails the test. There is no failing element to name, so unlike {!all} there is no [pp]. *)
+    val exists : ?fail_msg:string -> ('a -> bool) -> 'a list -> unit
   end
 
   module Eq : sig
