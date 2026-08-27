@@ -259,3 +259,12 @@ body {
     position: relative;
   }
 }
+
+/* Green aside variant. Starlight ships note/tip/caution/danger only, so a `tip`
+   wrapped in .aside-success is recoloured to the built-in green tokens. Scoped
+   to the wrapper so the other 40+ tips across the docs stay purple. */
+.aside-success .starlight-aside--tip {
+  --sl-color-asides-text-accent: var(--sl-color-green-high);
+  --sl-color-asides-border: var(--sl-color-green);
+  background-color: var(--sl-color-green-low);
+}
