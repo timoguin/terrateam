@@ -10,6 +10,9 @@ module String : sig
 
   (** [CCList.uniq ~eq:CCString.equal] *)
   val uniq : string list -> string list
+
+  (** [CCList.assoc_opt ~eq:CCString.equal] *)
+  val assoc_opt : string -> (string * 'a) list -> 'a option
 end
 
 module Uuidm : sig
