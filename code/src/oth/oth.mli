@@ -18,6 +18,11 @@ module type ASSERT = sig
       test. *)
   val ok_pp : pp:(Format.formatter -> 'err -> unit) -> ('a, 'err) result -> 'a
 
+  (** Asserts that a result is [Ok v] and returns [v], otherwise prints the error and fails the
+      test. Like {!ok_pp}, but takes a [show] ([`err -> string]) — convenient for the many types
+      that derive [show] rather than a [Format] printer. *)
+  val ok_show : show:('err -> string) -> ('a, 'err) result -> 'a
+
   (** Asserts that a result is [Error v] and returns [v], otherwise prints the given message and
       fails the test. *)
   val error : ?fail_msg:string -> ('a, 'err) result -> 'err

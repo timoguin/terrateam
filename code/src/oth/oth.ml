@@ -20,6 +20,12 @@ module Assert = struct
     | Ok v -> v
     | Error e -> raise (Assert_failure_msg (Format.asprintf "Expected Ok (_), got Error:\n%a" pp e))
 
+  let ok_show ~show r =
+    match r with
+    | Ok v -> v
+    | Error e ->
+        raise (Assert_failure_msg (Printf.sprintf "Expected Ok (_), got Error:\n%s" (show e)))
+
   let error ?fail_msg r =
     match r with
     | Ok _ ->
