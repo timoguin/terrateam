@@ -110,14 +110,11 @@ module type S = sig
 
     include
       module type of Terrat_pull_request
-        with type ('id, 'diff, 'checks, 'repo, 'ref) t =
-          ('id, 'diff, 'checks, 'repo, 'ref) Terrat_pull_request.t
+        with type ('id, 'diff, 'repo, 'ref) t = ('id, 'diff, 'repo, 'ref) Terrat_pull_request.t
          and type State.Merged.t = Terrat_pull_request.State.Merged.t
-         and type State.Open_status.t = Terrat_pull_request.State.Open_status.t
          and type State.t = Terrat_pull_request.State.t
 
-    type ('diff, 'checks) t = (Id.t, 'diff, 'checks, Repo.t, Ref.t) Terrat_pull_request.t
-    [@@deriving show, to_yojson]
+    type 'diff t = (Id.t, 'diff, Repo.t, Ref.t) Terrat_pull_request.t [@@deriving show, to_yojson]
   end
 
   val create_client :
@@ -163,21 +160,21 @@ module type S = sig
   val comment_on_pull_request :
     request_id:string ->
     Client.t ->
-    ('diff, 'checks) Pull_request.t ->
+    'diff Pull_request.t ->
     string ->
     (Comment.Id.t, [> call_err ]) result Abb.Future.t
 
   val delete_pull_request_comment :
     request_id:string ->
     Client.t ->
-    ('diff, 'checks) Pull_request.t ->
+    'diff Pull_request.t ->
     Comment.Id.t ->
     (unit, [> call_err ]) result Abb.Future.t
 
   val minimize_pull_request_comment :
     request_id:string ->
     Client.t ->
-    ('diff, 'checks) Pull_request.t ->
+    'diff Pull_request.t ->
     Comment.Id.t ->
     (unit, [> call_err ]) result Abb.Future.t
 
@@ -187,7 +184,19 @@ module type S = sig
     Client.t ->
     Repo.t ->
     Pull_request.Id.t ->
-    ((Terrat_change.Diff.t list, bool) Pull_request.t, [> call_err ]) result Abb.Future.t
+    (Terrat_change.Diff.t list Pull_request.t, [> call_err ]) result Abb.Future.t
+
+  (** The VCS's verdict on whether the pull request will merge. [None] means the VCS has no verdict.
+
+      A VCS computes this asynchronously, so this call waits for the answer. It is deliberately not
+      part of {!fetch_pull_request}: only the apply requirements read it, and while it lived on the
+      pull request every caller paid the wait. *)
+  val fetch_pull_request_mergeable :
+    request_id:string ->
+    Repo.t ->
+    Pull_request.Id.t ->
+    Client.t ->
+    (bool option, [> call_err ]) result Abb.Future.t
 
   val fetch_pull_request_reviews :
     request_id:string ->
@@ -224,7 +233,7 @@ module type S = sig
   val react_to_comment :
     request_id:string ->
     Client.t ->
-    ('a, 'b) Pull_request.t ->
+    'a Pull_request.t ->
     int ->
     (unit, [> call_err ]) result Abb.Future.t
 
@@ -247,7 +256,7 @@ module type S = sig
     request_id:string ->
     ?retain_pr_title:bool ->
     Client.t ->
-    ('diff, 'checks) Pull_request.t ->
+    'diff Pull_request.t ->
     Terrat_base_repo_config_v1.Automerge.Merge_strategy.t ->
     (unit, [> call_err | `Merge_err of string ]) result Abb.Future.t
 

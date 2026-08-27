@@ -1512,7 +1512,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
       module Pull_request = Abbs_cache.Expiring.Make (struct
         type k = string * S.Api.Account.t * S.Api.Repo.t * S.Api.Pull_request.Id.t [@@deriving eq]
-        type v = (Terrat_change.Diff.t list, bool) S.Api.Pull_request.t [@@deriving to_yojson]
+        type v = Terrat_change.Diff.t list S.Api.Pull_request.t [@@deriving to_yojson]
         type err = [ `Error ]
         type args = unit -> (v, err) result Abb.Future.t
 
@@ -1653,8 +1653,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           pull_request ctx state
           >>= fun pull_request ->
           Abbs_future_combinators.return_ok
-            (Terrat_vcs_provider2.Target.Pr
-               (Terrat_pull_request.set_diff () @@ Terrat_pull_request.set_checks () pull_request))
+            (Terrat_vcs_provider2.Target.Pr (Terrat_pull_request.set_diff () pull_request))
       | Event.Run_drift { repo; _ } ->
           client ctx state
           >>= fun client ->
@@ -1718,7 +1717,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           pull_request ctx state
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
-          | Terrat_pull_request.State.Open _ | Terrat_pull_request.State.Closed ->
+          | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
               Abbs_future_combinators.return_ok (S.Api.Pull_request.branch_ref pull_request)
           | Terrat_pull_request.State.Merged _ -> default_branch_sha)
       | None -> default_branch_sha
@@ -5328,7 +5327,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           in
           create_commit_checks state.State.request_id client repo ref_ unfinished_checks
           >>= fun () -> Abbs_future_combinators.return_err (`Noop state)
-      | Terrat_pull_request.State.(Open _ | Merged _) -> Abbs_future_combinators.return_ok state
+      | Terrat_pull_request.State.(Open | Merged _) -> Abbs_future_combinators.return_ok state
 
     let check_non_empty_matches ctx state =
       let open Abbs_future_combinators.Infix_result_monad in
@@ -5776,20 +5775,29 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       Dv.pull_request ctx state
       >>= fun pull_request ->
       match S.Api.Pull_request.state pull_request with
-      | Terrat_pull_request.State.(Open Open_status.Merge_conflict) ->
-          Logs.info (fun m -> m "%s : MERGE_CONFLICT" state.State.request_id);
+      | Terrat_pull_request.State.Open -> (
+          (* See the evaluator2 task of the same name: the merge verdict is its own request, and
+             no verdict counts as a conflict. *)
           Dv.client ctx state
           >>= fun client ->
-          publish_msg
-            state.State.request_id
+          S.Api.fetch_pull_request_mergeable
+            ~request_id:state.State.request_id
+            (S.Api.Pull_request.repo pull_request)
+            (S.Api.Pull_request.id pull_request)
             client
-            (S.Api.User.to_string @@ Event.user state.State.event)
-            pull_request
-            Msg.Pull_request_not_mergeable
-          >>= fun () -> Abbs_future_combinators.return_err (`Noop state)
-      | Terrat_pull_request.State.Open _
-      | Terrat_pull_request.State.Closed
-      | Terrat_pull_request.State.Merged _ -> Abbs_future_combinators.return_ok state
+          >>= function
+          | Some true -> Abbs_future_combinators.return_ok state
+          | Some false | None ->
+              Logs.info (fun m -> m "%s : MERGE_CONFLICT" state.State.request_id);
+              publish_msg
+                state.State.request_id
+                client
+                (S.Api.User.to_string @@ Event.user state.State.event)
+                pull_request
+                Msg.Pull_request_not_mergeable
+              >>= fun () -> Abbs_future_combinators.return_err (`Noop state))
+      | Terrat_pull_request.State.Closed | Terrat_pull_request.State.Merged _ ->
+          Abbs_future_combinators.return_ok state
 
     let check_conflicting_work_manifests op ctx state =
       let module Vcs = Terrat_vcs_provider2 in

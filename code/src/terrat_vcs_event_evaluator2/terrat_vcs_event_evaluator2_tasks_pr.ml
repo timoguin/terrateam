@@ -419,7 +419,7 @@ struct
           fetch Keys.pull_request
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
-          | Terrat_pull_request.State.Open _ | Terrat_pull_request.State.Closed ->
+          | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
               Abbs_future_combinators.return_ok (S.Api.Pull_request.branch_ref pull_request)
           | Terrat_pull_request.State.Merged _ -> fetch Keys.working_dest_branch_ref)
 
@@ -429,7 +429,7 @@ struct
           fetch Keys.pull_request
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
-          | Terrat_pull_request.State.Open _ | Terrat_pull_request.State.Closed ->
+          | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
               Abbs_future_combinators.return_ok (S.Api.Pull_request.branch_name pull_request)
           | Terrat_pull_request.State.Merged _ ->
               Abbs_future_combinators.return_ok (S.Api.Pull_request.base_branch_name pull_request))
@@ -717,7 +717,7 @@ struct
               >>= fun create_commit_checks ->
               create_commit_checks' create_commit_checks branch_ref unfinished_checks
               >>= fun () -> Abbs_future_combinators.return_err `Noop
-          | Pr.State.(Open _ | Merged _) -> Abbs_future_combinators.return_ok ())
+          | Pr.State.(Open | Merged _) -> Abbs_future_combinators.return_ok ())
 
     let check_conflicting_plan_work_manifests =
       run ~name:"check_conflicting_plan_work_manifests" (fun s { Bs.Fetcher.fetch } ->
@@ -761,19 +761,32 @@ struct
           fetch Keys.pull_request
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
-          | Terrat_pull_request.State.(Open Open_status.Merge_conflict) -> (
-              fetch Keys.all_matches
+          | Terrat_pull_request.State.Open -> (
+              (* The VCS calculates the merge in the background, so the verdict is its own
+                 request.  The pull request does not carry it, thus the paths that do not ask
+                 for it do not wait for it.  No verdict counts as a conflict, which is what the
+                 derived state gave before. *)
+              fetch Keys.client
+              >>= fun client ->
+              S.Api.fetch_pull_request_mergeable
+                ~request_id:(Builder.log_id s)
+                (S.Api.Pull_request.repo pull_request)
+                (S.Api.Pull_request.id pull_request)
+                client
               >>= function
-              | [] -> Abbs_future_combinators.return_err `Noop
-              | _ :: _ ->
-                  Logs.info (fun m -> m "%s : MERGE_CONFLICT" (Builder.log_id s));
-                  fetch Keys.publish_comment
-                  >>= fun publish_comment ->
-                  publish_comment' publish_comment Msg.Pull_request_not_mergeable
-                  >>= fun () -> Abbs_future_combinators.return_err `Noop)
-          | Terrat_pull_request.State.Open _
-          | Terrat_pull_request.State.Closed
-          | Terrat_pull_request.State.Merged _ -> Abbs_future_combinators.return_ok ())
+              | Some true -> Abbs_future_combinators.return_ok ()
+              | Some false | None -> (
+                  fetch Keys.all_matches
+                  >>= function
+                  | [] -> Abbs_future_combinators.return_err `Noop
+                  | _ :: _ ->
+                      Logs.info (fun m -> m "%s : MERGE_CONFLICT" (Builder.log_id s));
+                      fetch Keys.publish_comment
+                      >>= fun publish_comment ->
+                      publish_comment' publish_comment Msg.Pull_request_not_mergeable
+                      >>= fun () -> Abbs_future_combinators.return_err `Noop))
+          | Terrat_pull_request.State.Closed | Terrat_pull_request.State.Merged _ ->
+              Abbs_future_combinators.return_ok ())
 
     let pull_request_reviews =
       run ~name:"pull_request_reviews" (fun s { Bs.Fetcher.fetch } ->
@@ -911,9 +924,7 @@ struct
                   publish_comment'
                     publish_comment
                     (Msg.Pull_request_not_appliable
-                       ( S.Api.Pull_request.set_checks ()
-                         @@ S.Api.Pull_request.set_diff () pull_request,
-                         apply_requirements ))
+                       (S.Api.Pull_request.set_diff () pull_request, apply_requirements))
                   >>= fun () -> Abbs_future_combinators.return_err `Noop
               | _ -> Abbs_future_combinators.return_ok apply_requirements)
           | None -> assert false)
@@ -1727,10 +1738,7 @@ struct
                     publish_comment'
                       publish_comment
                       (Msg.Automerge_failure
-                         ( Terrat_pull_request.set_diff ()
-                           @@ Terrat_pull_request.set_checks ()
-                           @@ pull_request,
-                           reason ))
+                         (Terrat_pull_request.set_diff () @@ pull_request, reason))
                 | Error (`Error | `Vcs_api_timeout_err _) as err -> Abb.Future.return err)
               else Abbs_future_combinators.return_ok ())
   end
