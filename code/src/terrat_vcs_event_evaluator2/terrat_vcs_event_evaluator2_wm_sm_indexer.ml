@@ -48,6 +48,7 @@ struct
 
   module Wmr = Terrat_api_components.Work_manifest_result
   module Bf = Terrat_api_components.Work_manifest_build_result_failure
+  module Ir = Terrat_api_components.Work_manifest_index_result
 
   let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
@@ -246,9 +247,58 @@ struct
     fetch Keys.create_commit_checks
     >>= fun create_commit_checks -> create_commit_checks' create_commit_checks branch_ref [ check ]
 
-  let result ~branch work_manifest result s { Bs.Fetcher.fetch } =
+  (* Both of the ways an index run can fail end here.  Post the failed check, say so, and stop
+     without marking the work manifest completed: no index was built, so whoever is waiting on one
+     must not be sent looking for it.  Same shape as the repo tree builder's failure. *)
+  let index_failed ~branch work_manifest s { Bs.Fetcher.fetch } =
+    let open Irm in
+    fetch Keys.account
+    >>= fun account ->
+    fetch Keys.repo
+    >>= fun repo ->
+    fetch Keys.branch_ref
+    >>= fun branch_ref ->
+    fetch Keys.branch_name
+    >>= fun branch_name ->
+    let module Status = Terrat_commit_check.Status in
+    let check =
+      S.Commit_check.make_str
+        ~config:(Builder.State.config s)
+        ~description:"Failed"
+        ~status:Status.Failed
+        ~work_manifest
+        ~repo
+        ~account
+        (status_name ~branch ~branch_name)
+    in
+    fetch Keys.create_commit_checks
+    >>= fun create_commit_checks ->
+    create_commit_checks' create_commit_checks branch_ref [ check ]
+    >>= fun () ->
+    fetch Keys.publish_comment
+    >>= fun publish_comment ->
+    publish_comment' publish_comment (Msg.Index_complete (false, []))
+    >>? fun () -> Error `Silent_failure
+
+  let result ~branch work_manifest result s ({ Bs.Fetcher.fetch } as fetcher) =
     let open Irm in
     match result with
+    | Wmr.Work_manifest_index_result { Ir.success = false; _ } ->
+        (* An indexer that did not run reports an index result, not a build failure: [work_index]
+           ([terrat_runner/runtime/github_actions/runtime.py]) answers every failure path with
+           [{"paths": {}, "version": 1, "success": false}] and only sets [success] once the indexer
+           has exited zero.  [work-manifest-index-result] leads the [work-manifest-result] [oneOf]
+           and that body satisfies it, so it never arrives as a
+           [Work_manifest_build_result_failure].  [success] is the only thing that separates the
+           two.  Without reading it an index that was never built is stored as an empty one, the
+           work manifest is marked completed, and a green check tells the user the index is ready
+           -- while every dirspace that depends on a module has quietly lost its dependency.
+
+           A parse failure is not this case.  The indexer exits zero and records the failure
+           against the path it read, so [success] stays true and the run is not blocked. *)
+        Logs.err (fun m ->
+            m "%s : INDEX_FAILED : the indexer reported success=false" (Builder.log_id s));
+        index_failed ~branch work_manifest s fetcher
     | Wmr.Work_manifest_index_result index ->
         fetch Keys.reruns
         >>= fun reruns ->
@@ -299,36 +349,7 @@ struct
         (* The indexer legitimately reports a build failure, so handle it the
            way the other builders do rather than treating it as impossible. *)
         Logs.err (fun m -> m "%s : INDEX_FAILED : %s" (Builder.log_id s) msg);
-        fetch Keys.account
-        >>= fun account ->
-        fetch Keys.repo
-        >>= fun repo ->
-        fetch Keys.branch_ref
-        >>= fun branch_ref ->
-        fetch Keys.branch_name
-        >>= fun branch_name ->
-        let module Status = Terrat_commit_check.Status in
-        let check =
-          S.Commit_check.make_str
-            ~config:(Builder.State.config s)
-            ~description:"Failed"
-            ~status:Status.Failed
-            ~work_manifest
-            ~repo
-            ~account
-            (status_name ~branch ~branch_name)
-        in
-        fetch Keys.create_commit_checks
-        >>= fun create_commit_checks ->
-        create_commit_checks' create_commit_checks branch_ref [ check ]
-        >>= fun () ->
-        fetch Keys.publish_comment
-        >>= fun publish_comment ->
-        publish_comment' publish_comment (Msg.Index_complete (false, []))
-        >>? fun () ->
-        (* No index was built, so stop rather than mark the work manifest
-           completed. *)
-        Error `Silent_failure
+        index_failed ~branch work_manifest s fetcher
     | Wmr.Work_manifest_tf_operation_result _ -> assert false
     | Wmr.Work_manifest_tf_operation_result2 _ -> assert false
     | Wmr.Work_manifest_build_config_result _ -> assert false
