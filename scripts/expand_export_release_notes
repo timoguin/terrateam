@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euf -o pipefail
+
+# Expand the monorepo export entries of a GitHub release body (stdin -> stdout).
+#
+# GitHub builds the "## What's Changed" list from the titles of the PRs merged since the
+# previous release. Every one of those is a copybara export PR, and they all share the same
+# interchangeable title ("monorepo->OSS export <timestamp>"), which tells a reader nothing
+# about what shipped. Each export PR's body instead carries the titles of the monorepo PRs it
+# publishes, in an `exported-changes` block written by the monorepo's
+# .github/workflows/copybara.yml. This replaces every such entry with that block's changes,
+# and passes every other line through untouched -- other headings, entries for PRs opened
+# directly on this repo, and the Full Changelog footer.
+#
+# Environment variables:
+#   GITHUB_TOKEN - GitHub token for authentication
+
+: "${GITHUB_TOKEN:?GITHUB_TOKEN is required}"
+
+# Only entries under "## What's Changed" are expanded: the "## New Contributors" list links
+# PRs the same way, and its entries are about people, not changes.
+in_whats_changed=false
+
+# `|| [ -n "${line}" ]` so a final line with no trailing newline is still processed.
+while IFS= read -r line || [ -n "${line}" ]; do
+  case "${line}" in
+    "## What's Changed")
+      in_whats_changed=true
+      printf '%s\n' "${line}"
+      continue
+      ;;
+    '## '*)
+      in_whats_changed=false
+      printf '%s\n' "${line}"
+      continue
+      ;;
+  esac
+
+  pr_url=""
+  if [ "${in_whats_changed}" = true ]; then
+    pr_url=$(grep -oE 'https://[^[:space:]]+/pull/[0-9]+$' <<< "${line}" || true)
+  fi
+
+  if [ -z "${pr_url}" ]; then
+    printf '%s\n' "${line}"
+    continue
+  fi
+
+  # REST rather than `gh pr view`: it is reachable with the release job's GITHUB_TOKEN, which
+  # is scoped to `contents`. </dev/null so gh cannot consume the body this loop is reading.
+  pr_api=$(sed -E 's#https://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+)$#repos/\1/\2/pulls/\3#' <<< "${pr_url}")
+  if ! pr_body=$(gh api "${pr_api}" --jq '.body // ""' </dev/null 2>/dev/null); then
+    # Loud, not silent: an unreadable PR degrades the notes back to the generic export title.
+    echo "::warning title=Release notes::Could not read ${pr_url}; keeping its raw title" >&2
+    pr_body=""
+  fi
+  # Keep the markers in sync with .github/workflows/copybara.yml, which writes them.
+  exported=$(awk '/<!-- exported-changes:begin -->/ { inside = 1; next }
+                  /<!-- exported-changes:end -->/   { inside = 0 }
+                  inside' <<< "${pr_body}" \
+    | sed -E -e '/^[[:space:]]*$/d' -e 's/^-[[:space:]]*/* /' || true)
+
+  # No block (a PR opened directly on this repo, or an export from before the block existed):
+  # the entry's own title is the best available description, so keep it.
+  if [ -n "${exported}" ]; then
+    printf '%s\n' "${exported}"
+  else
+    printf '%s\n' "${line}"
+  fi
+done

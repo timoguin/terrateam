@@ -28,9 +28,33 @@ HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${
 if [[ "$HTTP_STATUS" -eq 404 ]]; then
   # Release not found, so create a new release
   echo "Creating new GitHub release..."
+
+  # GitHub exposes an endpoint to get the notes that --generate-notes would generate. We use that
+  # to get the notes, then we amend them, and then we create the release, passing the edited notes back.
+
+  # The notes GitHub itself would generate for this range. This endpoint creates nothing; it
+  # only returns the text.
+  if ! GENERATED_NOTES="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+    -f tag_name="${VERSION_TAG}" \
+    -f previous_tag_name="${PREVIOUS_TAG}" \
+    --jq '.body')"; then
+    echo "Error: Failed to generate release notes" >&2
+    exit 1
+  fi
+
+  # Amend the notes: every monorepo export entry becomes the changes it actually publishes
+  NOTES_FILE=$(mktemp)
+  trap 'rm -f "${NOTES_FILE}"' EXIT
+
+  if ! "$(git rev-parse --show-toplevel)/scripts/expand_export_release_notes" \
+    <<< "${GENERATED_NOTES}" > "${NOTES_FILE}"; then
+    echo "Error: Failed to expand the monorepo export entries in the release notes" >&2
+    exit 1
+  fi
+
   if ! gh release create "${VERSION_TAG}" \
     --title "Release ${VERSION_TAG}" \
-    --generate-notes \
+    --notes-file "${NOTES_FILE}" \
     --repo "${GITHUB_REPOSITORY}"; then
     echo "Error: Failed to create release" >&2
     exit 1
