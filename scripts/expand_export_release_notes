@@ -9,8 +9,8 @@ set -euf -o pipefail
 # about what shipped. Each export PR's body instead carries the titles of the monorepo PRs it
 # publishes, in an `exported-changes` block written by the monorepo's
 # .github/workflows/copybara.yml. This replaces every such entry with that block's changes,
-# and passes every other line through untouched -- other headings, entries for PRs opened
-# directly on this repo, and the Full Changelog footer.
+# each still pointing at the export PR it came from. Every other line passes through untouched:
+# other headings, entries for PRs opened directly on this repo, and the Full Changelog footer.
 #
 # Environment variables:
 #   GITHUB_TOKEN - GitHub token for authentication
@@ -55,10 +55,12 @@ while IFS= read -r line || [ -n "${line}" ]; do
     pr_body=""
   fi
   # Keep the markers in sync with .github/workflows/copybara.yml, which writes them.
+  # Each change keeps an `in <pr url>` tail -- the same shape GitHub gives its own entries --
+  # so the export PR behind a one-line summary stays one click away.
   exported=$(awk '/<!-- exported-changes:begin -->/ { inside = 1; next }
                   /<!-- exported-changes:end -->/   { inside = 0 }
                   inside' <<< "${pr_body}" \
-    | sed -E -e '/^[[:space:]]*$/d' -e 's/^-[[:space:]]*/* /' || true)
+    | sed -E -e '/^[[:space:]]*$/d' -e 's/^-[[:space:]]*/* /' -e "s|\$| in ${pr_url}|" || true)
 
   # No block (a PR opened directly on this repo, or an export from before the block existed):
   # the entry's own title is the best available description, so keep it.
