@@ -2,42 +2,16 @@
 set -euf -o pipefail
 
 if [ "${TERRATEAM_ENVIRONMENT}" == "production" ]; then
-  # 1. The "What's Changed" entries of the release notes, one per line. Each reads
-  #    "* <pr title> by <author> in <pr url>".
-  CHANGE_ENTRIES=$(gh release view --repo "${GITHUB_REPOSITORY}" --json body | jq -r '.body' \
+  # The "What's Changed" entries of the release notes, one per line, turned into Slack
+  # bullets. scripts/create_release has already expanded the monorepo export entries into the
+  # changes they publish, so an entry reads as a real change; an entry for a PR opened
+  # directly on this repo still reads "* <title> by <author> in <pr url>", and its tail is
+  # peeled off here.
+  RELEASE_NOTES=$(gh release view --repo "${GITHUB_REPOSITORY}" --json body | jq -r '.body' \
     | awk '/## What'\''s Changed/,/^$/' \
-    | sed -E -e '/^## What'\''s Changed/d' -e '/^[[:space:]]*$/d')
-
-  # 2. Resolve each entry to the change(s) to announce for it. Normally that is just its PR
-  #    title. The exception is the monorepo export PRs: they all share one interchangeable title
-  #    ("monorepo->OSS export <timestamp>"), which says nothing about what shipped, so their body
-  #    carries an `exported-changes` block instead (the titles of the monorepo PRs that export
-  #    published), written by .github/workflows/copybara.yml. Default to using a PR's title if the block
-  #    is missing.
-  CHANGES=""
-  while IFS= read -r entry; do
-    [ -n "${entry}" ] || continue
-    pr_url=$(grep -oE 'https://[^[:space:]]+/pull/[0-9]+$' <<< "${entry}" || true)
-    exported=""
-    if [ -n "${pr_url}" ]; then
-      exported=$(gh pr view "${pr_url}" --json body --jq '.body' 2>/dev/null \
-        | awk '/<!-- exported-changes:begin -->/ { inside = 1; next }
-               /<!-- exported-changes:end -->/   { inside = 0 }
-               inside' \
-        | sed -E -e 's/^-[[:space:]]*//' -e '/^[[:space:]]*$/d' || true)
-    fi
-    if [ -z "${exported}" ]; then
-      # No block, so fall back to the entry's own PR title: peel off the "by <author> in <pr url>"
-      # tail and the leading "* " markdown bullet, leaving "* Fix the thing by @you in <url>"
-      # as "Fix the thing".
-      exported=$(sed -E -e 's/ by [^[:space:]]+ in [^[:space:]]+$//' -e 's/^\*[[:space:]]*//' \
-                 <<< "${entry}")
-    fi
-    if [ -z "${CHANGES}" ]; then CHANGES="${exported}"; else CHANGES="${CHANGES}"$'\n'"${exported}"; fi
-  done <<< "${CHANGE_ENTRIES}"
-
-  # 3. Bullet them for Slack.
-  RELEASE_NOTES=$(sed -E -e '/^[[:space:]]*$/d' -e 's/^/\• /' <<< "${CHANGES}")
+    | sed -E -e '/^## What'\''s Changed/d' -e '/^[[:space:]]*$/d' \
+             -e 's/ by [^[:space:]]+ in [^[:space:]]+$//' \
+             -e 's/^\*[[:space:]]*/\• /')
 
   PAYLOAD=$(jq -n --arg pretext "A new release has been created for ${GITHUB_REPOSITORY}!" \
                 --arg title "Release ${VERSION_TAG}" \
