@@ -18,7 +18,38 @@ on:
           - staging
 
 jobs:
+  # Gate for the whole pipeline. Every push to main cuts a release, and a release that carries
+  # nothing user-facing is just noise in the feed people subscribe to. When every PR since the
+  # last release is labelled `no-release`, this job stops here.
+  release-gate:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      release: ${{ steps.release-gate.outputs.release }}
+
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags: the gate walks main back to the previous release tag.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide whether to release
+        id: release-gate
+        run: |
+          ./scripts/release_gate
+
   set-version-tag:
+    needs: release-gate
+    if: needs.release-gate.outputs.release == 'true'
     runs-on: ubuntu-22.04
     environment: ${{ github.event.inputs.environment || 'production' }}
     permissions:
