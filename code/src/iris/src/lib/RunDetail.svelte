@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { WorkManifest } from './types';
-  import type { TerraformJsonPlan } from './types/terraform';
+  import type { OutputItem } from './types/stepOutput';
   // Auth handled by PageLayout
   import { api } from './api';
   import { selectedInstallation, installations, currentVCSProvider, serverConfig } from './stores';
@@ -10,7 +10,7 @@
   import LoadingSpinner from './components/ui/LoadingSpinner.svelte';
   import ErrorMessage from './components/ui/ErrorMessage.svelte';
   import Card from './components/ui/Card.svelte';
-  import SafeOutput from './components/ui/SafeOutput.svelte';
+  import StepOutput from './components/ui/StepOutput.svelte';
   import { getWebBaseUrl } from './server-config';
 
   export let params: { id: string; installationId?: string } = { id: '' };
@@ -55,46 +55,6 @@
   let activeOutputTab: 'all' | 'raw' | 'cost' | 'failed' = 'all';
   const web_base_url = getWebBaseUrl($currentVCSProvider, $serverConfig);
 
-  interface OutputItem {
-    payload?: {
-      text?: string;
-      plan?: string;
-      plan_text?: string;
-      diff?: TerraformJsonPlan | string; // JSON plan data (object or string)
-      has_changes?: boolean;
-      ignore_errors?: boolean;
-      visible_on?: string;
-      summary?: {
-        total_monthly_cost?: number;
-        diff_monthly_cost?: number;
-        prev_monthly_cost?: number;
-      };
-      currency?: string;
-      dirspaces?: Array<{
-        dir: string;
-        workspace: string;
-        total_monthly_cost: number;
-        diff_monthly_cost: number;
-        prev_monthly_cost: number;
-      }>;
-      // Lite mode properties
-      _isLiteMode?: boolean;
-      _originalStep?: string;
-      _wasLoadedOnDemand?: boolean;
-      _loadTimestamp?: number;
-      _loadError?: boolean;
-    };
-    scope?: {
-      dir?: string;
-      workspace?: string;
-      type?: string;
-    };
-    step?: string;
-    state?: string;
-    ignore_errors?: boolean;
-    idx?: number;
-  }
-  
   // Auth check is handled by PageLayout
   
   // Auto-select installation if provided in URL
@@ -166,19 +126,6 @@
 
       const allStepsResponse = { outputs: allStepOutputs };
 
-      interface StepOutput {
-        step?: string;
-        state?: string;
-        payload?: {
-          visible_on?: string;
-          ignore_errors?: boolean;
-          text?: string;
-          _isLiteMode?: boolean;
-          _originalStep?: string;
-        };
-        [key: string]: unknown;
-      }
-
       // Filter out steps that shouldn't be visible based on visible_on property
       const visibleSteps = (allStepsResponse.outputs || []).filter((output: unknown) => {
         const step = output as OutputItem;
@@ -192,7 +139,7 @@
       // Convert to lite mode format (remove payload to prevent memory issues)
       const liteOutputsResponse = {
         outputs: visibleSteps.map((output: unknown) => {
-          const out = output as StepOutput;
+          const out = output as OutputItem;
           return {
             ...out,
             payload: {
@@ -201,7 +148,11 @@
               _originalStep: out.step,
               // Keep essential payload properties for filtering
               visible_on: out.payload?.visible_on,
-              ignore_errors: out.payload?.ignore_errors
+              ignore_errors: out.payload?.ignore_errors,
+              // Small enough to keep: it is what tells two `run` steps apart in
+              // the header, and dropping it would hide the command until the
+              // output is loaded on demand.
+              cmd: out.payload?.cmd
             }
           };
         })
@@ -210,7 +161,7 @@
       // Store ALL outputs (including hidden ones) for Raw Steps tab
       const allLiteOutputsResponse = {
         outputs: (allStepsResponse.outputs || []).map((output: unknown) => {
-          const out = output as StepOutput;
+          const out = output as OutputItem;
           return {
             ...out,
             payload: {
@@ -219,7 +170,11 @@
               _originalStep: out.step,
               // Keep essential payload properties for filtering
               visible_on: out.payload?.visible_on,
-              ignore_errors: out.payload?.ignore_errors
+              ignore_errors: out.payload?.ignore_errors,
+              // Small enough to keep: it is what tells two `run` steps apart in
+              // the header, and dropping it would hide the command until the
+              // output is loaded on demand.
+              cmd: out.payload?.cmd
             }
           };
         })
@@ -319,8 +274,9 @@
           _loadTimestamp: Date.now()
         };
         
-        // If there's no text content, show a message
-        if (!updatedPayload.text) {
+        // If there's no content at all, show a message. A plan step may carry
+        // only the diff, which is still worth rendering.
+        if (!updatedPayload.text && !updatedPayload.plan) {
           updatedPayload.text = 'This step completed without producing any output.';
         }
         
@@ -420,22 +376,6 @@
       state: originalState,
       color: getStateColor(originalState)
     };
-  }
-
-  // Determine if a step output should be highlighted as a Terraform plan
-  function shouldHighlightAsPlan(output: OutputItem): boolean {
-    if (!enablePlanHighlighting) {
-      return false;
-    }
-
-    const step = output?.step || '';
-    const state = output?.state || '';
-
-    // Only highlight successful tf/plan steps
-    const isPlanStep = step === 'tf/plan';
-    const isSuccessful = state === 'success' || state === 'completed';
-
-    return isPlanStep && isSuccessful && !!output?.payload?.plan;
   }
 
   // Terraform summary extraction removed for memory safety
@@ -565,6 +505,10 @@
       case 'run':
         return '⚡';
       default:
+        // Non-Terraform engines use the same suffixes: custom/plan, pulumi/apply, ...
+        if (step.endsWith('/init')) return '🔧';
+        if (step.endsWith('/plan')) return '📋';
+        if (step.endsWith('/apply')) return '🚀';
         return '📄';
     }
   }
@@ -587,9 +531,27 @@
         return 'Environment Setup';
       case 'run':
         return 'Command Execution';
-      default:
+      default: {
+        // Non-Terraform engines use the same suffixes: custom/plan -> "Custom Plan"
+        const [engine, operation] = step.split('/');
+        if (operation && ['init', 'plan', 'apply', 'unsafe-apply'].includes(operation)) {
+          return `${capitalize(engine)} ${capitalize(operation)}`;
+        }
         return step.replace(/\//g, ' / ');
+      }
     }
+  }
+
+  function capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // The runner reports every run step as step "run", so several in one workflow
+  // are indistinguishable by label alone. The command is what tells them apart,
+  // and the pull request comment already shows it.
+  function getStepCmd(output: OutputItem): string {
+    const cmd = output?.payload?.cmd;
+    return Array.isArray(cmd) ? cmd.join(' ') : '';
   }
 
   // Check if a step should be considered as a real failure (accounting for ignore_errors)
@@ -1006,7 +968,7 @@
           class="h-4 w-4 text-[var(--sg-accent)] border-[var(--sg-border)] rounded focus:ring-[var(--sg-accent)] cursor-pointer"
         />
         <label for="enable-highlighting" class="cursor-pointer select-none text-[var(--sg-text-muted)]">
-          Enable plan syntax highlighting
+          Enable syntax highlighting
           <span class="text-xs text-[var(--sg-text-dim)] ml-1">(Beta)</span>
         </label>
       </div>
@@ -1236,9 +1198,12 @@
                           {@const displayState = getDisplayState(typedOutput)}
                           <div class="bg-[var(--sg-bg-1)] border border-[var(--sg-border)] rounded p-3">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                                 <span class="flex-shrink-0">{getStepIcon(typedOutput?.step || 'unknown')}</span>
                                 <span class="font-medium text-[var(--sg-text)]">{getStepLabel(typedOutput?.step || 'Unknown Step')}</span>
+                                {#if getStepCmd(typedOutput)}
+                                  <code class="text-xs text-[var(--sg-text-dim)] font-mono bg-[var(--sg-bg-2)] px-1.5 py-0.5 rounded max-w-full truncate" title={getStepCmd(typedOutput)}>{getStepCmd(typedOutput)}</code>
+                                {/if}
                                 {#if typedOutput?.state}
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {displayState.color}">
                                     {displayState.state}
@@ -1247,68 +1212,18 @@
                                 <span class="text-xs text-[var(--sg-text-dim)]">idx: {typedOutput?.idx}</span>
                               </div>
                             </div>
-                            {#if typedOutput?.payload?.text}
-                              <!-- Output not loaded - click to view -->
-                              {#if typedOutput.payload._isLiteMode}
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-text-dim)] mb-2">Output:</div>
-                                  <div class="bg-[var(--sg-bg-0)] border border-[var(--sg-border)] rounded-lg p-4">
-                                    <div class="flex flex-col gap-3">
-                                      <div class="flex items-center text-sm text-[var(--sg-text-dim)]">
-                                        <svg class="w-5 h-5 text-[var(--sg-text-dim)] mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        <span>Output content not loaded</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        on:click={() => loadFullOutput(typedOutput)}
-                                        class="inline-flex items-center justify-center px-4 py-2 border border-[var(--sg-accent)] text-sm font-medium rounded-md text-[var(--sg-accent)] bg-[var(--sg-accent-bg)] hover:bg-[var(--sg-accent-bg)] transition-colors"
-                                      >
-                                        <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View Output
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              {:else}
-                                <!-- Display actual step output content with safe loading -->
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-text-dim)] mb-2">
-                                    Output: {#if typedOutput.payload._wasLoadedOnDemand}
-                                      <span class="text-[var(--sg-success)] font-medium">(loaded on demand)</span>
-                                    {/if}
-                                  </div>
-                                  <SafeOutput
-                                    content={typedOutput.payload.text}
-                                    planDiff={typedOutput.payload.plan || ''}
-                                    title={`${getStepLabel(typedOutput?.step || 'Unknown Step')} - ${typedOutput?.scope?.dir || 'unknown'}:${typedOutput?.scope?.workspace || 'unknown'}`}
-                                    githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
-                                    orgName={run?.owner || ''}
-                                    repoName={run?.repo || ''}
-                                    prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
-                                    runType={run?.run_type || ''}
-                                    stepName={typedOutput?.step || ''}
-                                    isPlan={shouldHighlightAsPlan(typedOutput)}
-                                    on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
-                                  />
-                                </div>
-                              {/if}
-                            {:else if typedOutput?.step === 'auth/update-terrateam-github-token' || typedOutput?.step === 'auth/oidc'}
-                              <!-- Hide debug for auth steps - no meaningful output to show -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)] italic">
-                                Authentication step completed
-                              </div>
-                            {:else}
-                              <!-- Fallback to JSON for other steps if no payload.text found -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)]">
-                                No output content available for this step type
-                              </div>
-                            {/if}
+                            <StepOutput
+                              output={typedOutput}
+                              stepLabel={getStepLabel(typedOutput?.step || 'Unknown Step')}
+                              highlight={enablePlanHighlighting}
+                              githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
+                              orgName={run?.owner || ''}
+                              repoName={run?.repo || ''}
+                              prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
+                              runType={run?.run_type || ''}
+                              on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
+                              on:loadFull={(e) => loadFullOutput(e.detail)}
+                            />
                           </div>
                         {/each}
                       </div>
@@ -1376,9 +1291,12 @@
                           {@const typedOutput = output}
                           {@const displayState = getDisplayState(typedOutput)}
                           <div class="bg-[var(--sg-bg-1)] border border-[var(--sg-border)] rounded p-3">
-                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2 min-w-0">
                               <span class="flex-shrink-0">{getStepIcon(typedOutput?.step || 'unknown')}</span>
                               <span class="font-medium text-[var(--sg-text)]">{getStepLabel(typedOutput?.step || 'Unknown Step')}</span>
+                                {#if getStepCmd(typedOutput)}
+                                  <code class="text-xs text-[var(--sg-text-dim)] font-mono bg-[var(--sg-bg-2)] px-1.5 py-0.5 rounded max-w-full truncate" title={getStepCmd(typedOutput)}>{getStepCmd(typedOutput)}</code>
+                                {/if}
                               {#if typedOutput?.state}
                                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {displayState.color}">
                                   {displayState.state}
@@ -1392,68 +1310,19 @@
                               {/if}
                             </div>
                             
-                            {#if typedOutput?.payload?.text}
-                              <!-- Output not loaded - click to view -->
-                              {#if typedOutput.payload._isLiteMode}
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-text-dim)] mb-2">Output:</div>
-                                  <div class="bg-[var(--sg-bg-0)] border border-[var(--sg-border)] rounded-lg p-4">
-                                    <div class="flex flex-col gap-3">
-                                      <div class="flex items-center text-sm text-[var(--sg-text-dim)]">
-                                        <svg class="w-5 h-5 text-[var(--sg-text-dim)] mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        <span>Output content not loaded</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        on:click={() => loadFullOutput(typedOutput)}
-                                        class="inline-flex items-center justify-center px-4 py-2 border border-[var(--sg-accent)] text-sm font-medium rounded-md text-[var(--sg-accent)] bg-[var(--sg-accent-bg)] hover:bg-[var(--sg-accent-bg)] transition-colors"
-                                      >
-                                        <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View Output
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              {:else}
-                                <!-- Display actual step output content with safe loading -->
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-text-dim)] mb-2">
-                                    Output: {#if typedOutput.payload._wasLoadedOnDemand}
-                                      <span class="text-[var(--sg-success)] font-medium">(loaded on demand)</span>
-                                    {/if}
-                                  </div>
-                                  <SafeOutput
-                                    content={typedOutput.payload.text}
-                                    planDiff={typedOutput.payload.plan || ''}
-                                    title={`${getStepLabel(typedOutput?.step || 'Unknown Step')} - ${typedOutput?.scope?.dir || 'unknown'}:${typedOutput?.scope?.workspace || 'unknown'}`}
-                                    githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
-                                    orgName={run?.owner || ''}
-                                    repoName={run?.repo || ''}
-                                    prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
-                                    runType={run?.run_type || ''}
-                                    stepName={typedOutput?.step || ''}
-                                    isPlan={shouldHighlightAsPlan(typedOutput)}
-                                    on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
-                                  />
-                                </div>
-                              {/if}
-                            {:else if typedOutput?.step === 'auth/update-terrateam-github-token' || typedOutput?.step === 'auth/oidc'}
-                              <!-- Hide debug for auth steps - no meaningful output to show -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)] italic">
-                                Authentication step completed - {typedOutput?.payload?.visible_on ? `visible_on: ${typedOutput.payload.visible_on}` : 'no visibility setting'}
-                              </div>
-                            {:else}
-                              <!-- Fallback to JSON for other steps if no payload.text found -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)]">
-                                No output content available for this step type
-                              </div>
-                            {/if}
+                            <StepOutput
+                              output={typedOutput}
+                              stepLabel={getStepLabel(typedOutput?.step || 'Unknown Step')}
+                              highlight={enablePlanHighlighting}
+                              githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
+                              orgName={run?.owner || ''}
+                              repoName={run?.repo || ''}
+                              prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
+                              runType={run?.run_type || ''}
+                              debugVisibility={true}
+                              on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
+                              on:loadFull={(e) => loadFullOutput(e.detail)}
+                            />
                           </div>
                         {/each}
                       </div>
@@ -1505,9 +1374,12 @@
                           {@const typedOutput = output}
                           {@const displayState = getDisplayState(typedOutput)}
                           <div class="bg-[var(--sg-bg-1)] border border-[var(--sg-error)] rounded p-3">
-                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2 min-w-0">
                               <span class="flex-shrink-0">❌</span>
                               <span class="font-medium text-[var(--sg-error)]">{getStepLabel(typedOutput?.step || 'Unknown Step')}</span>
+                                {#if getStepCmd(typedOutput)}
+                                  <code class="text-xs text-[var(--sg-text-dim)] font-mono bg-[var(--sg-bg-2)] px-1.5 py-0.5 rounded max-w-full truncate" title={getStepCmd(typedOutput)}>{getStepCmd(typedOutput)}</code>
+                                {/if}
                               {#if typedOutput?.state}
                                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {displayState.color}">
                                   {displayState.state}
@@ -1515,68 +1387,19 @@
                               {/if}
                               <span class="text-xs text-[var(--sg-text-dim)]">idx: {typedOutput?.idx}</span>
                             </div>
-                            {#if typedOutput?.payload?.text}
-                              <!-- Output not loaded - click to view -->
-                              {#if typedOutput.payload._isLiteMode}
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-error)] mb-2">Error Output:</div>
-                                  <div class="bg-[var(--sg-error-bg)] border border-[var(--sg-error)] rounded-lg p-4">
-                                    <div class="flex flex-col gap-3">
-                                      <div class="flex items-center text-sm text-[var(--sg-error)]">
-                                        <svg class="w-5 h-5 text-[var(--sg-error)] mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        <span>Error output not loaded</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        on:click={() => loadFullOutput(typedOutput)}
-                                        class="inline-flex items-center justify-center px-4 py-2 border border-[var(--sg-error)] text-sm font-medium rounded-md text-[var(--sg-error)] bg-[var(--sg-error-bg)] hover:bg-[var(--sg-error-bg)] transition-colors"
-                                      >
-                                        <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View Error Output
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              {:else}
-                                <!-- Display actual step output content with safe loading -->
-                                <div class="mt-3">
-                                  <div class="text-xs text-[var(--sg-error)] mb-2">Error Output:
-                                    {#if typedOutput.payload._wasLoadedOnDemand}
-                                      <span class="ml-2 text-[var(--sg-success)] font-medium">(loaded on demand)</span>
-                                    {/if}
-                                  </div>
-                                  <SafeOutput
-                                    content={typedOutput.payload.text}
-                                    planDiff={typedOutput.payload.plan || ''}
-                                    title={`Failed: ${getStepLabel(typedOutput?.step || 'Unknown Step')} - ${typedOutput?.scope?.dir || 'unknown'}:${typedOutput?.scope?.workspace || 'unknown'}`}
-                                    githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
-                                    orgName={run?.owner || ''}
-                                    repoName={run?.repo || ''}
-                                    prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
-                                    runType={run?.run_type || ''}
-                                    stepName={typedOutput?.step || ''}
-                                    isPlan={shouldHighlightAsPlan(typedOutput)}
-                                    on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
-                                  />
-                                </div>
-                              {/if}
-                            {:else if typedOutput?.step === 'auth/update-terrateam-github-token' || typedOutput?.step === 'auth/oidc'}
-                              <!-- Hide debug for auth steps - no meaningful output to show -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)] italic">
-                                Authentication step failed
-                              </div>
-                            {:else}
-                              <!-- Fallback to JSON for other steps if no payload.text found -->
-                              <div class="mt-3 text-xs text-[var(--sg-text-dim)]">
-                                No output content available for this step type
-                              </div>
-                            {/if}
+                            <StepOutput
+                              output={typedOutput}
+                              stepLabel={getStepLabel(typedOutput?.step || 'Unknown Step')}
+                              highlight={enablePlanHighlighting}
+                              githubUrl={run?.owner && run?.repo && run?.run_id ? getGitHubActionsUrl(run.owner, run.repo, run.run_id) : ''}
+                              orgName={run?.owner || ''}
+                              repoName={run?.repo || ''}
+                              prNumber={typeof run?.kind === 'object' && run.kind?.pull_number ? run.kind.pull_number : ''}
+                              runType={run?.run_type || ''}
+                              variant="error"
+                              on:expand={(e) => openOutputModal(e.detail.content, e.detail.title)}
+                              on:loadFull={(e) => loadFullOutput(e.detail)}
+                            />
                           </div>
                         {/each}
                       </div>

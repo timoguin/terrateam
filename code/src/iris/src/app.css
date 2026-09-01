@@ -641,6 +641,93 @@ body {
   background-color: rgba(187, 128, 9, 0.15) !important;
 }
 
+/* Markdown step output (payload format "markdown" or "raw") */
+.output-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.output-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.output-markdown h1,
+.output-markdown h2,
+.output-markdown h3,
+.output-markdown h4 {
+  font-weight: 600;
+  margin: 1em 0 0.5em;
+  line-height: 1.3;
+}
+
+.output-markdown h1 { font-size: 1.4em; }
+.output-markdown h2 { font-size: 1.25em; }
+.output-markdown h3 { font-size: 1.1em; }
+
+.output-markdown p,
+.output-markdown blockquote,
+.output-markdown pre,
+.output-markdown table {
+  margin: 0.75em 0;
+}
+
+.output-markdown ul,
+.output-markdown ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+
+.output-markdown ul { list-style: disc; }
+.output-markdown ol { list-style: decimal; }
+.output-markdown li { margin: 0.25em 0; }
+
+.output-markdown a {
+  color: var(--sg-accent);
+  text-decoration: underline;
+}
+
+.output-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--sg-bg-2);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+.output-markdown pre {
+  background: var(--sg-bg-2);
+  border-radius: 4px;
+  padding: 0.75em;
+  overflow-x: auto;
+}
+
+.output-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.output-markdown blockquote {
+  border-left: 3px solid var(--sg-border);
+  padding-left: 0.75em;
+  color: var(--sg-text-muted);
+}
+
+.output-markdown table {
+  border-collapse: collapse;
+}
+
+.output-markdown th,
+.output-markdown td {
+  border: 1px solid var(--sg-border);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.output-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--sg-border);
+  margin: 1em 0;
+}
+
 .modal-open {
   overflow: hidden;
 }

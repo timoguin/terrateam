@@ -11,6 +11,7 @@ export { default as ErrorMessage } from './ui/ErrorMessage.svelte';
 export { default as Icon } from './ui/Icon.svelte';
 export { default as LoadingSpinner } from './ui/LoadingSpinner.svelte';
 export { default as SafeOutput } from './ui/SafeOutput.svelte';
+export { default as StepOutput } from './ui/StepOutput.svelte';
 export { default as MiniSparkline } from './ui/MiniSparkline.svelte';
 
 // Layout Components
