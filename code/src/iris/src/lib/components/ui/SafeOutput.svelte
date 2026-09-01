@@ -1,16 +1,21 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import hljs from 'highlight.js/lib/core';
-  import diffLang from 'highlight.js/lib/languages/diff';
+  // The `common` bundle registers the ~35 most used languages (diff, yaml, json,
+  // bash, markdown, ...) so an arbitrary `format: {lang: x}` from a workflow can
+  // be resolved without importing every grammar by hand.
+  import hljs from 'highlight.js/lib/common';
   import 'highlight.js/styles/github-dark.css';
+  import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
   import { sentryService } from '../../sentry';
+  import { TEXT_FORMAT, type OutputFormat } from '../../utils/outputFormat';
 
   export let content: string = '';
   export let title: string = '';
   export const maxPreviewSize: number = 5000000; // 5MB
   export let githubUrl: string = '';
-  export let isPlan: boolean = false; // Whether to apply plan highlighting
-  export let planDiff: string = ''; // Pre-formatted plan diff from payload.plan
+  export let format: OutputFormat = TEXT_FORMAT; // How to render the content
+  export let highlight: boolean = false; // Whether to apply syntax highlighting
 
   // Optional props for enhanced filename generation
   export let orgName: string = '';
@@ -21,11 +26,6 @@
 
   const dispatch = createEventDispatcher();
 
-  // Register diff language for highlight.js immediately
-  if (!hljs.getLanguage('diff')) {
-    hljs.registerLanguage('diff', diffLang);
-  }
-  
   // Size thresholds (in characters) - Updated for modern browser capabilities
   const SMALL_SIZE = 1000000;   // 1MB - show inline, typical for most Terraform plans
   const MEDIUM_SIZE = 5000000;  // 5MB - show with warning, still very manageable
@@ -48,54 +48,65 @@
   let showContent = false; // Will be set to true for small content below
   let showFullContent = false;
   let previewContent = '';
-  let highlightedContent = '';
-  let highlightedPreview = '';
-  
-  // Generate preview and apply syntax highlighting if needed
+
+  // Generate preview
   $: {
     if (content) {
       const lines = content.split('\n');
-      let preview: string;
 
       if (lines.length > 5000) {
-        preview = lines.slice(0, 5000).join('\n') + '\n\n... (truncated, showing first 5000 lines)';
+        previewContent = lines.slice(0, 5000).join('\n') + '\n\n... (truncated, showing first 5000 lines)';
       } else if (contentSize > 1000000) {
-        preview = content.substring(0, 1000000) + '\n\n... (truncated)';
+        previewContent = content.substring(0, 1000000) + '\n\n... (truncated)';
       } else {
-        preview = content;
-      }
-
-      previewContent = preview;
-
-      // Apply syntax highlighting if this is a plan output
-      if (isPlan && planDiff) {
-        try {
-          highlightedContent = hljs.highlight(planDiff, { language: 'diff' }).value;
-
-          const previewForHighlight = planDiff.split('\n').length > 5000
-            ? planDiff.split('\n').slice(0, 5000).join('\n')
-            : planDiff;
-          highlightedPreview = hljs.highlight(previewForHighlight, { language: 'diff' }).value;
-        } catch (error) {
-          console.error('Error highlighting plan output:', error);
-
-          // Capture to Sentry with context
-          sentryService.captureError(error as Error, {
-            feature: 'plan-highlighting',
-            component: 'SafeOutput',
-            contentSize: content.length,
-            stepName: stepName || 'unknown',
-            isPlan: isPlan
-          });
-
-          // Fallback to plain text if highlighting fails
-          highlightedContent = '';
-          highlightedPreview = '';
-        }
+        previewContent = content;
       }
     }
   }
-  
+
+  // Render the content to HTML when the format calls for it. An empty string
+  // means "render as plain text", which is also the fallback when rendering
+  // fails or the requested language is not one highlight.js knows about.
+  function renderHtml(text: string, fmt: OutputFormat, syntaxHighlight: boolean): string {
+    if (!text) {
+      return '';
+    }
+
+    try {
+      if (fmt.kind === 'markdown') {
+        return DOMPurify.sanitize(marked.parse(text, { async: false }));
+      }
+
+      if (fmt.kind === 'code' && syntaxHighlight && hljs.getLanguage(fmt.lang)) {
+        return hljs.highlight(text, { language: fmt.lang }).value;
+      }
+    } catch (error) {
+      console.error('Error rendering output:', error);
+
+      // Capture to Sentry with context
+      sentryService.captureError(error as Error, {
+        feature: 'output-rendering',
+        component: 'SafeOutput',
+        contentSize: text.length,
+        stepName: stepName || 'unknown',
+        format: fmt.kind
+      });
+    }
+
+    return '';
+  }
+
+  // Only render what is on screen: the full content is rendered lazily, once the
+  // user has asked for it.
+  $: renderedPreview = renderHtml(previewContent, format, highlight);
+  $: renderedContent = showFullContent ? renderHtml(content, format, highlight) : '';
+  $: displayHtml = showFullContent ? renderedContent : renderedPreview;
+  $: displayText = showFullContent ? content : previewContent;
+
+  // `plan-hljs` carries the addition/deletion/change colors; everything else
+  // uses the generic token palette. Both are defined in app.css and theme-aware.
+  $: hljsClass = format.kind === 'code' && format.lang === 'diff' ? 'plan-hljs' : 'config-hljs';
+
   function handleShowContent() {
     showContent = true;
   }
@@ -261,8 +272,6 @@
       <span class="font-medium">
         {#if isMedium || isLarge || isHuge}
           Size: {formatSize(contentSize)}
-        {:else}
-          Output:
         {/if}
       </span>
       <div class="flex items-center gap-2 flex-wrap">
@@ -295,16 +304,17 @@
       </div>
     </div>
     
-    {#if isPlan && highlightedContent}
-      <!-- Syntax-highlighted plan output -->
-      <pre class="plan-hljs text-xs bg-[var(--sg-bg-code)] p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono {showFullContent ? '' : 'max-h-96'}">
-        <code>{@html showFullContent ? highlightedContent : highlightedPreview}</code>
-      </pre>
+    {#if format.kind === 'markdown' && displayHtml}
+      <!-- Markdown output, sanitized -->
+      <div class="output-markdown text-sm bg-[var(--sg-bg-code)] text-[var(--sg-text-code)] p-3 rounded overflow-x-auto {showFullContent ? '' : 'max-h-96'}">
+        {@html displayHtml}
+      </div>
+    {:else if displayHtml}
+      <!-- Syntax-highlighted output -->
+      <pre class="{hljsClass} text-xs bg-[var(--sg-bg-code)] p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono {showFullContent ? '' : 'max-h-96'}"><code>{@html displayHtml}</code></pre>
     {:else}
-      <!-- Plain text output (non-plan or highlighting failed) -->
-      <pre class="text-xs bg-[var(--sg-bg-code)] text-[var(--sg-text-code)] p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono {showFullContent ? '' : 'max-h-96'}">
-        {showFullContent ? content : previewContent}
-      </pre>
+      <!-- Plain text output (no format, or rendering failed) -->
+      <pre class="text-xs bg-[var(--sg-bg-code)] text-[var(--sg-text-code)] p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono {showFullContent ? '' : 'max-h-96'}">{displayText}</pre>
     {/if}
     
     {#if !showFullContent && (isMedium || isLarge)}
