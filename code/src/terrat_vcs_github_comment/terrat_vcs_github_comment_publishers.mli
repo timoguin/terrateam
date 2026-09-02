@@ -8,6 +8,16 @@ module Visible_on = Terrat_base_repo_config_v1.Workflow_step.Visible_on
     Exposed for testing. *)
 val tail_of : max_bytes:int -> string -> string
 
+(** [steps_kv ~overall_success ~compact steps] is the template input for one section of a comment:
+    the step outputs that [visible_on] keeps for a run whose result is [overall_success], each as
+    the key/value assoc the template reads. [compact] trims them for an oversized comment. Exposed
+    for testing. *)
+val steps_kv :
+  overall_success:bool ->
+  compact:bool ->
+  Terrat_api_components.Workflow_step_output.t list ->
+  Yojson.Safe.t list
+
 val dirspace_compare :
   Terrat_dirspace.t * Terrat_api_components.Workflow_step_output.t list ->
   Terrat_dirspace.t * Terrat_api_components.Workflow_step_output.t list ->

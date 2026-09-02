@@ -34,6 +34,10 @@ module Workflow_step : sig
     [@@deriving show, yojson, eq]
 
     val to_string : t -> string
+
+    (** [of_string s] is the value [s] names, or [None] when it names nothing. Accepts [error] as a
+        spelling of [failure]: that is the word the runner writes into a step payload. *)
+    val of_string : string -> t option
   end
 
   module Retry : sig
@@ -154,6 +158,7 @@ module Workflow_step : sig
     type t = {
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
+      visible_on : Visible_on.t; [@default Visible_on.Failure]
     }
     [@@deriving make, show, yojson, eq]
   end
@@ -170,6 +175,7 @@ module Workflow_step : sig
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
       mode : Mode.t; [@default Mode.Strict]
+      visible_on : Visible_on.t; [@default Visible_on.Always]
     }
     [@@deriving make, show, yojson, eq]
   end
@@ -179,6 +185,7 @@ module Workflow_step : sig
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
       retry : Retry.t option;
+      visible_on : Visible_on.t; [@default Visible_on.Always]
     }
     [@@deriving make, show, yojson, eq]
   end

@@ -1866,6 +1866,9 @@
         "type": {
           "const": "apply",
           "type": "string"
+        },
+        "visible_on": {
+          "$ref": "#/definitions/visible-on"
         }
       },
       "required": [
@@ -1972,6 +1975,9 @@
         "type": {
           "const": "init",
           "type": "string"
+        },
+        "visible_on": {
+          "$ref": "#/definitions/visible-on"
         }
       },
       "required": [
@@ -2094,6 +2100,9 @@
         "type": {
           "const": "plan",
           "type": "string"
+        },
+        "visible_on": {
+          "$ref": "#/definitions/visible-on"
         }
       },
       "required": [

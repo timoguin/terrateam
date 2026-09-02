@@ -358,6 +358,108 @@ let test_workflow_omitted_steps_use_defaults =
         apply;
       ())
 
+let step_visible_on type_ visible_on =
+  `Assoc [ ("type", `String type_); ("visible_on", `String visible_on) ]
+
+let assert_visible_on expected actual =
+  Oth.Assert.eq
+    ~eq:V1.Workflow_step.Visible_on.equal
+    ~pp:V1.Workflow_step.Visible_on.pp
+    expected
+    actual
+
+let assert_v1_visible_on expected actual =
+  Oth.Assert.eq
+    ~eq:(CCOption.equal Repo.Visible_on.equal)
+    ~pp:(CCOption.pp Repo.Visible_on.pp)
+    (Some expected)
+    actual
+
+(* The runner used to write these three values as constants, so the defaults have to keep saying
+   what the runner said: a plan and an apply are always shown, an init only when the run fails. *)
+let test_workflow_visible_on_defaults =
+  Oth.test ~name:"workflows: visible_on defaults on init, plan and apply" (fun _ ->
+      let module Op = V1.Workflows.Entry.Op in
+      let json =
+        workflows_json
+          [ workflow_entry ~plan:[ step "init"; step "plan" ] ~apply:[ step "apply" ] "" ]
+      in
+      let cfg = Oth.Assert.ok_pp ~pp:V1.pp_of_version_1_json_err (V1.of_version_1_json json) in
+      let { V1.Workflows.Entry.apply; plan; _ } = Oth.Assert.List.length_one (V1.workflows cfg) in
+      (match plan with
+      | [ Op.Init init; Op.Plan plan ] ->
+          assert_visible_on
+            V1.Workflow_step.Visible_on.Failure
+            init.V1.Workflow_step.Init.visible_on;
+          assert_visible_on V1.Workflow_step.Visible_on.Always plan.V1.Workflow_step.Plan.visible_on
+      | _ -> Oth.Assert.false_ "expected an init and a plan step");
+      (match apply with
+      | [ Op.Apply apply ] ->
+          assert_visible_on
+            V1.Workflow_step.Visible_on.Always
+            apply.V1.Workflow_step.Apply.visible_on
+      | _ -> Oth.Assert.false_ "expected an apply step");
+      ())
+
+let test_workflow_visible_on_is_read =
+  Oth.test ~name:"workflows: visible_on is read on init, plan and apply" (fun _ ->
+      let module Op = V1.Workflows.Entry.Op in
+      let json =
+        workflows_json
+          [
+            workflow_entry
+              ~plan:[ step_visible_on "init" "always"; step_visible_on "plan" "failure" ]
+              ~apply:[ step_visible_on "apply" "success" ]
+              "";
+          ]
+      in
+      let cfg = Oth.Assert.ok_pp ~pp:V1.pp_of_version_1_json_err (V1.of_version_1_json json) in
+      let { V1.Workflows.Entry.apply; plan; _ } = Oth.Assert.List.length_one (V1.workflows cfg) in
+      (match plan with
+      | [ Op.Init init; Op.Plan plan ] ->
+          assert_visible_on V1.Workflow_step.Visible_on.Always init.V1.Workflow_step.Init.visible_on;
+          assert_visible_on
+            V1.Workflow_step.Visible_on.Failure
+            plan.V1.Workflow_step.Plan.visible_on
+      | _ -> Oth.Assert.false_ "expected an init and a plan step");
+      (match apply with
+      | [ Op.Apply apply ] ->
+          assert_visible_on
+            V1.Workflow_step.Visible_on.Success
+            apply.V1.Workflow_step.Apply.visible_on
+      | _ -> Oth.Assert.false_ "expected an apply step");
+      ())
+
+(* The runner reads its step configuration out of the Version_1 config the server sends back, so a
+   value that does not survive to_version_1 never reaches the step that has to obey it. *)
+let test_workflow_visible_on_to_version_1_round_trip =
+  Oth.test ~name:"workflows: visible_on round-trips through Version_1" (fun _ ->
+      let module Items = Terrat_repo_config_workflow_op_list.Items in
+      let json =
+        workflows_json
+          [
+            workflow_entry
+              ~plan:[ step_visible_on "init" "always"; step_visible_on "plan" "failure" ]
+              ~apply:[ step_visible_on "apply" "success" ]
+              "";
+          ]
+      in
+      let cfg = Oth.Assert.ok_pp ~pp:V1.pp_of_version_1_json_err (V1.of_version_1_json json) in
+      let v1 = V1.to_version_1 cfg in
+      let entry =
+        Oth.Assert.List.length_one (CCOption.get_or ~default:[] v1.Repo.Version_1.workflows)
+      in
+      (match entry.Repo.Workflow_entry.plan with
+      | Some [ Items.Workflow_op_init init; Items.Workflow_op_plan plan ] ->
+          assert_v1_visible_on `Always init.Terrat_repo_config_workflow_op_init.visible_on;
+          assert_v1_visible_on `Failure plan.Terrat_repo_config_workflow_op_plan.visible_on
+      | Some _ | None -> Oth.Assert.false_ "expected an init and a plan step");
+      (match entry.Repo.Workflow_entry.apply with
+      | Some [ Items.Workflow_op_apply apply ] ->
+          assert_v1_visible_on `Success apply.Terrat_repo_config_workflow_op_apply.visible_on
+      | Some _ | None -> Oth.Assert.false_ "expected an apply step");
+      ())
+
 let test_workflow_extra_steps_allowed =
   Oth.test ~name:"workflows: extra steps around plan and apply are allowed" (fun _ ->
       let json =
@@ -526,6 +628,9 @@ let test =
       test_workflow_apply_requires_apply_step;
       test_workflow_empty_plan_rejected;
       test_workflow_omitted_steps_use_defaults;
+      test_workflow_visible_on_defaults;
+      test_workflow_visible_on_is_read;
+      test_workflow_visible_on_to_version_1_round_trip;
       test_workflow_extra_steps_allowed;
       test_workflow_missing_step_reports_index;
       test_parse_rejects_bad_glob_dir_key;

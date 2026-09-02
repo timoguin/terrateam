@@ -45,5 +45,6 @@ type t = {
   extra_args : Extra_args.t option; [@default None]
   mode : Mode.t; [@default `Strict]
   type_ : Type.t; [@key "type"]
+  visible_on : Terrat_repo_config_visible_on.t option; [@default None]
 }
 [@@deriving yojson { strict = true; meta = true }, make, show, eq]
