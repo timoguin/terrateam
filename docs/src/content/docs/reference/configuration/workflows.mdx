@@ -74,6 +74,7 @@ The `init`, `plan`, and `apply` step types run the corresponding command of the 
 | type | String | `init`, `plan`, or `apply`. |
 | extra_args | List | Extra command line arguments passed to the command. |
 | env | Object | Environment variables to set for this execution. Object keys are environment variable names and the value is a string. |
+| visible_on | String | When the output should be visible in a PR comment or the UI.  Options are `always`, `failure`, `success`.  Default is `failure` for `init` and `always` for `plan` and `apply`. |
 
 ### Env
 Environment variables can be set two ways:

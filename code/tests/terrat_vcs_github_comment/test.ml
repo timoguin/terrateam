@@ -6,6 +6,52 @@ module P = Terrat_vcs_github_comment_publishers
 
 let marker = "[... earlier output trimmed to fit the comment ...]"
 
+(* One workflow step output as the runner PUTs it. The payload is free form on both sides, so each
+   fixture below is shaped like the dictionary the matching runner step module builds. *)
+let step ~name ~success payload =
+  let module O = Terrat_api_components.Workflow_step_output in
+  CCResult.get_or_failwith
+    (O.of_yojson
+       (`Assoc
+          [
+            ("ignore_errors", `Bool false);
+            ("payload", payload);
+            ( "scope",
+              `Assoc
+                [ ("type", `String "run"); ("flow", `String "hooks"); ("subflow", `String "pre") ]
+            );
+            ("step", `String name);
+            ("success", `Bool success);
+          ]))
+
+(* The template reads a list of assocs, one per step it is allowed to show. A step the visibility
+   filter dropped is simply not in the list. *)
+let kv_of_step ~overall_success s = P.steps_kv ~overall_success ~compact:false [ s ]
+let shown ~overall_success s = kv_of_step ~overall_success s <> []
+
+let field ~name s =
+  match kv_of_step ~overall_success:false s with
+  | [ `Assoc fields ] -> (
+      match CCList.assoc_opt ~eq:CCString.equal name fields with
+      | Some (`String v) -> v
+      | Some _ | None -> Oth.Assert.false_ ("step has no " ^ name))
+  | _ -> Oth.Assert.false_ "expected exactly one step"
+
+(* [workflow_step_plan.py] always sends [plan]; it is the empty string for an engine whose [diff]
+   returns [None], which is what stategraph and pulumi both do. *)
+let plan_payload ?visible_on ?(plan = "+ create") () =
+  `Assoc
+    (("text", `String "plan stdout")
+    :: ("plan", `String plan)
+    :: ("has_changes", `Bool true)
+    :: CCOption.map_or ~default:[] (fun v -> [ ("visible_on", `String v) ]) visible_on)
+
+let run_payload ?visible_on () =
+  `Assoc
+    (("text", `String "run stdout")
+    :: ("cmd", `List [ `String "echo" ])
+    :: CCOption.map_or ~default:[] (fun v -> [ ("visible_on", `String v) ]) visible_on)
+
 let test =
   Oth.parallel
     [
@@ -41,6 +87,64 @@ let test =
           let out = P.tail_of ~max_bytes:100 s in
           Oth.Assert.str_contains ~haystack:out ~needle:marker;
           Oth.Assert.true_ "bounded" (CCString.length out < 300));
+      (* A plan, apply or init step can now carry visible_on, so the payload has to win over the
+         step's default. *)
+      Oth.test ~name:"a plan step obeys visible_on from the payload" (fun _ ->
+          let s = step ~name:"tf/plan" ~success:true (plan_payload ~visible_on:"failure" ()) in
+          Oth.Assert.not_true "hidden on a successful run" (shown ~overall_success:true s);
+          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          ());
+      Oth.test ~name:"a plan step with no visible_on is always shown" (fun _ ->
+          let s = step ~name:"tf/plan" ~success:true (plan_payload ()) in
+          Oth.Assert.true_ "shown on a successful run" (shown ~overall_success:true s);
+          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          ());
+      Oth.test ~name:"an apply step obeys visible_on from the payload" (fun _ ->
+          let s = step ~name:"tf/apply" ~success:true (run_payload ~visible_on:"success" ()) in
+          Oth.Assert.true_ "shown on a successful run" (shown ~overall_success:true s);
+          Oth.Assert.not_true "hidden on a failed run" (shown ~overall_success:false s);
+          ());
+      Oth.test ~name:"an init step with no visible_on is shown only on failure" (fun _ ->
+          let s = step ~name:"tf/init" ~success:true (run_payload ()) in
+          Oth.Assert.not_true "hidden on a successful run" (shown ~overall_success:true s);
+          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          ());
+      (* The stategraph engine names its steps stategraph/<action>, which the step dispatch used to
+         miss: a plan then lost its diff and fell back to the raw stdout. *)
+      Oth.test ~name:"a stategraph plan renders the diff" (fun _ ->
+          let s = step ~name:"stategraph/plan" ~success:true (plan_payload ()) in
+          Oth.Assert.Eq.string ~expected:"plan" ~actual:(field ~name:"name" s);
+          Oth.Assert.Eq.string ~expected:"+ create" ~actual:(field ~name:"text" s);
+          Oth.Assert.Eq.string ~expected:"diff" ~actual:(field ~name:"text_decorator" s);
+          ());
+      Oth.test ~name:"a plan with no diff falls back to the command output" (fun _ ->
+          let s = step ~name:"stategraph/plan" ~success:true (plan_payload ~plan:"" ()) in
+          Oth.Assert.Eq.string ~expected:"plan stdout" ~actual:(field ~name:"text" s);
+          Oth.Assert.Eq.string ~expected:"" ~actual:(field ~name:"text_decorator" s);
+          ());
+      Oth.test ~name:"a stategraph plan obeys visible_on from the payload" (fun _ ->
+          let s =
+            step ~name:"stategraph/plan" ~success:true (plan_payload ~visible_on:"failure" ())
+          in
+          Oth.Assert.not_true "hidden on a successful run" (shown ~overall_success:true s);
+          ());
+      (* A payload that says nothing about visibility is still a payload the comment can read. The
+         env step sends no visible_on at all, and used to come out as a JSON dump of its own
+         payload. *)
+      Oth.test ~name:"a step with no visible_on is not dumped as raw json" (fun _ ->
+          let s =
+            step
+              ~name:"env"
+              ~success:true
+              (`Assoc
+                 [
+                   ("cmd", `List [ `String "echo" ]);
+                   ("method", `String "exec");
+                   ("text", `String "HELLO");
+                 ])
+          in
+          Oth.Assert.Eq.string ~expected:"HELLO" ~actual:(field ~name:"text" s);
+          ());
     ]
 
 let () = Oth.run ~file:__FILE__ ~setup:(fun () -> Ok ()) ~teardown:(fun _ -> ()) (fun _ -> test)

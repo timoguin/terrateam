@@ -296,6 +296,14 @@ module Workflow_step = struct
       | Always -> "always"
       | Failure -> "failure"
       | Success -> "success"
+
+    (* [error] is the word the runner writes into a step payload where the configuration schema
+       says [failure]; the two mean the same thing. *)
+    let of_string = function
+      | "always" -> Some Always
+      | "error" | "failure" -> Some Failure
+      | "success" -> Some Success
+      | _ -> None
   end
 
   module Retry = struct
@@ -415,6 +423,7 @@ module Workflow_step = struct
     type t = {
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
+      visible_on : Visible_on.t; [@default Visible_on.Failure]
     }
     [@@deriving make, show, yojson, eq]
   end
@@ -431,6 +440,7 @@ module Workflow_step = struct
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
       mode : Mode.t; [@default Mode.Strict]
+      visible_on : Visible_on.t; [@default Visible_on.Always]
     }
     [@@deriving make, show, yojson, eq]
   end
@@ -440,6 +450,7 @@ module Workflow_step = struct
       env : string Sln_map.String.t option;
       extra_args : string list; [@default []]
       retry : Retry.t option;
+      visible_on : Visible_on.t; [@default Visible_on.Always]
     }
     [@@deriving make, show, yojson, eq]
   end
@@ -1761,26 +1772,30 @@ let of_version_1_workflow_op_list ops =
     (function
       | Op.Workflow_op_init op ->
           let module Op = Terrat_repo_config_workflow_op_init in
-          let { Op.env; extra_args; type_ = _ } = op in
+          let { Op.env; extra_args; type_ = _; visible_on } = op in
+          let visible_on = CCOption.map of_version_1_visible_on visible_on in
           map_opt (fun { Op.Env.additional; _ } -> Ok additional) env
-          >>= fun env -> Ok (O.Init (Workflow_step.Init.make ?env ?extra_args ()))
+          >>= fun env -> Ok (O.Init (Workflow_step.Init.make ?env ?extra_args ?visible_on ()))
       | Op.Workflow_op_plan op ->
           let module Op = Terrat_repo_config_workflow_op_plan in
-          let { Op.env; extra_args; mode; type_ = _ } = op in
+          let { Op.env; extra_args; mode; type_ = _; visible_on } = op in
           let mode = of_version_1_workflow_op_plan_mode mode in
+          let visible_on = CCOption.map of_version_1_visible_on visible_on in
           map_opt (fun { Op.Env.additional; _ } -> Ok additional) env
-          >>= fun env -> Ok (O.Plan (Workflow_step.Plan.make ?env ?extra_args ~mode ()))
+          >>= fun env -> Ok (O.Plan (Workflow_step.Plan.make ?env ?extra_args ~mode ?visible_on ()))
       | Op.Workflow_op_apply op ->
           let module R = Terrat_repo_config_retry in
           let module Op = Terrat_repo_config_workflow_op_apply in
-          let { Op.env; extra_args; retry; type_ = _ } = op in
+          let { Op.env; extra_args; retry; type_ = _; visible_on } = op in
+          let visible_on = CCOption.map of_version_1_visible_on visible_on in
           map_opt (fun { Op.Env.additional; _ } -> Ok additional) env
           >>= fun env ->
           map_opt
             (fun { R.backoff; enabled; initial_sleep; tries } ->
               Ok (Workflow_step.Retry.make ~backoff ~enabled ~initial_sleep ~tries ()))
             retry
-          >>= fun retry -> Ok (O.Apply (Workflow_step.Apply.make ?env ?extra_args ?retry ()))
+          >>= fun retry ->
+          Ok (O.Apply (Workflow_step.Apply.make ?env ?extra_args ?retry ?visible_on ()))
       | Op.Hook_op_run op ->
           let module Op = Terrat_repo_config_hook_op_run in
           let {
@@ -3575,32 +3590,35 @@ let to_version_1_workflows_op =
   CCList.map (function
     | Workflows.Entry.Op.Init init ->
         let module I = Terrat_repo_config.Workflow_op_init in
-        let { Workflow_step.Init.env; extra_args } = init in
+        let { Workflow_step.Init.env; extra_args; visible_on } = init in
         Op.Items.Workflow_op_init
           {
             I.env = CCOption.map (fun env -> I.Env.make ~additional:env Json_schema.Empty_obj.t) env;
             extra_args = Some extra_args;
             type_ = `Init;
+            visible_on = Some (to_version_1_visible_on visible_on);
           }
     | Workflows.Entry.Op.Plan plan ->
         let module P = Terrat_repo_config.Workflow_op_plan in
-        let { Workflow_step.Plan.env; extra_args; mode } = plan in
+        let { Workflow_step.Plan.env; extra_args; mode; visible_on } = plan in
         Op.Items.Workflow_op_plan
           {
             P.env = CCOption.map (fun env -> P.Env.make ~additional:env Json_schema.Empty_obj.t) env;
             extra_args = Some extra_args;
             mode = to_version_1_plan_mode mode;
             type_ = `Plan;
+            visible_on = Some (to_version_1_visible_on visible_on);
           }
     | Workflows.Entry.Op.Apply apply ->
         let module A = Terrat_repo_config.Workflow_op_apply in
-        let { Workflow_step.Apply.env; extra_args; retry } = apply in
+        let { Workflow_step.Apply.env; extra_args; retry; visible_on } = apply in
         Op.Items.Workflow_op_apply
           {
             A.env = CCOption.map (fun env -> A.Env.make ~additional:env Json_schema.Empty_obj.t) env;
             extra_args = Some extra_args;
             retry = CCOption.map to_version_1_workflow_retry retry;
             type_ = `Apply;
+            visible_on = Some (to_version_1_visible_on visible_on);
           }
     | Workflows.Entry.Op.Run r -> Op.Items.Hook_op_run (to_version_1_hooks_op_run r)
     | Workflows.Entry.Op.Env (Workflow_step.Env.Exec env) ->

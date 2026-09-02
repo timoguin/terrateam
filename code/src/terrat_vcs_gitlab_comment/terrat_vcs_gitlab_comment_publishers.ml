@@ -197,13 +197,21 @@ let kv_of_cost_estimation changed_dirspaces output =
     >>= fun { P.text } ->
     Ok (`Assoc [ ("success", `Bool output.O.success); ("text", `String text) ])
 
+(* [visible_on] as the runner writes it into a step payload. A step that sends no value at all
+   keeps the step's own default: [output_of_raw] is for a payload that cannot be read, not for one
+   that is simply quiet about visibility. A word neither side knows hides the step unless it
+   fails, which is the safe way to be wrong. *)
+let visible_on_of_payload ~default = function
+  | None -> default
+  | Some visible_on -> CCOption.get_or ~default:Visible_on.Failure (Visible_on.of_string visible_on)
+
 let output_of_run ?(default_visible_on = Visible_on.Failure) output =
   let module P = struct
     type t = {
       cmd : string list option; [@default None]
       format : Yojson.Safe.t option; [@default None]
       text : string option; [@default None]
-      visible_on : string option;
+      visible_on : string option; [@default None]
     }
     [@@deriving of_yojson { strict = false }]
   end in
@@ -229,40 +237,42 @@ let output_of_run ?(default_visible_on = Visible_on.Failure) output =
        ~name:output.O.step
        ~success:output.O.success
        ~text:(CCOption.get_or ~default:"" text)
-       ~visible_on:
-         (CCOption.map_or
-            ~default:default_visible_on
-            (function
-              | "always" -> Visible_on.Always
-              | "failure" -> Visible_on.Failure
-              | "success" -> Visible_on.Success
-              | _ -> Visible_on.Failure)
-            visible_on)
+       ~visible_on:(visible_on_of_payload ~default:default_visible_on visible_on)
        ())
 
-let output_of_plan output =
+let output_of_plan ?(default_visible_on = Visible_on.Always) output =
   let module P = struct
     type t = {
       cmd : string list option; [@default None]
       text : string;
       plan : string option; [@default None]
       has_changes : bool option; [@default None]
+      visible_on : string option; [@default None]
     }
     [@@deriving of_yojson { strict = false }]
   end in
   let module O = Terrat_api_components.Workflow_step_output in
   let open CCResult.Infix in
   P.of_yojson (O.Payload.to_yojson output.O.payload)
-  >>= fun { P.cmd; text; has_changes = _; plan } ->
+  >>= fun { P.cmd; text; has_changes = _; plan; visible_on } ->
+  let visible_on = visible_on_of_payload ~default:default_visible_on visible_on in
+  (* An engine with no diff of its own -- stategraph and pulumi both return [None] -- still sends
+     the [plan] key, empty. An empty diff fence says nothing, so the command's own output is what
+     is left worth showing, and it is not a diff. *)
+  let text, text_decorator =
+    match plan with
+    | Some plan when not (CCString.is_empty plan) -> (plan, Some "diff")
+    | Some _ | None -> (text, None)
+  in
   if output.O.success then
     Ok
       (Output.make
          ?cmd:(CCOption.map (CCString.concat " ") cmd)
+         ?text_decorator
          ~name:output.O.step
          ~success:output.O.success
-         ~text:(CCOption.get_or ~default:text plan)
-         ~text_decorator:"diff"
-         ~visible_on:Visible_on.Always
+         ~text
+         ~visible_on
          ())
   else
     Ok
@@ -271,18 +281,19 @@ let output_of_plan output =
          ~name:output.O.step
          ~success:output.O.success
          ~text
-         ~visible_on:Visible_on.Always
+         ~visible_on
          ())
 
 let output_of_workflow_output output =
   let module O = Terrat_api_components.Workflow_step_output in
   match output.O.step with
   | "run" | "env" -> output_of_run output
-  | "tf/init" | "pulumi/init" | "custom/init" | "fly/init" ->
+  | "tf/init" | "pulumi/init" | "custom/init" | "fly/init" | "stategraph/init" ->
       output_of_run ~default_visible_on:Visible_on.Failure output
-  | "tf/apply" | "pulumi/apply" | "custom/apply" | "fly/apply" ->
+  | "tf/apply" | "pulumi/apply" | "custom/apply" | "fly/apply" | "stategraph/apply" ->
       output_of_run ~default_visible_on:Visible_on.Always output
-  | "tf/plan" | "pulumi/plan" | "custom/plan" | "fly/plan" -> output_of_plan output
+  | "tf/plan" | "pulumi/plan" | "custom/plan" | "fly/plan" | "stategraph/plan" ->
+      output_of_plan ~default_visible_on:Visible_on.Always output
   | _step -> output_of_run output
 
 let output_of_raw output =
@@ -308,6 +319,12 @@ let output_of_steps steps =
     steps
 
 let kv_of_outputs outputs = CCList.map Output.to_kv outputs
+
+(* The template input for one section of a comment: the steps that [visible_on] keeps, trimmed when
+   the section is compacted. *)
+let steps_kv ~overall_success ~compact steps =
+  let outputs = steps |> output_of_steps |> Output.filter ~overall_success in
+  kv_of_outputs (if compact then Output.compact outputs else outputs)
 
 let dirspace_compare (dirspace1, steps1) (dirspace2, steps2) =
   let module Cmp = struct
@@ -369,7 +386,6 @@ module Publisher_tools = struct
       work_manifest =
     let module Wm = Terrat_work_manifest3 in
     let module O = Terrat_api_components.Workflow_step_output in
-    let compact_if cond outputs = if cond then Output.compact outputs else outputs in
     (* Per-dirspace, so one oversized plan diff cannot blank the error text on every OTHER dirspace
        in the same comment (#1540). *)
     let is_compacted dirspace =
@@ -485,18 +501,12 @@ module Publisher_tools = struct
                  `List
                    (hooks_pre
                    |> CCOption.get_or ~default:[]
-                   |> output_of_steps
-                   |> Output.filter ~overall_success
-                   |> compact_if (view = `Compact)
-                   |> kv_of_outputs) );
+                   |> steps_kv ~overall_success ~compact:(view = `Compact)) );
                ( "post_hooks",
                  `List
                    (hooks_post
                    |> CCOption.get_or ~default:[]
-                   |> output_of_steps
-                   |> Output.filter ~overall_success
-                   |> compact_if (view = `Compact)
-                   |> kv_of_outputs) );
+                   |> steps_kv ~overall_success ~compact:(view = `Compact)) );
                ("compact_view", `Bool (view = `Compact));
                ("compact_dirspaces", `Bool (CCList.length dirspaces > 5));
                ("summary", `Bool summary);
@@ -526,10 +536,8 @@ module Publisher_tools = struct
                                  ( "steps",
                                    `List
                                      (steps
-                                     |> output_of_steps
-                                     |> Output.filter ~overall_success
-                                     |> compact_if (is_compacted dirspace)
-                                     |> kv_of_outputs) );
+                                     |> steps_kv ~overall_success ~compact:(is_compacted dirspace))
+                                 );
                                  ("has_changes", `Bool has_changes);
                                  ("run_url", run_url);
                                ];
