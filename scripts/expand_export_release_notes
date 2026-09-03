@@ -6,9 +6,10 @@ set -euf -o pipefail
 # GitHub builds the "## What's Changed" list from the titles of the PRs merged since the
 # previous release. Every one of those is a copybara export PR, and they all share the same
 # interchangeable title ("monorepo->OSS export <timestamp>"), which tells a reader nothing
-# about what shipped. Each export PR's body instead carries the titles of the monorepo PRs it
-# publishes, in an `exported-changes` block written by the monorepo's
-# .github/workflows/copybara.yml. This replaces every such entry with that block's changes,
+# about what shipped. Each export PR's body instead carries one line per monorepo PR it
+# publishes -- that PR's "Public OSS release note", or its title when it wrote none -- in an
+# `exported-changes` block written by the monorepo's .github/workflows/copybara.yml.
+# This replaces every such entry with that block's changes,
 # each still pointing at the export PR it came from. Every other line passes through untouched:
 # other headings, entries for PRs opened directly on this repo, and the Full Changelog footer.
 #
