@@ -181,8 +181,7 @@ RUN apk add --no-cache \
     python3 \
     runit \
     strace \
-    sudo \
-    yj
+    sudo
 RUN addgroup -S terrat && adduser -S -G terrat terrat
 RUN mkdir -p /usr/local/bin /etc/service/terrat /etc/service/nginx /etc/service/nginx/control /usr/local/share/terrat/ui/assets
 # CA-cert installer: root-owned, runnable (not writable) by terrat via a narrow

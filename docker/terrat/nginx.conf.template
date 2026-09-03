@@ -23,6 +23,8 @@ env TERRATEAM_UI_SUBSCRIPTION;
 env TERRATEAM_MAINTENANCE;
 env TERRATEAM_MAINTENANCE_MESSAGE;
 env TERRATEAM_UPGRADE_NUDGES;
+env TERRATEAM_UI_STRIPE_PUBLISHABLE_KEY;
+env TERRATEAM_UI_STRIPE_PRICING_TABLE_ID;
 
 events {
     worker_connections  1024;
@@ -81,6 +83,8 @@ http {
             sub_filter '%TERRATEAM_MAINTENANCE%' '${TERRATEAM_MAINTENANCE}';
             sub_filter '%TERRATEAM_MAINTENANCE_MESSAGE%' '${TERRATEAM_MAINTENANCE_MESSAGE}';
             sub_filter '%TERRATEAM_UPGRADE_NUDGES%' '${TERRATEAM_UPGRADE_NUDGES}';
+            sub_filter '%TERRATEAM_UI_STRIPE_PUBLISHABLE_KEY%' '${TERRATEAM_UI_STRIPE_PUBLISHABLE_KEY}';
+            sub_filter '%TERRATEAM_UI_STRIPE_PRICING_TABLE_ID%' '${TERRATEAM_UI_STRIPE_PRICING_TABLE_ID}';
 
             root /usr/local/share/terrat/ui/assets/;
             index index.html index.htm;

@@ -18,7 +18,9 @@
         ui_subscription: '%TERRATEAM_UI_SUBSCRIPTION%',
         maintenanceMode: '%TERRATEAM_MAINTENANCE%',
         maintenanceMessage: '%TERRATEAM_MAINTENANCE_MESSAGE%',
-        upgrade_nudges: '%TERRATEAM_UPGRADE_NUDGES%'
+        upgrade_nudges: '%TERRATEAM_UPGRADE_NUDGES%',
+        stripe_publishable_key: '%TERRATEAM_UI_STRIPE_PUBLISHABLE_KEY%',
+        stripe_pricing_table_id: '%TERRATEAM_UI_STRIPE_PRICING_TABLE_ID%'
       };
       
       // Handle template replacement fallbacks for development
@@ -41,6 +43,10 @@
               break;
             case 'upgrade_nudges':
               window.terrateamConfig[key] = 'false'; // Default to disabled
+              break;
+            case 'stripe_publishable_key':
+            case 'stripe_pricing_table_id':
+              window.terrateamConfig[key] = ''; // Default to unset; the pricing table stays hidden
               break;
           }
         }

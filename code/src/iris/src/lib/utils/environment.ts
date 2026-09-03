@@ -61,6 +61,22 @@ export function isOssMode(): boolean {
 }
 
 /**
+ * Get the Stripe pricing table configuration for SaaS billing mode
+ * Controlled by runtime configuration; null unless both values are set
+ */
+export function getStripePricingTable(): { publishableKey: string; pricingTableId: string } | null {
+  if (typeof window === 'undefined' || !window.terrateamConfig) {
+    return null;
+  }
+  const publishableKey = window.terrateamConfig.stripe_publishable_key;
+  const pricingTableId = window.terrateamConfig.stripe_pricing_table_id;
+  if (!publishableKey || !pricingTableId) {
+    return null;
+  }
+  return { publishableKey, pricingTableId };
+}
+
+/**
  * Check if trial banners are enabled
  */
 export function areTrialBannersEnabled(): boolean {
