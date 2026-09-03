@@ -6,6 +6,7 @@ module Primary = struct
     commit_url : string;
     end_column : float;
     end_line : float;
+    html_url : string option; [@default None]
     path : string;
     start_column : float;
     start_line : float;

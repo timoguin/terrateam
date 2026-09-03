@@ -478,7 +478,7 @@ end
 module Rerequest_run = struct
   module Parameters = struct
     type t = {
-      check_run_id : int;
+      check_run_id : int64;
       owner : string;
       repo : string;
     }
@@ -535,7 +535,7 @@ module Rerequest_run = struct
          [
            ("owner", Var (params.owner, String));
            ("repo", Var (params.repo, String));
-           ("check_run_id", Var (params.check_run_id, Int));
+           ("check_run_id", Var (params.check_run_id, Int64));
          ])
       ~query_params:[]
       ~url
@@ -546,7 +546,7 @@ end
 module List_annotations = struct
   module Parameters = struct
     type t = {
-      check_run_id : int;
+      check_run_id : int64;
       owner : string;
       page : int; [@default 1]
       per_page : int; [@default 30]
@@ -577,7 +577,7 @@ module List_annotations = struct
          [
            ("owner", Var (params.owner, String));
            ("repo", Var (params.repo, String));
-           ("check_run_id", Var (params.check_run_id, Int));
+           ("check_run_id", Var (params.check_run_id, Int64));
          ])
       ~query_params:
         (let open Openapi.Request.Var in
@@ -591,7 +591,7 @@ end
 module Update = struct
   module Parameters = struct
     type t = {
-      check_run_id : int;
+      check_run_id : int64;
       owner : string;
       repo : string;
     }
@@ -997,7 +997,7 @@ module Update = struct
          [
            ("owner", Var (params.owner, String));
            ("repo", Var (params.repo, String));
-           ("check_run_id", Var (params.check_run_id, Int));
+           ("check_run_id", Var (params.check_run_id, Int64));
          ])
       ~query_params:[]
       ~url
@@ -1008,7 +1008,7 @@ end
 module Get = struct
   module Parameters = struct
     type t = {
-      check_run_id : int;
+      check_run_id : int64;
       owner : string;
       repo : string;
     }
@@ -1037,7 +1037,7 @@ module Get = struct
          [
            ("owner", Var (params.owner, String));
            ("repo", Var (params.repo, String));
-           ("check_run_id", Var (params.check_run_id, Int));
+           ("check_run_id", Var (params.check_run_id, Int64));
          ])
       ~query_params:[]
       ~url
@@ -1055,14 +1055,130 @@ module Create = struct
   end
 
   module Request_body = struct
-    module Primary = struct
-      module Actions = struct
-        module Items = struct
+    module V0 = struct
+      module Primary = struct
+        module Actions = struct
+          module Items = struct
+            module Primary = struct
+              type t = {
+                description : string;
+                identifier : string;
+                label : string;
+              }
+              [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Conclusion = struct
+          let t_of_yojson = function
+            | `String "action_required" -> Ok `Action_required
+            | `String "cancelled" -> Ok `Cancelled
+            | `String "failure" -> Ok `Failure
+            | `String "neutral" -> Ok `Neutral
+            | `String "skipped" -> Ok `Skipped
+            | `String "stale" -> Ok `Stale
+            | `String "success" -> Ok `Success
+            | `String "timed_out" -> Ok `Timed_out
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Action_required -> `String "action_required"
+            | `Cancelled -> `String "cancelled"
+            | `Failure -> `String "failure"
+            | `Neutral -> `String "neutral"
+            | `Skipped -> `String "skipped"
+            | `Stale -> `String "stale"
+            | `Success -> `String "success"
+            | `Timed_out -> `String "timed_out"
+
+          type t =
+            ([ `Action_required
+             | `Cancelled
+             | `Failure
+             | `Neutral
+             | `Skipped
+             | `Stale
+             | `Success
+             | `Timed_out
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Output = struct
           module Primary = struct
+            module Annotations = struct
+              module Items = struct
+                module Primary = struct
+                  module Annotation_level = struct
+                    let t_of_yojson = function
+                      | `String "failure" -> Ok `Failure
+                      | `String "notice" -> Ok `Notice
+                      | `String "warning" -> Ok `Warning
+                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                    let t_to_yojson = function
+                      | `Failure -> `String "failure"
+                      | `Notice -> `String "notice"
+                      | `Warning -> `String "warning"
+
+                    type t =
+                      ([ `Failure
+                       | `Notice
+                       | `Warning
+                       ]
+                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  type t = {
+                    annotation_level : Annotation_level.t;
+                    end_column : int option; [@default None]
+                    end_line : int;
+                    message : string;
+                    path : string;
+                    raw_details : string option; [@default None]
+                    start_column : int option; [@default None]
+                    start_line : int;
+                    title : string option; [@default None]
+                  }
+                  [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            module Images = struct
+              module Items = struct
+                module Primary = struct
+                  type t = {
+                    alt : string;
+                    caption : string option; [@default None]
+                    image_url : string;
+                  }
+                  [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
             type t = {
-              description : string;
-              identifier : string;
-              label : string;
+              annotations : Annotations.t option; [@default None]
+              images : Images.t option; [@default None]
+              summary : string;
+              text : string option; [@default None]
+              title : string;
             }
             [@@deriving make, yojson { strict = false; meta = true }, show, eq]
           end
@@ -1070,158 +1186,249 @@ module Create = struct
           include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
         end
 
-        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
+        module Status = struct
+          let t_of_yojson = function
+            | `String "completed" -> Ok `Completed
+            | `String "in_progress" -> Ok `In_progress
+            | `String "pending" -> Ok `Pending
+            | `String "queued" -> Ok `Queued
+            | `String "requested" -> Ok `Requested
+            | `String "waiting" -> Ok `Waiting
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
-      module Conclusion = struct
-        let t_of_yojson = function
-          | `String "action_required" -> Ok `Action_required
-          | `String "cancelled" -> Ok `Cancelled
-          | `String "failure" -> Ok `Failure
-          | `String "neutral" -> Ok `Neutral
-          | `String "skipped" -> Ok `Skipped
-          | `String "stale" -> Ok `Stale
-          | `String "success" -> Ok `Success
-          | `String "timed_out" -> Ok `Timed_out
-          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+          let t_to_yojson = function
+            | `Completed -> `String "completed"
+            | `In_progress -> `String "in_progress"
+            | `Pending -> `String "pending"
+            | `Queued -> `String "queued"
+            | `Requested -> `String "requested"
+            | `Waiting -> `String "waiting"
 
-        let t_to_yojson = function
-          | `Action_required -> `String "action_required"
-          | `Cancelled -> `String "cancelled"
-          | `Failure -> `String "failure"
-          | `Neutral -> `String "neutral"
-          | `Skipped -> `String "skipped"
-          | `Stale -> `String "stale"
-          | `Success -> `String "success"
-          | `Timed_out -> `String "timed_out"
-
-        type t =
-          ([ `Action_required
-           | `Cancelled
-           | `Failure
-           | `Neutral
-           | `Skipped
-           | `Stale
-           | `Success
-           | `Timed_out
-           ]
-          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-        [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      module Output = struct
-        module Primary = struct
-          module Annotations = struct
-            module Items = struct
-              module Primary = struct
-                module Annotation_level = struct
-                  let t_of_yojson = function
-                    | `String "failure" -> Ok `Failure
-                    | `String "notice" -> Ok `Notice
-                    | `String "warning" -> Ok `Warning
-                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                  let t_to_yojson = function
-                    | `Failure -> `String "failure"
-                    | `Notice -> `String "notice"
-                    | `Warning -> `String "warning"
-
-                  type t =
-                    ([ `Failure
-                     | `Notice
-                     | `Warning
-                     ]
-                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                  [@@deriving yojson { strict = false; meta = true }, show, eq]
-                end
-
-                type t = {
-                  annotation_level : Annotation_level.t;
-                  end_column : int option; [@default None]
-                  end_line : int;
-                  message : string;
-                  path : string;
-                  raw_details : string option; [@default None]
-                  start_column : int option; [@default None]
-                  start_line : int;
-                  title : string option; [@default None]
-                }
-                [@@deriving make, yojson { strict = false; meta = true }, show, eq]
-              end
-
-              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-            end
-
-            type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          module Images = struct
-            module Items = struct
-              module Primary = struct
-                type t = {
-                  alt : string;
-                  caption : string option; [@default None]
-                  image_url : string;
-                }
-                [@@deriving make, yojson { strict = false; meta = true }, show, eq]
-              end
-
-              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-            end
-
-            type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          type t = {
-            annotations : Annotations.t option; [@default None]
-            images : Images.t option; [@default None]
-            summary : string;
-            text : string option; [@default None]
-            title : string;
-          }
-          [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+          type t =
+            ([ `Completed
+             | `In_progress
+             | `Pending
+             | `Queued
+             | `Requested
+             | `Waiting
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
-        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        type t = {
+          actions : Actions.t option; [@default None]
+          completed_at : string option; [@default None]
+          conclusion : Conclusion.t;
+          details_url : string option; [@default None]
+          external_id : string option; [@default None]
+          head_sha : string;
+          name : string;
+          output : Output.t option; [@default None]
+          started_at : string option; [@default None]
+          status : Status.t; [@default `Queued]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
       end
 
-      module Status = struct
-        let t_of_yojson = function
-          | `String "completed" -> Ok `Completed
-          | `String "in_progress" -> Ok `In_progress
-          | `String "queued" -> Ok `Queued
-          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-        let t_to_yojson = function
-          | `Completed -> `String "completed"
-          | `In_progress -> `String "in_progress"
-          | `Queued -> `String "queued"
-
-        type t =
-          ([ `Completed
-           | `In_progress
-           | `Queued
-           ]
-          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-        [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      type t = {
-        actions : Actions.t option; [@default None]
-        completed_at : string option; [@default None]
-        conclusion : Conclusion.t option; [@default None]
-        details_url : string option; [@default None]
-        external_id : string option; [@default None]
-        head_sha : string;
-        name : string;
-        output : Output.t option; [@default None]
-        started_at : string option; [@default None]
-        status : Status.t; [@default `Queued]
-      }
-      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    module V1 = struct
+      module Primary = struct
+        module Actions = struct
+          module Items = struct
+            module Primary = struct
+              type t = {
+                description : string;
+                identifier : string;
+                label : string;
+              }
+              [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Conclusion = struct
+          let t_of_yojson = function
+            | `String "action_required" -> Ok `Action_required
+            | `String "cancelled" -> Ok `Cancelled
+            | `String "failure" -> Ok `Failure
+            | `String "neutral" -> Ok `Neutral
+            | `String "skipped" -> Ok `Skipped
+            | `String "stale" -> Ok `Stale
+            | `String "success" -> Ok `Success
+            | `String "timed_out" -> Ok `Timed_out
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Action_required -> `String "action_required"
+            | `Cancelled -> `String "cancelled"
+            | `Failure -> `String "failure"
+            | `Neutral -> `String "neutral"
+            | `Skipped -> `String "skipped"
+            | `Stale -> `String "stale"
+            | `Success -> `String "success"
+            | `Timed_out -> `String "timed_out"
+
+          type t =
+            ([ `Action_required
+             | `Cancelled
+             | `Failure
+             | `Neutral
+             | `Skipped
+             | `Stale
+             | `Success
+             | `Timed_out
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Output = struct
+          module Primary = struct
+            module Annotations = struct
+              module Items = struct
+                module Primary = struct
+                  module Annotation_level = struct
+                    let t_of_yojson = function
+                      | `String "failure" -> Ok `Failure
+                      | `String "notice" -> Ok `Notice
+                      | `String "warning" -> Ok `Warning
+                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                    let t_to_yojson = function
+                      | `Failure -> `String "failure"
+                      | `Notice -> `String "notice"
+                      | `Warning -> `String "warning"
+
+                    type t =
+                      ([ `Failure
+                       | `Notice
+                       | `Warning
+                       ]
+                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  type t = {
+                    annotation_level : Annotation_level.t;
+                    end_column : int option; [@default None]
+                    end_line : int;
+                    message : string;
+                    path : string;
+                    raw_details : string option; [@default None]
+                    start_column : int option; [@default None]
+                    start_line : int;
+                    title : string option; [@default None]
+                  }
+                  [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            module Images = struct
+              module Items = struct
+                module Primary = struct
+                  type t = {
+                    alt : string;
+                    caption : string option; [@default None]
+                    image_url : string;
+                  }
+                  [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            type t = {
+              annotations : Annotations.t option; [@default None]
+              images : Images.t option; [@default None]
+              summary : string;
+              text : string option; [@default None]
+              title : string;
+            }
+            [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        end
+
+        module Status = struct
+          let t_of_yojson = function
+            | `String "completed" -> Ok `Completed
+            | `String "in_progress" -> Ok `In_progress
+            | `String "pending" -> Ok `Pending
+            | `String "queued" -> Ok `Queued
+            | `String "requested" -> Ok `Requested
+            | `String "waiting" -> Ok `Waiting
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Completed -> `String "completed"
+            | `In_progress -> `String "in_progress"
+            | `Pending -> `String "pending"
+            | `Queued -> `String "queued"
+            | `Requested -> `String "requested"
+            | `Waiting -> `String "waiting"
+
+          type t =
+            ([ `Completed
+             | `In_progress
+             | `Pending
+             | `Queued
+             | `Requested
+             | `Waiting
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = {
+          actions : Actions.t option; [@default None]
+          completed_at : string option; [@default None]
+          conclusion : Conclusion.t option; [@default None]
+          details_url : string option; [@default None]
+          external_id : string option; [@default None]
+          head_sha : string;
+          name : string;
+          output : Output.t option; [@default None]
+          started_at : string option; [@default None]
+          status : Status.t; [@default `Queued]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
+
+    let of_yojson =
+      Json_schema.one_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct

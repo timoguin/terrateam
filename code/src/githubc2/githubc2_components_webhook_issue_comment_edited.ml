@@ -1104,24 +1104,6 @@ module Primary = struct
                   [@@deriving yojson { strict = false; meta = true }, show, eq]
                 end
 
-                module Team_discussions = struct
-                  let t_of_yojson = function
-                    | `String "read" -> Ok `Read
-                    | `String "write" -> Ok `Write
-                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                  let t_to_yojson = function
-                    | `Read -> `String "read"
-                    | `Write -> `String "write"
-
-                  type t =
-                    ([ `Read
-                     | `Write
-                     ]
-                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                  [@@deriving yojson { strict = false; meta = true }, show, eq]
-                end
-
                 module Vulnerability_alerts = struct
                   let t_of_yojson = function
                     | `String "read" -> Ok `Read
@@ -1193,7 +1175,6 @@ module Primary = struct
                   security_scanning_alert : Security_scanning_alert.t option; [@default None]
                   single_file : Single_file.t option; [@default None]
                   statuses : Statuses.t option; [@default None]
-                  team_discussions : Team_discussions.t option; [@default None]
                   vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
                   workflows : Workflows.t option; [@default None]
                 }
@@ -1276,19 +1257,6 @@ module Primary = struct
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
-        module Sub_issues_summary_ = struct
-          module Primary = struct
-            type t = {
-              completed : int;
-              percent_completed : int;
-              total : int;
-            }
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-        end
-
         module User = struct
           module Primary = struct
             module Type = struct
@@ -1359,6 +1327,8 @@ module Primary = struct
           events_url : string;
           html_url : string;
           id : int64;
+          issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+              [@default None]
           labels : Labels.t;
           labels_url : string;
           locked : bool;
@@ -1371,7 +1341,7 @@ module Primary = struct
           repository_url : string;
           state : State.t;
           state_reason : string option; [@default None]
-          sub_issues_summary : Sub_issues_summary_.t option; [@default None]
+          sub_issues_summary : Githubc2_components_sub_issues_summary.t option; [@default None]
           timeline_url : string option; [@default None]
           title : string;
           type_ : Githubc2_components_issue_type.t option; [@default None] [@key "type"]
@@ -2477,24 +2447,6 @@ module Primary = struct
                   [@@deriving yojson { strict = false; meta = true }, show, eq]
                 end
 
-                module Team_discussions = struct
-                  let t_of_yojson = function
-                    | `String "read" -> Ok `Read
-                    | `String "write" -> Ok `Write
-                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                  let t_to_yojson = function
-                    | `Read -> `String "read"
-                    | `Write -> `String "write"
-
-                  type t =
-                    ([ `Read
-                     | `Write
-                     ]
-                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                  [@@deriving yojson { strict = false; meta = true }, show, eq]
-                end
-
                 module Vulnerability_alerts = struct
                   let t_of_yojson = function
                     | `String "read" -> Ok `Read
@@ -2566,7 +2518,6 @@ module Primary = struct
                   security_scanning_alert : Security_scanning_alert.t option; [@default None]
                   single_file : Single_file.t option; [@default None]
                   statuses : Statuses.t option; [@default None]
-                  team_discussions : Team_discussions.t option; [@default None]
                   vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
                   workflows : Workflows.t option; [@default None]
                 }
@@ -2649,19 +2600,6 @@ module Primary = struct
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
-        module Sub_issues_summary_ = struct
-          module Primary = struct
-            type t = {
-              completed : int;
-              percent_completed : int;
-              total : int;
-            }
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-        end
-
         module User = struct
           module Primary = struct
             module Type = struct
@@ -2732,6 +2670,8 @@ module Primary = struct
           events_url : string;
           html_url : string;
           id : int64;
+          issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+              [@default None]
           labels : Labels.t;
           labels_url : string;
           locked : bool;
@@ -2744,7 +2684,7 @@ module Primary = struct
           repository_url : string;
           state : State.t;
           state_reason : string option; [@default None]
-          sub_issues_summary : Sub_issues_summary_.t option; [@default None]
+          sub_issues_summary : Githubc2_components_sub_issues_summary.t option; [@default None]
           timeline_url : string option; [@default None]
           title : string;
           type_ : Githubc2_components_issue_type.t option; [@default None] [@key "type"]

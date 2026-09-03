@@ -1,5 +1,8 @@
 module Primary = struct
-  type t = { pull_request_title_url : string }
+  type t = {
+    html_url : string option; [@default None]
+    pull_request_title_url : string;
+  }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
 

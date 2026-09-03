@@ -57,6 +57,24 @@ module Primary = struct
     include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
   end
 
+  module Pull_request_creation_policy = struct
+    let t_of_yojson = function
+      | `String "all" -> Ok `All
+      | `String "collaborators_only" -> Ok `Collaborators_only
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `All -> `String "all"
+      | `Collaborators_only -> `String "collaborators_only"
+
+    type t =
+      ([ `All
+       | `Collaborators_only
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Squash_merge_commit_message = struct
     let t_of_yojson = function
       | `String "BLANK" -> Ok `BLANK
@@ -144,6 +162,7 @@ module Primary = struct
     has_issues : bool;
     has_pages : bool;
     has_projects : bool;
+    has_pull_requests : bool option; [@default None]
     has_wiki : bool;
     homepage : string option; [@default None]
     hooks_url : string;
@@ -175,6 +194,7 @@ module Primary = struct
     parent : Githubc2_components_repository.t option; [@default None]
     permissions : Permissions.t option; [@default None]
     private_ : bool; [@key "private"]
+    pull_request_creation_policy : Pull_request_creation_policy.t option; [@default None]
     pulls_url : string;
     pushed_at : string;
     releases_url : string;

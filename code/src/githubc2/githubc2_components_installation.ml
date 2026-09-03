@@ -49,6 +49,7 @@ module Primary = struct
     account : Account.t option; [@default None]
     app_id : int;
     app_slug : string;
+    client_id : string option; [@default None]
     contact_email : string option; [@default None]
     created_at : string;
     events : Events.t;

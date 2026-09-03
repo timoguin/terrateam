@@ -481,15 +481,12 @@ module Delete_ref = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    module Unprocessable_entity = struct
-      type t = Githubc2_components.Validation_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
+    module Unprocessable_entity = struct end
 
     type t =
       [ `No_content
       | `Conflict of Conflict.t
-      | `Unprocessable_entity of Unprocessable_entity.t
+      | `Unprocessable_entity
       ]
     [@@deriving show, eq]
 
@@ -497,8 +494,7 @@ module Delete_ref = struct
       [
         ("204", fun _ -> Ok `No_content);
         ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
-        ( "422",
-          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
+        ("422", fun _ -> Ok `Unprocessable_entity);
       ]
   end
 

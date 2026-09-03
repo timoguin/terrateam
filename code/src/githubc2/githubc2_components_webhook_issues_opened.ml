@@ -185,6 +185,11 @@ module Primary = struct
             [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
+          module Issue_field_values = struct
+            type t = Githubc2_components_issue_field_value.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
           module Labels = struct
             module Items = struct
               module Primary = struct
@@ -1087,24 +1092,6 @@ module Primary = struct
                     [@@deriving yojson { strict = false; meta = true }, show, eq]
                   end
 
-                  module Team_discussions = struct
-                    let t_of_yojson = function
-                      | `String "read" -> Ok `Read
-                      | `String "write" -> Ok `Write
-                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                    let t_to_yojson = function
-                      | `Read -> `String "read"
-                      | `Write -> `String "write"
-
-                    type t =
-                      ([ `Read
-                       | `Write
-                       ]
-                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                    [@@deriving yojson { strict = false; meta = true }, show, eq]
-                  end
-
                   module Vulnerability_alerts = struct
                     let t_of_yojson = function
                       | `String "read" -> Ok `Read
@@ -1177,7 +1164,6 @@ module Primary = struct
                     security_scanning_alert : Security_scanning_alert.t option; [@default None]
                     single_file : Single_file.t option; [@default None]
                     statuses : Statuses.t option; [@default None]
-                    team_discussions : Team_discussions.t option; [@default None]
                     vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
                     workflows : Workflows.t option; [@default None]
                   }
@@ -1260,19 +1246,6 @@ module Primary = struct
             [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
-          module Sub_issues_summary_ = struct
-            module Primary = struct
-              type t = {
-                completed : int;
-                percent_completed : int;
-                total : int;
-              }
-              [@@deriving yojson { strict = false; meta = true }, show, eq]
-            end
-
-            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-          end
-
           module User = struct
             module Primary = struct
               module Type = struct
@@ -1329,34 +1302,39 @@ module Primary = struct
           type t = {
             active_lock_reason : Active_lock_reason.t option; [@default None]
             assignee : Assignee.t option; [@default None]
-            assignees : Assignees.t;
-            author_association : Author_association_.t;
+            assignees : Assignees.t option; [@default None]
+            author_association : Author_association_.t option; [@default None]
             body : string option; [@default None]
             closed_at : string option; [@default None]
-            comments : int;
-            comments_url : string;
-            created_at : string;
+            comments : int option; [@default None]
+            comments_url : string option; [@default None]
+            created_at : string option; [@default None]
             draft : bool option; [@default None]
-            events_url : string;
-            html_url : string;
+            events_url : string option; [@default None]
+            html_url : string option; [@default None]
             id : int64;
+            issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+                [@default None]
+            issue_field_values : Issue_field_values.t option; [@default None]
             labels : Labels.t option; [@default None]
-            labels_url : string;
+            labels_url : string option; [@default None]
             locked : bool option; [@default None]
             milestone : Milestone_.t option; [@default None]
-            node_id : string;
+            node_id : string option; [@default None]
             number : int;
             performed_via_github_app : Performed_via_github_app.t option; [@default None]
+            pinned_comment : Githubc2_components_nullable_issue_comment.t option; [@default None]
             pull_request : Pull_request_.t option; [@default None]
-            reactions : Reactions.t;
-            repository_url : string;
+            reactions : Reactions.t option; [@default None]
+            repository_url : string option; [@default None]
             state : State.t option; [@default None]
             state_reason : string option; [@default None]
-            sub_issues_summary : Sub_issues_summary_.t option; [@default None]
+            sub_issues_summary : Githubc2_components_sub_issues_summary.t option; [@default None]
             timeline_url : string option; [@default None]
-            title : string;
-            updated_at : string;
-            url : string;
+            title : string option; [@default None]
+            type_ : Githubc2_components_issue_type.t option; [@default None] [@key "type"]
+            updated_at : string option; [@default None]
+            url : string option; [@default None]
             user : User.t option; [@default None]
           }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -1481,6 +1459,24 @@ module Primary = struct
             include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
           end
 
+          module Pull_request_creation_policy = struct
+            let t_of_yojson = function
+              | `String "all" -> Ok `All
+              | `String "collaborators_only" -> Ok `Collaborators_only
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `All -> `String "all"
+              | `Collaborators_only -> `String "collaborators_only"
+
+            type t =
+              ([ `All
+               | `Collaborators_only
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
           module Pushed_at = struct
             module V0 = struct
               type t = int option [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -1575,6 +1571,7 @@ module Primary = struct
             has_issues : bool; [@default true]
             has_pages : bool;
             has_projects : bool; [@default true]
+            has_pull_requests : bool; [@default true]
             has_wiki : bool; [@default true]
             homepage : string option; [@default None]
             hooks_url : string;
@@ -1603,6 +1600,7 @@ module Primary = struct
             permissions : Permissions.t option; [@default None]
             private_ : bool; [@key "private"]
             public : bool option; [@default None]
+            pull_request_creation_policy : Pull_request_creation_policy.t option; [@default None]
             pulls_url : string;
             pushed_at : Pushed_at.t option; [@default None]
             releases_url : string;
@@ -1812,6 +1810,11 @@ module Primary = struct
            | `OWNER
            ]
           [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Issue_field_values = struct
+        type t = Githubc2_components_issue_field_value.t list
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2732,24 +2735,6 @@ module Primary = struct
                 [@@deriving yojson { strict = false; meta = true }, show, eq]
               end
 
-              module Team_discussions = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = true }, show, eq]
-              end
-
               module Vulnerability_alerts = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
@@ -2820,7 +2805,6 @@ module Primary = struct
                 security_scanning_alert : Security_scanning_alert.t option; [@default None]
                 single_file : Single_file.t option; [@default None]
                 statuses : Statuses.t option; [@default None]
-                team_discussions : Team_discussions.t option; [@default None]
                 vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
                 workflows : Workflows.t option; [@default None]
               }
@@ -2903,19 +2887,6 @@ module Primary = struct
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
-      module Sub_issues_summary_ = struct
-        module Primary = struct
-          type t = {
-            completed : int;
-            percent_completed : int;
-            total : int;
-          }
-          [@@deriving yojson { strict = false; meta = true }, show, eq]
-        end
-
-        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-      end
-
       module User = struct
         module Primary = struct
           module Type = struct
@@ -2983,6 +2954,9 @@ module Primary = struct
         events_url : string;
         html_url : string;
         id : int64;
+        issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+            [@default None]
+        issue_field_values : Issue_field_values.t option; [@default None]
         labels : Labels.t option; [@default None]
         labels_url : string;
         locked : bool option; [@default None]
@@ -2990,12 +2964,13 @@ module Primary = struct
         node_id : string;
         number : int;
         performed_via_github_app : Performed_via_github_app.t option; [@default None]
+        pinned_comment : Githubc2_components_nullable_issue_comment.t option; [@default None]
         pull_request : Pull_request_.t option; [@default None]
         reactions : Reactions.t;
         repository_url : string;
         state : State.t option; [@default None]
         state_reason : string option; [@default None]
-        sub_issues_summary : Sub_issues_summary_.t option; [@default None]
+        sub_issues_summary : Githubc2_components_sub_issues_summary.t option; [@default None]
         timeline_url : string option; [@default None]
         title : string;
         type_ : Githubc2_components_issue_type.t option; [@default None] [@key "type"]

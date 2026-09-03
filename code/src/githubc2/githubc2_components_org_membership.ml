@@ -1,4 +1,8 @@
 module Primary = struct
+  module Enterprise_teams_providing_indirect_membership = struct
+    type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Permissions = struct
     module Primary = struct
       type t = { can_create_repository : bool }
@@ -48,6 +52,10 @@ module Primary = struct
   end
 
   type t = {
+    direct_membership : bool option; [@default None]
+    enterprise_teams_providing_indirect_membership :
+      Enterprise_teams_providing_indirect_membership.t option;
+        [@default None]
     organization : Githubc2_components_organization_simple.t;
     organization_url : string;
     permissions : Permissions.t option; [@default None]

@@ -25,6 +25,7 @@ module Primary = struct
     id : string;
     size_gb : int;
     source : Source.t;
+    version : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

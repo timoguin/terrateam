@@ -43,7 +43,6 @@ module Primary = struct
 
   type t = {
     client_id : string option; [@default None]
-    client_secret : string option; [@default None]
     created_at : string;
     description : string option; [@default None]
     events : Events.t;
@@ -54,11 +53,9 @@ module Primary = struct
     name : string;
     node_id : string;
     owner : Owner.t;
-    pem : string option; [@default None]
     permissions : Permissions.t;
     slug : string option; [@default None]
     updated_at : string;
-    webhook_secret : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

@@ -246,18 +246,7 @@ let module_name_of_operation_id s = s |> CCString.replace ~sub:"/" ~by:"_" |> mo
 
 let field_name_of_schema s =
   match CCString.lowercase_ascii s with
-  | ( "class"
-    | "end"
-    | "external"
-    | "in"
-    | "include"
-    | "method"
-    | "module"
-    | "object"
-    | "private"
-    | "ref"
-    | "to"
-    | "type" ) as s -> s ^ "_"
+  | s when Gen.is_reserved_word s -> s ^ "_"
   | s when CCString.prefix ~pre:"_" s -> cleanup_name @@ CCString.drop_while (( = ) '_') s ^ "_"
   | s when CCString.prefix ~pre:"$" s -> cleanup_name @@ CCString.drop_while (( = ) '$') s ^ "_"
   | s when CCString.prefix ~pre:"@" s -> cleanup_name @@ CCString.drop_while (( = ) '@') s ^ "_"
@@ -407,8 +396,19 @@ let request_param_of_op_params base_module_name components param_in params =
                                      (Gen.tuple
                                         [
                                           Exp.ident (Location.mknoloc (Gen.ident [ "v" ]));
+                                          (* The type of branch [idx] lives in
+                                             [<Param>.V<idx>], the same module the
+                                             pattern above constructs, so an enum
+                                             inside the branch is reached through
+                                             it.  Naming the parameter module alone
+                                             produces a reference to a module that
+                                             does not exist. *)
                                           type_desc_of_schema
-                                            ~enum_module:[ module_name_of_string p.Parameter.name ]
+                                            ~enum_module:
+                                              [
+                                                module_name_of_string p.Parameter.name;
+                                                Printf.sprintf "V%d" idx;
+                                              ]
                                             schema;
                                         ]))))
                         @@ CCList.map (resolve_schema_ref components) schemas)

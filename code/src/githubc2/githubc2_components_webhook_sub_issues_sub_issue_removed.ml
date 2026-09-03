@@ -17,11 +17,11 @@ module Primary = struct
     organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
     parent_issue : Githubc2_components_issue.t;
     parent_issue_id : float;
-    repository : Githubc2_components_repository_webhooks.t option; [@default None]
-    sender : Githubc2_components_simple_user.t option; [@default None]
-    sub_issue : Githubc2_components_issue.t;
-    sub_issue_id : float;
-    sub_issue_repo : Githubc2_components_repository.t;
+    repository : Githubc2_components_repository_webhooks.t;
+    sender : Githubc2_components_simple_user.t;
+    sub_issue : Githubc2_components_issue.t option; [@default None]
+    sub_issue_id : float option; [@default None]
+    sub_issue_repo : Githubc2_components_repository.t option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

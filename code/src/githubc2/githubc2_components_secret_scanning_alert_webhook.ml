@@ -1,4 +1,22 @@
 module Primary = struct
+  module Secret_category = struct
+    let t_of_yojson = function
+      | `String "default" -> Ok `Default
+      | `String "generic" -> Ok `Generic
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Default -> `String "default"
+      | `Generic -> `String "generic"
+
+    type t =
+      ([ `Default
+       | `Generic
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Validity = struct
     let t_of_yojson = function
       | `String "active" -> Ok `Active
@@ -21,11 +39,18 @@ module Primary = struct
   end
 
   type t = {
+    assigned_to : Githubc2_components_nullable_simple_user.t option; [@default None]
+    closure_request_comment : string option; [@default None]
+    closure_request_reviewer : Githubc2_components_nullable_simple_user.t option; [@default None]
+    closure_request_reviewer_comment : string option; [@default None]
     created_at : string option; [@default None]
     html_url : string option; [@default None]
     locations_url : string option; [@default None]
+    metadata : Githubc2_components_secret_scanning_alert_metadata.t option; [@default None]
     multi_repo : bool option; [@default None]
     number : int option; [@default None]
+    provider : string option; [@default None]
+    provider_slug : string option; [@default None]
     publicly_leaked : bool option; [@default None]
     push_protection_bypass_request_comment : string option; [@default None]
     push_protection_bypass_request_html_url : string option; [@default None]
@@ -40,6 +65,7 @@ module Primary = struct
     resolution_comment : string option; [@default None]
     resolved_at : string option; [@default None]
     resolved_by : Githubc2_components_nullable_simple_user.t option; [@default None]
+    secret_category : Secret_category.t option; [@default None]
     secret_type : string option; [@default None]
     secret_type_display_name : string option; [@default None]
     updated_at : string option; [@default None]

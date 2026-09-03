@@ -40,11 +40,12 @@ module Plan_type = struct
 end
 
 type t = {
-  assignee : Githubc2_components_simple_user.t;
+  assignee : Githubc2_components_nullable_simple_user.t option; [@default None]
   assigning_team : Assigning_team.t option; [@default None]
   created_at : string;
   last_activity_at : string option; [@default None]
   last_activity_editor : string option; [@default None]
+  last_authenticated_at : string option; [@default None]
   organization : Githubc2_components_nullable_organization_simple.t option; [@default None]
   pending_cancellation_date : string option; [@default None]
   plan_type : Plan_type.t option; [@default None]

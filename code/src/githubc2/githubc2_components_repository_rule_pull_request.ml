@@ -26,14 +26,22 @@ module Primary = struct
         type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Required_reviewers = struct
+        type t = Githubc2_components_repository_rule_params_required_reviewer_configuration.t list
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       type t = {
         allowed_merge_methods : Allowed_merge_methods.t option; [@default None]
-        automatic_copilot_code_review_enabled : bool option; [@default None]
         dismiss_stale_reviews_on_push : bool;
+        dismissal_restriction :
+          Githubc2_components_repository_rule_params_dismissal_restriction.t option;
+            [@default None]
         require_code_owner_review : bool;
         require_last_push_approval : bool;
         required_approving_review_count : int;
         required_review_thread_resolution : bool;
+        required_reviewers : Required_reviewers.t option; [@default None]
       }
       [@@deriving yojson { strict = false; meta = true }, show, eq]
     end

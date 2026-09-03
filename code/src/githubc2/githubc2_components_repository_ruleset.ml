@@ -63,17 +63,20 @@ module Primary = struct
   module Current_user_can_bypass = struct
     let t_of_yojson = function
       | `String "always" -> Ok `Always
+      | `String "exempt" -> Ok `Exempt
       | `String "never" -> Ok `Never
       | `String "pull_requests_only" -> Ok `Pull_requests_only
       | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
     let t_to_yojson = function
       | `Always -> `String "always"
+      | `Exempt -> `String "exempt"
       | `Never -> `String "never"
       | `Pull_requests_only -> `String "pull_requests_only"
 
     type t =
       ([ `Always
+       | `Exempt
        | `Never
        | `Pull_requests_only
        ]

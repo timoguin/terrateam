@@ -13,6 +13,11 @@ module Primary = struct
 
   module Alert = struct
     module Primary = struct
+      module Assignees = struct
+        type t = Githubc2_components_simple_user.t list
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Dismissed_at = struct
         type t = Yojson.Safe.t [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
@@ -165,6 +170,7 @@ module Primary = struct
       end
 
       type t = {
+        assignees : Assignees.t option; [@default None]
         created_at : string;
         dismissed_at : Dismissed_at.t option; [@default None]
         dismissed_by : Dismissed_by.t option; [@default None]

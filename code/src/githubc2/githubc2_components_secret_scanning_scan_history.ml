@@ -48,6 +48,11 @@ module Primary = struct
     type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Generic_secrets_backfill_scans = struct
+    type t = Githubc2_components_secret_scanning_scan.t list
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Incremental_scans = struct
     type t = Githubc2_components_secret_scanning_scan.t list
     [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -61,6 +66,7 @@ module Primary = struct
   type t = {
     backfill_scans : Backfill_scans.t option; [@default None]
     custom_pattern_backfill_scans : Custom_pattern_backfill_scans.t option; [@default None]
+    generic_secrets_backfill_scans : Generic_secrets_backfill_scans.t option; [@default None]
     incremental_scans : Incremental_scans.t option; [@default None]
     pattern_update_scans : Pattern_update_scans.t option; [@default None]
   }

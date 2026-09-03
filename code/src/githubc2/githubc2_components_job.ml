@@ -115,12 +115,12 @@ module Primary = struct
     head_branch : string option; [@default None]
     head_sha : string;
     html_url : string option; [@default None]
-    id : int;
+    id : int64;
     labels : Labels.t;
     name : string;
     node_id : string;
     run_attempt : int option; [@default None]
-    run_id : int;
+    run_id : int64;
     run_url : string;
     runner_group_id : int option; [@default None]
     runner_group_name : string option; [@default None]

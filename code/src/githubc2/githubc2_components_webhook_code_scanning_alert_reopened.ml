@@ -13,6 +13,15 @@ module Primary = struct
 
   module Alert = struct
     module Primary = struct
+      module Assignees = struct
+        type t = Githubc2_components_simple_user.t list
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Dismissal_approved_by = struct
+        type t = Yojson.Safe.t [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Dismissed_by = struct
         include Json_schema.Additional_properties.Make (Json_schema.Empty_obj) (Json_schema.Obj)
       end
@@ -171,18 +180,22 @@ module Primary = struct
       end
 
       type t = {
+        assignees : Assignees.t option; [@default None]
         created_at : string;
+        dismissal_approved_by : Dismissal_approved_by.t option; [@default None]
         dismissed_at : string option; [@default None]
         dismissed_by : Dismissed_by.t option; [@default None]
         dismissed_comment : string option; [@default None]
         dismissed_reason : string option; [@default None]
         fixed_at : Fixed_at.t option; [@default None]
         html_url : string;
+        instances_url : string option; [@default None]
         most_recent_instance : Most_recent_instance.t option; [@default None]
         number : int;
         rule : Rule.t;
         state : State.t option; [@default None]
         tool : Tool.t;
+        updated_at : string option; [@default None]
         url : string;
       }
       [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -193,7 +206,7 @@ module Primary = struct
 
   type t = {
     action : Action.t;
-    alert : Alert.t option; [@default None]
+    alert : Alert.t;
     commit_oid : string option; [@default None]
     enterprise : Githubc2_components_enterprise_webhooks.t option; [@default None]
     installation : Githubc2_components_simple_installation.t option; [@default None]

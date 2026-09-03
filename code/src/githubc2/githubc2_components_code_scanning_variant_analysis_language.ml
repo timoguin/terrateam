@@ -1,4 +1,5 @@
 let t_of_yojson = function
+  | `String "actions" -> Ok `Actions
   | `String "cpp" -> Ok `Cpp
   | `String "csharp" -> Ok `Csharp
   | `String "go" -> Ok `Go
@@ -11,6 +12,7 @@ let t_of_yojson = function
   | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
 let t_to_yojson = function
+  | `Actions -> `String "actions"
   | `Cpp -> `String "cpp"
   | `Csharp -> `String "csharp"
   | `Go -> `String "go"
@@ -22,7 +24,8 @@ let t_to_yojson = function
   | `Swift -> `String "swift"
 
 type t =
-  ([ `Cpp
+  ([ `Actions
+   | `Cpp
    | `Csharp
    | `Go
    | `Java

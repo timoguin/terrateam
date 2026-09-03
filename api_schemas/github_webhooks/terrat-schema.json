@@ -3265,6 +3265,46 @@
       "title": "pull_request_review submitted event",
       "type": "object"
     },
+    "pull_request$stacked": {
+      "$schema": "http://json-schema.org/draft-07/schema",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "stacked"
+          ],
+          "type": "string"
+        },
+        "installation": {
+          "$ref": "#/definitions/installation-lite"
+        },
+        "number": {
+          "description": "The pull request number.",
+          "type": "integer"
+        },
+        "organization": {
+          "$ref": "#/definitions/organization"
+        },
+        "pull_request": {
+          "$ref": "#/definitions/pull-request"
+        },
+        "repository": {
+          "$ref": "#/definitions/repository"
+        },
+        "sender": {
+          "$ref": "#/definitions/user"
+        }
+      },
+      "required": [
+        "action",
+        "number",
+        "pull_request",
+        "repository",
+        "sender"
+      ],
+      "title": "pull_request stacked event",
+      "type": "object"
+    },
     "pull_request$synchronize": {
       "$schema": "http://json-schema.org/draft-07/schema",
       "additionalProperties": false,
@@ -3498,6 +3538,9 @@
         },
         {
           "$ref": "#/definitions/pull_request$review_submitted"
+        },
+        {
+          "$ref": "#/definitions/pull_request$stacked"
         }
       ]
     },

@@ -14,6 +14,7 @@ module Primary = struct
   type t = {
     action : Action.t option; [@default None]
     check_run : Githubc2_components_check_run_with_simple_check_suite.t;
+    enterprise : Githubc2_components_enterprise_webhooks.t option; [@default None]
     installation : Githubc2_components_simple_installation.t option; [@default None]
     organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
     repository : Githubc2_components_repository_webhooks.t;

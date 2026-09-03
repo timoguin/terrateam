@@ -53,13 +53,19 @@ module Primary = struct
 
   module State = struct
     let t_of_yojson = function
+      | `String "auto_dismissed" -> Ok `Auto_dismissed
       | `String "open" -> Ok `Open
       | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
     let t_to_yojson = function
+      | `Auto_dismissed -> `String "auto_dismissed"
       | `Open -> `String "open"
 
-    type t = ([ `Open ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    type t =
+      ([ `Auto_dismissed
+       | `Open
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 

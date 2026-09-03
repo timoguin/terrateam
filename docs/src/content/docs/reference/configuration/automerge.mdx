@@ -85,3 +85,11 @@ When enabling automerge, keep the following in mind:
 - If any directory fails to apply, automerge will not be triggered.
 - Automerge will respect any branch protection rules configured in your repository. If a pull request cannot be merged due to branch protection rules, automerge will not force the merge.
 - If `delete_branch` is enabled, the source branch will only be deleted if the merge is successful.
+- If the merge fails for any reason, Terrateam comments the reason on the pull request.
+
+## Stacked Pull Requests
+On GitHub, Terrateam merges through the [asynchronous merge API](https://docs.github.com/en/rest/pulls/pulls), which supports [stacked pull requests](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs). Merging a stacked pull request merges every unmerged pull request below it as a single operation, and GitHub re-targets the pull requests above it at the stack base.
+
+This means automerge works on a stack: apply the bottom pull request and Terrateam lands it, GitHub re-targets the layer above, and that layer can then be planned and applied in turn.
+
+If your GitHub Enterprise Server is too old to have the asynchronous merge API, Terrateam falls back to the synchronous merge API. That API cannot merge a stacked pull request, which is a limitation of GitHub Enterprise Server rather than of Terrateam.

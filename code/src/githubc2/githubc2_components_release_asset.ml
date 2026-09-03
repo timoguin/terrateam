@@ -21,6 +21,7 @@ module Primary = struct
     browser_download_url : string;
     content_type : string;
     created_at : string;
+    digest : string option; [@default None]
     download_count : int;
     id : int;
     label : string option; [@default None]

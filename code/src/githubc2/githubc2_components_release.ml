@@ -16,6 +16,7 @@ module Primary = struct
     draft : bool;
     html_url : string;
     id : int;
+    immutable : bool option; [@default None]
     mentions_count : int option; [@default None]
     name : string option; [@default None]
     node_id : string;
@@ -25,6 +26,7 @@ module Primary = struct
     tag_name : string;
     tarball_url : string option; [@default None]
     target_commitish : string;
+    updated_at : string option; [@default None]
     upload_url : string;
     url : string;
     zipball_url : string option; [@default None]

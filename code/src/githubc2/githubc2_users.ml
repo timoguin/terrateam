@@ -409,6 +409,7 @@ module List_attestations = struct
               type t = {
                 bundle : Bundle.t option; [@default None]
                 bundle_url : string option; [@default None]
+                initiator : string option; [@default None]
                 repository_id : int option; [@default None]
               }
               [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -480,6 +481,335 @@ module List_attestations = struct
       ~url
       ~responses:Responses.t
       `Get
+end
+
+module Delete_attestations_by_id = struct
+  module Parameters = struct
+    type t = {
+      attestation_id : int;
+      username : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct end
+    module No_content = struct end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK
+      | `No_content
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", fun _ -> Ok `OK);
+        ("204", fun _ -> Ok `No_content);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/users/{username}/attestations/{attestation_id}"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("username", Var (params.username, String));
+           ("attestation_id", Var (params.attestation_id, Int));
+         ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Delete
+end
+
+module Delete_attestations_by_subject_digest = struct
+  module Parameters = struct
+    type t = {
+      subject_digest : string;
+      username : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct end
+    module No_content = struct end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK
+      | `No_content
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", fun _ -> Ok `OK);
+        ("204", fun _ -> Ok `No_content);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/users/{username}/attestations/digest/{subject_digest}"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("username", Var (params.username, String));
+           ("subject_digest", Var (params.subject_digest, String));
+         ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Delete
+end
+
+module Delete_attestations_bulk = struct
+  module Parameters = struct
+    type t = { username : string } [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module V0 = struct
+      module Primary = struct
+        module Subject_digests = struct
+          type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = { subject_digests : Subject_digests.t }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    module V1 = struct
+      module Primary = struct
+        module Attestation_ids = struct
+          type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = { attestation_ids : Attestation_ids.t }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
+
+    let of_yojson =
+      Json_schema.one_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
+  end
+
+  module Responses = struct
+    module OK = struct end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", fun _ -> Ok `OK);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/users/{username}/attestations/delete-request"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("username", Var (params.username, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Post
+end
+
+module List_attestations_bulk = struct
+  module Parameters = struct
+    type t = {
+      after : string option; [@default None]
+      before : string option; [@default None]
+      per_page : int; [@default 30]
+      username : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Subject_digests = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        predicate_type : string option; [@default None]
+        subject_digests : Subject_digests.t;
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module OK = struct
+      module Primary = struct
+        module Attestations_subject_digests = struct
+          module Additional = struct
+            module Items = struct
+              module Primary = struct
+                module Bundle = struct
+                  module Primary = struct
+                    module DsseEnvelope = struct
+                      include
+                        Json_schema.Additional_properties.Make
+                          (Json_schema.Empty_obj)
+                          (Json_schema.Obj)
+                    end
+
+                    module VerificationMaterial = struct
+                      include
+                        Json_schema.Additional_properties.Make
+                          (Json_schema.Empty_obj)
+                          (Json_schema.Obj)
+                    end
+
+                    type t = {
+                      dsseenvelope : DsseEnvelope.t option; [@default None] [@key "dsseEnvelope"]
+                      mediatype : string option; [@default None] [@key "mediaType"]
+                      verificationmaterial : VerificationMaterial.t option;
+                          [@default None] [@key "verificationMaterial"]
+                    }
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                type t = {
+                  bundle : Bundle.t option; [@default None]
+                  bundle_url : string option; [@default None]
+                  repository_id : int option; [@default None]
+                }
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+            end
+
+            type t = Items.t list [@@deriving yojson { strict = false; meta = false }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Json_schema.Empty_obj) (Additional)
+        end
+
+        module Page_info = struct
+          module Primary = struct
+            type t = {
+              has_next : bool option; [@default None]
+              has_previous : bool option; [@default None]
+              next : string option; [@default None]
+              previous : string option; [@default None]
+            }
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        end
+
+        type t = {
+          attestations_subject_digests : Attestations_subject_digests.t option; [@default None]
+          page_info : Page_info.t option; [@default None]
+        }
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t = [ `OK of OK.t ] [@@deriving show, eq]
+
+    let t = [ ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson) ]
+  end
+
+  let url = "/users/{username}/attestations/bulk-list"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("username", Var (params.username, String)) ])
+      ~query_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("per_page", Var (params.per_page, Int));
+           ("before", Var (params.before, Option String));
+           ("after", Var (params.after, Option String));
+         ])
+      ~url
+      ~responses:Responses.t
+      `Post
 end
 
 module Get_by_username = struct
@@ -2051,15 +2381,33 @@ module Delete_email_for_authenticated_user = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    module V2 = struct
+      type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+      | V2 of V2.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+           (fun v -> map (fun v -> V2 v) (V2.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
+      | V2 v -> V2.to_yojson v
   end
 
   module Responses = struct
@@ -2139,15 +2487,33 @@ module Add_email_for_authenticated_user = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    module V2 = struct
+      type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+      | V2 of V2.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+           (fun v -> map (fun v -> V2 v) (V2.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
+      | V2 v -> V2.to_yojson v
   end
 
   module Responses = struct

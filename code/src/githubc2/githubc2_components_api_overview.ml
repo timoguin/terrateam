@@ -15,6 +15,10 @@ module Primary = struct
     type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Commit_signing_keys = struct
+    type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Copilot = struct
     type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
@@ -77,6 +81,10 @@ module Primary = struct
         type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Storage = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Website = struct
         type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
@@ -88,6 +96,7 @@ module Primary = struct
         codespaces : Codespaces.t option; [@default None]
         copilot : Copilot.t option; [@default None]
         packages : Packages.t option; [@default None]
+        storage : Storage.t option; [@default None]
         website : Website.t option; [@default None]
       }
       [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -147,6 +156,7 @@ module Primary = struct
     actions_macos : Actions_macos.t option; [@default None]
     api : Api.t option; [@default None]
     codespaces : Codespaces.t option; [@default None]
+    commit_signing_keys : Commit_signing_keys.t option; [@default None]
     copilot : Copilot.t option; [@default None]
     dependabot : Dependabot.t option; [@default None]
     domains : Domains.t option; [@default None]

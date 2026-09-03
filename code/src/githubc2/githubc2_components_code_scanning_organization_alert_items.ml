@@ -1,5 +1,11 @@
 module Primary = struct
+  module Assignees = struct
+    type t = Githubc2_components_simple_user.t list
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   type t = {
+    assignees : Assignees.t option; [@default None]
     created_at : string;
     dismissal_approved_by : Githubc2_components_nullable_simple_user.t option; [@default None]
     dismissed_at : string option; [@default None]

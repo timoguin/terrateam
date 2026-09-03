@@ -23,6 +23,7 @@ module Primary = struct
     collaborators : int option; [@default None]
     company : string option; [@default None]
     created_at : string;
+    default_repository_branch : string option; [@default None]
     default_repository_permission : string option; [@default None]
     dependabot_alerts_enabled_for_new_repositories : bool option; [@default None]
     dependabot_security_updates_enabled_for_new_repositories : bool option; [@default None]
@@ -30,6 +31,7 @@ module Primary = struct
     deploy_keys_enabled_for_repositories : bool option; [@default None]
     description : string option; [@default None]
     disk_usage : int option; [@default None]
+    display_commenter_full_name_setting_enabled : bool option; [@default None]
     email : string option; [@default None]
     events_url : string;
     followers : int;
@@ -44,6 +46,7 @@ module Primary = struct
     location : string option; [@default None]
     login : string;
     members_allowed_repository_creation_type : string option; [@default None]
+    members_can_change_repo_visibility : bool option; [@default None]
     members_can_create_internal_repositories : bool option; [@default None]
     members_can_create_pages : bool option; [@default None]
     members_can_create_private_pages : bool option; [@default None]
@@ -51,7 +54,12 @@ module Primary = struct
     members_can_create_public_pages : bool option; [@default None]
     members_can_create_public_repositories : bool option; [@default None]
     members_can_create_repositories : bool option; [@default None]
+    members_can_create_teams : bool option; [@default None]
+    members_can_delete_issues : bool option; [@default None]
+    members_can_delete_repositories : bool option; [@default None]
     members_can_fork_private_repositories : bool option; [@default None]
+    members_can_invite_outside_collaborators : bool option; [@default None]
+    members_can_view_dependency_insights : bool option; [@default None]
     members_url : string;
     name : string option; [@default None]
     node_id : string;
@@ -61,6 +69,7 @@ module Primary = struct
     public_gists : int;
     public_members_url : string;
     public_repos : int;
+    readers_can_create_discussions : bool option; [@default None]
     repos_url : string;
     secret_scanning_enabled_for_new_repositories : bool option; [@default None]
     secret_scanning_push_protection_custom_link : string option; [@default None]

@@ -242,41 +242,98 @@ module Create_campaign = struct
   end
 
   module Request_body = struct
-    module Code_scanning_alerts = struct
-      module Items = struct
-        module Alert_numbers = struct
-          type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    module V0 = struct
+      module Code_scanning_alerts = struct
+        module Items = struct
+          module Alert_numbers = struct
+            type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            alert_numbers : Alert_numbers.t;
+            repository_id : int;
+          }
+          [@@deriving make, yojson { strict = false; meta = true }, show, eq]
         end
 
-        type t = {
-          alert_numbers : Alert_numbers.t;
-          repository_id : int;
-        }
-        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
-      type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      module Managers = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Team_managers = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        code_scanning_alerts : Code_scanning_alerts.t option; [@default None]
+        contact_link : string option; [@default None]
+        description : string;
+        ends_at : string;
+        generate_issues : bool; [@default false]
+        managers : Managers.t option; [@default None]
+        name : string;
+        team_managers : Team_managers.t option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
     end
 
-    module Managers = struct
-      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    module V1 = struct
+      module Code_scanning_alerts = struct
+        module Items = struct
+          module Alert_numbers = struct
+            type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            alert_numbers : Alert_numbers.t;
+            repository_id : int;
+          }
+          [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Managers = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Team_managers = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        code_scanning_alerts : Code_scanning_alerts.t option; [@default None]
+        contact_link : string option; [@default None]
+        description : string;
+        ends_at : string;
+        generate_issues : bool; [@default false]
+        managers : Managers.t option; [@default None]
+        name : string;
+        team_managers : Team_managers.t option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
     end
 
-    module Team_managers = struct
-      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
-    end
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
-    type t = {
-      code_scanning_alerts : Code_scanning_alerts.t;
-      contact_link : string option; [@default None]
-      description : string;
-      ends_at : string;
-      generate_issues : bool; [@default false]
-      managers : Managers.t option; [@default None]
-      name : string;
-      team_managers : Team_managers.t option; [@default None]
-    }
-    [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    let of_yojson =
+      Json_schema.one_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct

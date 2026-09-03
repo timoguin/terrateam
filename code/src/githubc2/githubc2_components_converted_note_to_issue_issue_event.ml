@@ -1,5 +1,5 @@
 module Primary = struct
-  module Project_card_ = struct
+  module Project_card = struct
     module Primary = struct
       type t = {
         column_name : string;
@@ -24,7 +24,7 @@ module Primary = struct
     id : int;
     node_id : string;
     performed_via_github_app : Githubc2_components_integration.t option; [@default None]
-    project_card : Project_card_.t option; [@default None]
+    project_card : Project_card.t option; [@default None]
     url : string;
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]

@@ -237,57 +237,160 @@ module Update_alert = struct
   end
 
   module Request_body = struct
-    module Dismissed_reason = struct
-      let t_of_yojson = function
-        | `String "fix_started" -> Ok `Fix_started
-        | `String "inaccurate" -> Ok `Inaccurate
-        | `String "no_bandwidth" -> Ok `No_bandwidth
-        | `String "not_used" -> Ok `Not_used
-        | `String "tolerable_risk" -> Ok `Tolerable_risk
-        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+    module V0 = struct
+      module Agent_assignment = struct
+        type t = {
+          custom_agent : string option; [@default None]
+          custom_instructions : string option; [@default None]
+          model : string option; [@default None]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
 
-      let t_to_yojson = function
-        | `Fix_started -> `String "fix_started"
-        | `Inaccurate -> `String "inaccurate"
-        | `No_bandwidth -> `String "no_bandwidth"
-        | `Not_used -> `String "not_used"
-        | `Tolerable_risk -> `String "tolerable_risk"
+      module Assignees = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
 
-      type t =
-        ([ `Fix_started
-         | `Inaccurate
-         | `No_bandwidth
-         | `Not_used
-         | `Tolerable_risk
-         ]
-        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-      [@@deriving yojson { strict = false; meta = true }, show, eq]
+      module Dismissed_reason = struct
+        let t_of_yojson = function
+          | `String "fix_started" -> Ok `Fix_started
+          | `String "inaccurate" -> Ok `Inaccurate
+          | `String "no_bandwidth" -> Ok `No_bandwidth
+          | `String "not_used" -> Ok `Not_used
+          | `String "tolerable_risk" -> Ok `Tolerable_risk
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Fix_started -> `String "fix_started"
+          | `Inaccurate -> `String "inaccurate"
+          | `No_bandwidth -> `String "no_bandwidth"
+          | `Not_used -> `String "not_used"
+          | `Tolerable_risk -> `String "tolerable_risk"
+
+        type t =
+          ([ `Fix_started
+           | `Inaccurate
+           | `No_bandwidth
+           | `Not_used
+           | `Tolerable_risk
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module State = struct
+        let t_of_yojson = function
+          | `String "dismissed" -> Ok `Dismissed
+          | `String "open" -> Ok `Open
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Dismissed -> `String "dismissed"
+          | `Open -> `String "open"
+
+        type t =
+          ([ `Dismissed
+           | `Open
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        agent_assignment : Agent_assignment.t option; [@default None]
+        assignees : Assignees.t option; [@default None]
+        dismissed_comment : string option; [@default None]
+        dismissed_reason : Dismissed_reason.t option; [@default None]
+        state : State.t;
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
     end
 
-    module State = struct
-      let t_of_yojson = function
-        | `String "dismissed" -> Ok `Dismissed
-        | `String "open" -> Ok `Open
-        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+    module V1 = struct
+      module Agent_assignment = struct
+        type t = {
+          custom_agent : string option; [@default None]
+          custom_instructions : string option; [@default None]
+          model : string option; [@default None]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
 
-      let t_to_yojson = function
-        | `Dismissed -> `String "dismissed"
-        | `Open -> `String "open"
+      module Assignees = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
 
-      type t =
-        ([ `Dismissed
-         | `Open
-         ]
-        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-      [@@deriving yojson { strict = false; meta = true }, show, eq]
+      module Dismissed_reason = struct
+        let t_of_yojson = function
+          | `String "fix_started" -> Ok `Fix_started
+          | `String "inaccurate" -> Ok `Inaccurate
+          | `String "no_bandwidth" -> Ok `No_bandwidth
+          | `String "not_used" -> Ok `Not_used
+          | `String "tolerable_risk" -> Ok `Tolerable_risk
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Fix_started -> `String "fix_started"
+          | `Inaccurate -> `String "inaccurate"
+          | `No_bandwidth -> `String "no_bandwidth"
+          | `Not_used -> `String "not_used"
+          | `Tolerable_risk -> `String "tolerable_risk"
+
+        type t =
+          ([ `Fix_started
+           | `Inaccurate
+           | `No_bandwidth
+           | `Not_used
+           | `Tolerable_risk
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module State = struct
+        let t_of_yojson = function
+          | `String "dismissed" -> Ok `Dismissed
+          | `String "open" -> Ok `Open
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Dismissed -> `String "dismissed"
+          | `Open -> `String "open"
+
+        type t =
+          ([ `Dismissed
+           | `Open
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        agent_assignment : Agent_assignment.t option; [@default None]
+        assignees : Assignees.t;
+        dismissed_comment : string option; [@default None]
+        dismissed_reason : Dismissed_reason.t option; [@default None]
+        state : State.t option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
     end
 
-    type t = {
-      dismissed_comment : string option; [@default None]
-      dismissed_reason : Dismissed_reason.t option; [@default None]
-      state : State.t;
-    }
-    [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
+
+    let of_yojson =
+      Json_schema.any_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -448,6 +551,33 @@ module List_alerts_for_repo = struct
       [@@deriving show, eq]
     end
 
+    module Has = struct
+      module V0 = struct
+        type t = string [@@deriving show, eq]
+      end
+
+      module V1 = struct
+        module Items = struct
+          let t_of_yojson = function
+            | `String "patch" -> Ok `Patch
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Patch -> `String "patch"
+
+          type t = ([ `Patch ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving show, eq]
+        end
+
+        type t = Items.t list [@@deriving show, eq]
+      end
+
+      type t =
+        | V0 of V0.t
+        | V1 of V1.t
+      [@@deriving show, eq]
+    end
+
     module Scope = struct
       let t_of_yojson = function
         | `String "development" -> Ok `Development
@@ -489,17 +619,18 @@ module List_alerts_for_repo = struct
 
     type t = {
       after : string option; [@default None]
+      assignee : string option; [@default None]
       before : string option; [@default None]
+      classification : string option; [@default None]
       direction : Direction.t; [@default `Desc]
       ecosystem : string option; [@default None]
       epss_percentage : string option; [@default None]
-      first : int; [@default 30]
-      last : int option; [@default None]
+      has : Has.t option; [@default None]
       manifest : string option; [@default None]
       owner : string;
       package : string option; [@default None]
-      page : int; [@default 1]
       per_page : int; [@default 30]
+      relationship : string option; [@default None]
       repo : string;
       scope : Scope.t option; [@default None]
       severity : string option; [@default None]
@@ -572,21 +703,26 @@ module List_alerts_for_repo = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [
+           ("classification", Var (params.classification, Option String));
            ("state", Var (params.state, Option String));
            ("severity", Var (params.severity, Option String));
            ("ecosystem", Var (params.ecosystem, Option String));
            ("package", Var (params.package, Option String));
            ("manifest", Var (params.manifest, Option String));
            ("epss_percentage", Var (params.epss_percentage, Option String));
+           ( "has",
+             match params.has with
+             | Some (Has.V0 v) -> Var (v, String)
+             | Some (Has.V1 v) -> Var (v, Array (Enum Has.V1.Items.t_to_yojson))
+             | None -> Var ((), Null) );
+           ("assignee", Var (params.assignee, Option String));
            ("scope", Var (params.scope, Option (Enum Scope.t_to_yojson)));
+           ("relationship", Var (params.relationship, Option String));
            ("sort", Var (params.sort, Enum Sort.t_to_yojson));
            ("direction", Var (params.direction, Enum Direction.t_to_yojson));
-           ("page", Var (params.page, Int));
-           ("per_page", Var (params.per_page, Int));
            ("before", Var (params.before, Option String));
            ("after", Var (params.after, Option String));
-           ("first", Var (params.first, Int));
-           ("last", Var (params.last, Option Int));
+           ("per_page", Var (params.per_page, Int));
          ])
       ~url
       ~responses:Responses.t
@@ -822,11 +958,11 @@ module Create_or_update_org_secret = struct
       module Selected_repository_ids = struct
         module Items = struct
           module V0 = struct
-            type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
+            type t = int [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
           module V1 = struct
-            type t = int [@@deriving yojson { strict = false; meta = true }, show, eq]
+            type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
           type t =
@@ -1038,6 +1174,212 @@ module List_org_secrets = struct
       `Get
 end
 
+module Set_repository_access_default_level = struct
+  module Parameters = struct
+    type t = { org : string } [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Default_level = struct
+        let t_of_yojson = function
+          | `String "internal" -> Ok `Internal
+          | `String "public" -> Ok `Public
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Internal -> `String "internal"
+          | `Public -> `String "public"
+
+        type t =
+          ([ `Internal
+           | `Public
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = { default_level : Default_level.t }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/orgs/{org}/dependabot/repository-access/default-level"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("org", Var (params.org, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Put
+end
+
+module Update_repository_access_for_org = struct
+  module Parameters = struct
+    type t = { org : string } [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Repository_ids_to_add = struct
+        type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Repository_ids_to_remove = struct
+        type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        repository_ids_to_add : Repository_ids_to_add.t option; [@default None]
+        repository_ids_to_remove : Repository_ids_to_remove.t option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/orgs/{org}/dependabot/repository-access"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("org", Var (params.org, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Patch
+end
+
+module Repository_access_for_org = struct
+  module Parameters = struct
+    type t = {
+      org : string;
+      page : int; [@default 1]
+      per_page : int; [@default 30]
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Dependabot_repository_access_details.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/orgs/{org}/dependabot/repository-access"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("org", Var (params.org, String)) ])
+      ~query_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("page", Var (params.page, Int)); ("per_page", Var (params.per_page, Int)) ])
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
 module List_alerts_for_org = struct
   module Parameters = struct
     module Direction = struct
@@ -1055,6 +1397,39 @@ module List_alerts_for_org = struct
          | `Desc
          ]
         [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
+    module Has = struct
+      module V0 = struct
+        type t = string [@@deriving show, eq]
+      end
+
+      module V1 = struct
+        module Items = struct
+          let t_of_yojson = function
+            | `String "deployment" -> Ok `Deployment
+            | `String "patch" -> Ok `Patch
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Deployment -> `String "deployment"
+            | `Patch -> `String "patch"
+
+          type t =
+            ([ `Deployment
+             | `Patch
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving show, eq]
+        end
+
+        type t = Items.t list [@@deriving show, eq]
+      end
+
+      type t =
+        | V0 of V0.t
+        | V1 of V1.t
       [@@deriving show, eq]
     end
 
@@ -1099,15 +1474,20 @@ module List_alerts_for_org = struct
 
     type t = {
       after : string option; [@default None]
+      artifact_registry : string option; [@default None]
+      artifact_registry_url : string option; [@default None]
+      assignee : string option; [@default None]
       before : string option; [@default None]
+      classification : string option; [@default None]
       direction : Direction.t; [@default `Desc]
       ecosystem : string option; [@default None]
       epss_percentage : string option; [@default None]
-      first : int; [@default 30]
-      last : int option; [@default None]
+      has : Has.t option; [@default None]
       org : string;
       package : string option; [@default None]
       per_page : int; [@default 30]
+      relationship : string option; [@default None]
+      runtime_risk : string option; [@default None]
       scope : Scope.t option; [@default None]
       severity : string option; [@default None]
       sort : Sort.t; [@default `Created]
@@ -1179,20 +1559,235 @@ module List_alerts_for_org = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [
+           ("classification", Var (params.classification, Option String));
            ("state", Var (params.state, Option String));
            ("severity", Var (params.severity, Option String));
            ("ecosystem", Var (params.ecosystem, Option String));
            ("package", Var (params.package, Option String));
            ("epss_percentage", Var (params.epss_percentage, Option String));
+           ("artifact_registry_url", Var (params.artifact_registry_url, Option String));
+           ("artifact_registry", Var (params.artifact_registry, Option String));
+           ( "has",
+             match params.has with
+             | Some (Has.V0 v) -> Var (v, String)
+             | Some (Has.V1 v) -> Var (v, Array (Enum Has.V1.Items.t_to_yojson))
+             | None -> Var ((), Null) );
+           ("assignee", Var (params.assignee, Option String));
+           ("runtime_risk", Var (params.runtime_risk, Option String));
            ("scope", Var (params.scope, Option (Enum Scope.t_to_yojson)));
+           ("relationship", Var (params.relationship, Option String));
            ("sort", Var (params.sort, Enum Sort.t_to_yojson));
            ("direction", Var (params.direction, Enum Direction.t_to_yojson));
            ("before", Var (params.before, Option String));
            ("after", Var (params.after, Option String));
-           ("first", Var (params.first, Int));
-           ("last", Var (params.last, Option Int));
            ("per_page", Var (params.per_page, Int));
          ])
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
+module Set_repository_access_default_level_for_enterprise = struct
+  module Parameters = struct
+    type t = { enterprise : string } [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Default_level = struct
+        let t_of_yojson = function
+          | `String "internal" -> Ok `Internal
+          | `String "public" -> Ok `Public
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Internal -> `String "internal"
+          | `Public -> `String "public"
+
+        type t =
+          ([ `Internal
+           | `Public
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = { default_level : Default_level.t }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/enterprises/{enterprise}/dependabot/repository-access/default-level"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("enterprise", Var (params.enterprise, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Put
+end
+
+module Update_repository_access_for_enterprise = struct
+  module Parameters = struct
+    type t = { enterprise : string } [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Repository_ids_to_add = struct
+        type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Repository_ids_to_remove = struct
+        type t = int list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        repository_ids_to_add : Repository_ids_to_add.t option; [@default None]
+        repository_ids_to_remove : Repository_ids_to_remove.t option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/enterprises/{enterprise}/dependabot/repository-access"
+
+  let make ~body =
+   fun params ->
+    Openapi.Request.make
+      ~body:(Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("enterprise", Var (params.enterprise, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Patch
+end
+
+module Repository_access_for_enterprise = struct
+  module Parameters = struct
+    type t = {
+      enterprise : string;
+      page : int; [@default 1]
+      per_page : int; [@default 30]
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Dependabot_repository_access_details.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/enterprises/{enterprise}/dependabot/repository-access"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("enterprise", Var (params.enterprise, String)) ])
+      ~query_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("page", Var (params.page, Int)); ("per_page", Var (params.per_page, Int)) ])
       ~url
       ~responses:Responses.t
       `Get
@@ -1215,6 +1810,33 @@ module List_alerts_for_enterprise = struct
          | `Desc
          ]
         [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
+    module Has = struct
+      module V0 = struct
+        type t = string [@@deriving show, eq]
+      end
+
+      module V1 = struct
+        module Items = struct
+          let t_of_yojson = function
+            | `String "patch" -> Ok `Patch
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Patch -> `String "patch"
+
+          type t = ([ `Patch ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving show, eq]
+        end
+
+        type t = Items.t list [@@deriving show, eq]
+      end
+
+      type t =
+        | V0 of V0.t
+        | V1 of V1.t
       [@@deriving show, eq]
     end
 
@@ -1259,15 +1881,17 @@ module List_alerts_for_enterprise = struct
 
     type t = {
       after : string option; [@default None]
+      assignee : string option; [@default None]
       before : string option; [@default None]
+      classification : string option; [@default None]
       direction : Direction.t; [@default `Desc]
       ecosystem : string option; [@default None]
       enterprise : string;
       epss_percentage : string option; [@default None]
-      first : int; [@default 30]
-      last : int option; [@default None]
+      has : Has.t option; [@default None]
       package : string option; [@default None]
       per_page : int; [@default 30]
+      relationship : string option; [@default None]
       scope : Scope.t option; [@default None]
       severity : string option; [@default None]
       sort : Sort.t; [@default `Created]
@@ -1332,18 +1956,24 @@ module List_alerts_for_enterprise = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [
+           ("classification", Var (params.classification, Option String));
            ("state", Var (params.state, Option String));
            ("severity", Var (params.severity, Option String));
            ("ecosystem", Var (params.ecosystem, Option String));
            ("package", Var (params.package, Option String));
            ("epss_percentage", Var (params.epss_percentage, Option String));
+           ( "has",
+             match params.has with
+             | Some (Has.V0 v) -> Var (v, String)
+             | Some (Has.V1 v) -> Var (v, Array (Enum Has.V1.Items.t_to_yojson))
+             | None -> Var ((), Null) );
+           ("assignee", Var (params.assignee, Option String));
            ("scope", Var (params.scope, Option (Enum Scope.t_to_yojson)));
+           ("relationship", Var (params.relationship, Option String));
            ("sort", Var (params.sort, Enum Sort.t_to_yojson));
            ("direction", Var (params.direction, Enum Direction.t_to_yojson));
            ("before", Var (params.before, Option String));
            ("after", Var (params.after, Option String));
-           ("first", Var (params.first, Int));
-           ("last", Var (params.last, Option Int));
            ("per_page", Var (params.per_page, Int));
          ])
       ~url

@@ -118,8 +118,10 @@ module Primary = struct
     html_url : string;
     id : int64;
     issue_url : string;
+    minimized : Githubc2_components_nullable_issue_comment_minimized.t option; [@default None]
     node_id : string;
     performed_via_github_app : Githubc2_components_integration.t option; [@default None]
+    pin : Githubc2_components_nullable_pinned_issue_comment.t option; [@default None]
     reactions : Reactions.t;
     updated_at : string;
     url : string;

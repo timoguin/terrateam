@@ -56,6 +56,7 @@ type fetch_diff_files_err =
   [ Githubc2_abb.call_err
   | `Not_found of Githubc2_components.Basic_error.t
   | `Internal_server_error of Githubc2_components.Basic_error.t
+  | `Service_unavailable of Githubc2_repos.Compare_commits.Responses.Service_unavailable.t
   ]
 [@@deriving show]
 

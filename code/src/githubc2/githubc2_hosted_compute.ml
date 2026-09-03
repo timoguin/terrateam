@@ -65,12 +65,18 @@ module Update_network_configuration_for_org = struct
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Failover_network_settings_ids = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Network_settings_ids = struct
         type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
       type t = {
         compute_service : Compute_service.t option; [@default None]
+        failover_network_enabled : bool option; [@default None]
+        failover_network_settings_ids : Failover_network_settings_ids.t option; [@default None]
         name : string option; [@default None]
         network_settings_ids : Network_settings_ids.t option; [@default None]
       }
@@ -209,12 +215,18 @@ module Create_network_configuration_for_org = struct
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Failover_network_settings_ids = struct
+        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Network_settings_ids = struct
         type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
       type t = {
         compute_service : Compute_service.t option; [@default None]
+        failover_network_enabled : bool option; [@default None]
+        failover_network_settings_ids : Failover_network_settings_ids.t option; [@default None]
         name : string;
         network_settings_ids : Network_settings_ids.t;
       }

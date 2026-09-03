@@ -4823,6 +4823,8 @@ module Work_manifest = struct
                         Primary.
                           {
                             ref_ = branch;
+                            (* Terrateam does not read the run this starts. *)
+                            return_run_details = None;
                             inputs =
                               Some
                                 (let dynamic_title_items =

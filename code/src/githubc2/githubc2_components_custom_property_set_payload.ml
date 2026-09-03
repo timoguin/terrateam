@@ -36,6 +36,7 @@ module Primary = struct
       | `String "single_select" -> Ok `Single_select
       | `String "string" -> Ok `String
       | `String "true_false" -> Ok `True_false
+      | `String "url" -> Ok `Url
       | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
     let t_to_yojson = function
@@ -43,12 +44,14 @@ module Primary = struct
       | `Single_select -> `String "single_select"
       | `String -> `String "string"
       | `True_false -> `String "true_false"
+      | `Url -> `String "url"
 
     type t =
       ([ `Multi_select
        | `Single_select
        | `String
        | `True_false
+       | `Url
        ]
       [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
     [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -76,6 +79,7 @@ module Primary = struct
     allowed_values : Allowed_values.t option; [@default None]
     default_value : Default_value.t option; [@default None]
     description : string option; [@default None]
+    require_explicit_values : bool option; [@default None]
     required : bool option; [@default None]
     value_type : Value_type.t;
     values_editable_by : Values_editable_by.t option; [@default None]

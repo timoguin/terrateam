@@ -3,6 +3,7 @@ module Primary = struct
     created_at : string;
     id : int64;
     key : string;
+    last_used : string option; [@default None]
     read_only : bool;
     title : string;
     url : string;

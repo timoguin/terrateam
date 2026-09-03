@@ -21,6 +21,19 @@ type t =
   | Timeline_assigned_issue_event of Githubc2_components_timeline_assigned_issue_event.t
   | Timeline_unassigned_issue_event of Githubc2_components_timeline_unassigned_issue_event.t
   | State_change_issue_event of Githubc2_components_state_change_issue_event.t
+  | Issue_type_added_issue_event of Githubc2_components_issue_type_added_issue_event.t
+  | Issue_type_removed_issue_event of Githubc2_components_issue_type_removed_issue_event.t
+  | Issue_type_changed_issue_event of Githubc2_components_issue_type_changed_issue_event.t
+  | Sub_issue_added_issue_event of Githubc2_components_sub_issue_added_issue_event.t
+  | Sub_issue_removed_issue_event of Githubc2_components_sub_issue_removed_issue_event.t
+  | Parent_issue_added_issue_event of Githubc2_components_parent_issue_added_issue_event.t
+  | Parent_issue_removed_issue_event of Githubc2_components_parent_issue_removed_issue_event.t
+  | Blocked_by_added_issue_event of Githubc2_components_blocked_by_added_issue_event.t
+  | Blocked_by_removed_issue_event of Githubc2_components_blocked_by_removed_issue_event.t
+  | Blocking_added_issue_event of Githubc2_components_blocking_added_issue_event.t
+  | Blocking_removed_issue_event of Githubc2_components_blocking_removed_issue_event.t
+  | Timeline_connected_event of Githubc2_components_timeline_connected_event.t
+  | Timeline_disconnected_event of Githubc2_components_timeline_disconnected_event.t
 [@@deriving show, eq]
 
 let of_yojson =
@@ -109,6 +122,58 @@ let of_yojson =
          map
            (fun v -> State_change_issue_event v)
            (Githubc2_components_state_change_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Issue_type_added_issue_event v)
+           (Githubc2_components_issue_type_added_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Issue_type_removed_issue_event v)
+           (Githubc2_components_issue_type_removed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Issue_type_changed_issue_event v)
+           (Githubc2_components_issue_type_changed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Sub_issue_added_issue_event v)
+           (Githubc2_components_sub_issue_added_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Sub_issue_removed_issue_event v)
+           (Githubc2_components_sub_issue_removed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Parent_issue_added_issue_event v)
+           (Githubc2_components_parent_issue_added_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Parent_issue_removed_issue_event v)
+           (Githubc2_components_parent_issue_removed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Blocked_by_added_issue_event v)
+           (Githubc2_components_blocked_by_added_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Blocked_by_removed_issue_event v)
+           (Githubc2_components_blocked_by_removed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Blocking_added_issue_event v)
+           (Githubc2_components_blocking_added_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Blocking_removed_issue_event v)
+           (Githubc2_components_blocking_removed_issue_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Timeline_connected_event v)
+           (Githubc2_components_timeline_connected_event.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Timeline_disconnected_event v)
+           (Githubc2_components_timeline_disconnected_event.of_yojson v));
      ])
 
 let to_yojson = function
@@ -141,3 +206,21 @@ let to_yojson = function
   | Timeline_unassigned_issue_event v ->
       Githubc2_components_timeline_unassigned_issue_event.to_yojson v
   | State_change_issue_event v -> Githubc2_components_state_change_issue_event.to_yojson v
+  | Issue_type_added_issue_event v -> Githubc2_components_issue_type_added_issue_event.to_yojson v
+  | Issue_type_removed_issue_event v ->
+      Githubc2_components_issue_type_removed_issue_event.to_yojson v
+  | Issue_type_changed_issue_event v ->
+      Githubc2_components_issue_type_changed_issue_event.to_yojson v
+  | Sub_issue_added_issue_event v -> Githubc2_components_sub_issue_added_issue_event.to_yojson v
+  | Sub_issue_removed_issue_event v -> Githubc2_components_sub_issue_removed_issue_event.to_yojson v
+  | Parent_issue_added_issue_event v ->
+      Githubc2_components_parent_issue_added_issue_event.to_yojson v
+  | Parent_issue_removed_issue_event v ->
+      Githubc2_components_parent_issue_removed_issue_event.to_yojson v
+  | Blocked_by_added_issue_event v -> Githubc2_components_blocked_by_added_issue_event.to_yojson v
+  | Blocked_by_removed_issue_event v ->
+      Githubc2_components_blocked_by_removed_issue_event.to_yojson v
+  | Blocking_added_issue_event v -> Githubc2_components_blocking_added_issue_event.to_yojson v
+  | Blocking_removed_issue_event v -> Githubc2_components_blocking_removed_issue_event.to_yojson v
+  | Timeline_connected_event v -> Githubc2_components_timeline_connected_event.to_yojson v
+  | Timeline_disconnected_event v -> Githubc2_components_timeline_disconnected_event.to_yojson v

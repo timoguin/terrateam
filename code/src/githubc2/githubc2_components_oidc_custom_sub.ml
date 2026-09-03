@@ -3,7 +3,10 @@ module Primary = struct
     type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
-  type t = { include_claim_keys : Include_claim_keys.t }
+  type t = {
+    include_claim_keys : Include_claim_keys.t;
+    use_immutable_subject : bool option; [@default None]
+  }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
 

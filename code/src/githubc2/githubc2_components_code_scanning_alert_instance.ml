@@ -6,7 +6,10 @@ module Primary = struct
 
   module Message = struct
     module Primary = struct
-      type t = { text : string option [@default None] }
+      type t = {
+        markdown : string option; [@default None]
+        text : string option; [@default None]
+      }
       [@@deriving yojson { strict = false; meta = true }, show, eq]
     end
 

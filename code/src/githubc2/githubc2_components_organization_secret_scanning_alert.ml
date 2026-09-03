@@ -21,12 +21,22 @@ module Primary = struct
   end
 
   type t = {
+    assigned_to : Githubc2_components_nullable_simple_user.t option; [@default None]
+    closure_request_comment : string option; [@default None]
+    closure_request_reviewer : Githubc2_components_nullable_simple_user.t option; [@default None]
+    closure_request_reviewer_comment : string option; [@default None]
     created_at : string option; [@default None]
+    first_location_detected :
+      Githubc2_components_nullable_secret_scanning_first_detected_location.t option;
+        [@default None]
+    has_more_locations : bool option; [@default None]
     html_url : string option; [@default None]
     is_base64_encoded : bool option; [@default None]
     locations_url : string option; [@default None]
     multi_repo : bool option; [@default None]
     number : int option; [@default None]
+    provider : string option; [@default None]
+    provider_slug : string option; [@default None]
     publicly_leaked : bool option; [@default None]
     push_protection_bypass_request_comment : string option; [@default None]
     push_protection_bypass_request_html_url : string option; [@default None]

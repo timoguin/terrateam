@@ -230,6 +230,7 @@ module All_of = struct
       review_comments_url : string;
       squash_merge_commit_message : Squash_merge_commit_message.t option; [@default None]
       squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+      stack : Githubc2_components_pull_request_stack.t option; [@default None]
       state : State.t;
       statuses_url : string;
       title : string;
@@ -476,6 +477,7 @@ module T = struct
       review_comments_url : string;
       squash_merge_commit_message : Squash_merge_commit_message.t option; [@default None]
       squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+      stack : Githubc2_components_pull_request_stack.t option; [@default None]
       state : State.t;
       statuses_url : string;
       title : string;

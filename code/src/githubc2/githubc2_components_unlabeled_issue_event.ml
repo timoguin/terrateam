@@ -18,6 +18,7 @@ module Primary = struct
     created_at : string;
     event : string;
     id : int;
+    intent : Githubc2_components_nullable_issue_event_intent.t option; [@default None]
     label : Label_.t;
     node_id : string;
     performed_via_github_app : Githubc2_components_nullable_integration.t option; [@default None]
