@@ -8,6 +8,8 @@ declare global {
       maintenanceMode?: boolean | string;
       maintenanceMessage?: string;
       trial_banners?: string;
+      stripe_publishable_key?: string;
+      stripe_pricing_table_id?: string;
     };
     posthog: {
       init: (key: string, options?: Record<string, unknown>) => void;

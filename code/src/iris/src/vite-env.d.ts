@@ -11,6 +11,10 @@ interface TerrateamConfig {
   // Maintenance mode
   maintenanceMode?: boolean | 'true' | 'false';
   maintenanceMessage?: string;
+
+  // Stripe pricing table (SaaS billing mode only; both must be set to render it)
+  stripe_publishable_key?: string;
+  stripe_pricing_table_id?: string;
 }
 
 // Extend Window interface to include runtime config
