@@ -18,15 +18,17 @@ module Primary = struct
 
   type t = {
     action : Action.t option; [@default None]
-    deployment : Githubc2_components_deployment.t option; [@default None]
+    deployment : Githubc2_components_nullable_deployment.t option; [@default None]
     deployment_callback_url : string option; [@default None]
     environment : string option; [@default None]
     event : string option; [@default None]
     installation : Githubc2_components_simple_installation.t option; [@default None]
     organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
     pull_requests : Pull_requests.t option; [@default None]
+    ref_ : string option; [@default None] [@key "ref"]
     repository : Githubc2_components_repository_webhooks.t option; [@default None]
     sender : Githubc2_components_simple_user.t option; [@default None]
+    sha : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

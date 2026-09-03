@@ -58,18 +58,39 @@ module Primary = struct
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Type = struct
+        let t_of_yojson = function
+          | `String "enterprise" -> Ok `Enterprise
+          | `String "organization" -> Ok `Organization
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Enterprise -> `String "enterprise"
+          | `Organization -> `String "organization"
+
+        type t =
+          ([ `Enterprise
+           | `Organization
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       type t = {
         description : string option; [@default None]
+        enterprise_id : int option; [@default None]
         html_url : string;
         id : int;
         members_url : string;
         name : string;
         node_id : string;
         notification_setting : Notification_setting.t;
+        organization_id : int option; [@default None]
         permission : string;
         privacy : Privacy.t;
         repositories_url : string;
         slug : string;
+        type_ : Type.t; [@key "type"]
         url : string;
       }
       [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -99,20 +120,41 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Type = struct
+    let t_of_yojson = function
+      | `String "enterprise" -> Ok `Enterprise
+      | `String "organization" -> Ok `Organization
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Enterprise -> `String "enterprise"
+      | `Organization -> `String "organization"
+
+    type t =
+      ([ `Enterprise
+       | `Organization
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   type t = {
     deleted : bool option; [@default None]
     description : string option; [@default None]
+    enterprise_id : int option; [@default None]
     html_url : string option; [@default None]
     id : int;
     members_url : string option; [@default None]
     name : string;
     node_id : string option; [@default None]
     notification_setting : Notification_setting.t option; [@default None]
+    organization_id : int option; [@default None]
     parent : Parent.t option; [@default None]
     permission : string option; [@default None]
     privacy : Privacy.t option; [@default None]
     repositories_url : string option; [@default None]
     slug : string option; [@default None]
+    type_ : Type.t option; [@default None] [@key "type"]
     url : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]

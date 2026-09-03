@@ -1,5 +1,8 @@
 module Primary = struct
-  type t = { issue_comment_url : string }
+  type t = {
+    html_url : string option; [@default None]
+    issue_comment_url : string;
+  }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
 

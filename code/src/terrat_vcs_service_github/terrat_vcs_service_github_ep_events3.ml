@@ -513,6 +513,57 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | Gw.Pull_request_event.Pull_request_converted_to_draft _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_CONVERTED_TO_DRAFT" request_id);
         Abbs_future_combinators.return_ok ()
+    | Gw.Pull_request_event.Pull_request_edited
+        {
+          Gw.Pull_request_edited.installation =
+            Some { Gw.Installation_lite.id = installation_id; _ };
+          changes = Gw.Pull_request_edited.Changes.{ base = Some _; _ };
+          number = pull_request_id;
+          repository;
+          sender;
+          _;
+        } ->
+        (* The base branch moved.  GitHub does that on its own when the layer
+           below this one in a stack merges, and it makes every plan of this
+           pull request stale, the same as a change of the head does.  Thus this
+           takes the same path as a synchronize. *)
+        Prmths.Counter.inc_one (Metrics.pr_events_total "base_changed");
+        Logs.info (fun m ->
+            m
+              "%s : PULL_REQUEST_EVENT : BASE_CHANGED : owner=%s : repo=%s : pull_number=%d : \
+               sender=%s"
+              request_id
+              repository.Gw.Repository.owner.Gw.User.login
+              repository.Gw.Repository.name
+              pull_request_id
+              sender.Gw.User.login);
+        let account = P.Api.Account.make installation_id in
+        let user = P.Api.User.make sender.Gw.User.login in
+        let repo =
+          P.Api.Repo.make
+            ~id:repository.Gw.Repository.id
+            ~name:repository.Gw.Repository.name
+            ~owner:repository.Gw.Repository.owner.Gw.User.login
+            ()
+        in
+        with_installation_recovery
+          config
+          storage
+          ~installation_id
+          ~login:repository.Gw.Repository.owner.Gw.User.login
+          ~target_type:(target_of_user_type repository.Gw.Repository.owner.Gw.User.type_)
+          ~sender:sender.Gw.User.login
+          (fun () ->
+            Evaluator2.pull_request_event
+              ~request_id
+              ~config
+              ~storage
+              ~exec
+              ~account
+              ~repo
+              ~pull_request_id
+              ~user
+              Evaluator2.Pull_request_event.Sync)
     | Gw.Pull_request_event.Pull_request_edited _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_EDITED" request_id);
         Abbs_future_combinators.return_ok ()
@@ -533,6 +584,14 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
         Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_requested _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_REQUESTED" request_id);
+        Abbs_future_combinators.return_ok ()
+    | Gw.Pull_request_event.Pull_request_stacked _ ->
+        (* A pull request joined or left a stack.  Nothing to run: joining a stack
+           moves the base branch and leaving one moves it back, and GitHub reports
+           each of those as its own event.  The arm has to exist all the same,
+           because an action no decoder knows fails the whole payload, which
+           answers GitHub with a 500 and makes it deliver the event again. *)
+        Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_STACKED" request_id);
         Abbs_future_combinators.return_ok ()
     | Gw.Pull_request_event.Pull_request_unassigned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNASSIGNED" request_id);

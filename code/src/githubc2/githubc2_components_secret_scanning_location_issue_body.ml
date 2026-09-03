@@ -1,5 +1,9 @@
 module Primary = struct
-  type t = { issue_body_url : string } [@@deriving yojson { strict = false; meta = true }, show, eq]
+  type t = {
+    html_url : string option; [@default None]
+    issue_body_url : string;
+  }
+  [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
 
 include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)

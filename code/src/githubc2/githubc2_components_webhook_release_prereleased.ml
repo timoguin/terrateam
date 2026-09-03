@@ -84,6 +84,7 @@ module Primary = struct
               browser_download_url : string;
               content_type : string;
               created_at : string;
+              digest : string option; [@default None]
               download_count : int;
               id : int;
               label : string option; [@default None]
@@ -187,6 +188,7 @@ module Primary = struct
         draft : bool;
         html_url : string;
         id : int;
+        immutable : bool;
         name : string option; [@default None]
         node_id : string;
         prerelease : bool;
@@ -195,6 +197,7 @@ module Primary = struct
         tag_name : string;
         tarball_url : string option; [@default None]
         target_commitish : string;
+        updated_at : string option; [@default None]
         upload_url : string;
         url : string;
         zipball_url : string option; [@default None]

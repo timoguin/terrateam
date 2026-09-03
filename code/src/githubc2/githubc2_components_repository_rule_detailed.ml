@@ -862,14 +862,23 @@ module V7 = struct
             type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
+          module Required_reviewers = struct
+            type t =
+              Githubc2_components_repository_rule_params_required_reviewer_configuration.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
           type t = {
             allowed_merge_methods : Allowed_merge_methods.t option; [@default None]
-            automatic_copilot_code_review_enabled : bool option; [@default None]
             dismiss_stale_reviews_on_push : bool;
+            dismissal_restriction :
+              Githubc2_components_repository_rule_params_dismissal_restriction.t option;
+                [@default None]
             require_code_owner_review : bool;
             require_last_push_approval : bool;
             required_approving_review_count : int;
             required_review_thread_resolution : bool;
+            required_reviewers : Required_reviewers.t option; [@default None]
           }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
@@ -949,14 +958,23 @@ module V7 = struct
             type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
+          module Required_reviewers = struct
+            type t =
+              Githubc2_components_repository_rule_params_required_reviewer_configuration.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
           type t = {
             allowed_merge_methods : Allowed_merge_methods.t option; [@default None]
-            automatic_copilot_code_review_enabled : bool option; [@default None]
             dismiss_stale_reviews_on_push : bool;
+            dismissal_restriction :
+              Githubc2_components_repository_rule_params_dismissal_restriction.t option;
+                [@default None]
             require_code_owner_review : bool;
             require_last_push_approval : bool;
             required_approving_review_count : int;
             required_review_thread_resolution : bool;
+            required_reviewers : Required_reviewers.t option; [@default None]
           }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
@@ -2119,11 +2137,15 @@ module V15 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Restricted_file_paths = struct
-            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          module Workflows = struct
+            type t = Githubc2_components_repository_rule_params_workflow_file_reference.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
-          type t = { restricted_file_paths : Restricted_file_paths.t }
+          type t = {
+            do_not_enforce_on_create : bool option; [@default None]
+            workflows : Workflows.t;
+          }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2150,13 +2172,13 @@ module V15 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "file_path_restriction" -> Ok `File_path_restriction
+          | `String "workflows" -> Ok `Workflows
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `File_path_restriction -> `String "file_path_restriction"
+          | `Workflows -> `String "workflows"
 
-        type t = ([ `File_path_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Workflows ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2177,11 +2199,15 @@ module V15 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Restricted_file_paths = struct
-            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          module Workflows = struct
+            type t = Githubc2_components_repository_rule_params_workflow_file_reference.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
-          type t = { restricted_file_paths : Restricted_file_paths.t }
+          type t = {
+            do_not_enforce_on_create : bool option; [@default None]
+            workflows : Workflows.t;
+          }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2208,13 +2234,13 @@ module V15 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "file_path_restriction" -> Ok `File_path_restriction
+          | `String "workflows" -> Ok `Workflows
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `File_path_restriction -> `String "file_path_restriction"
+          | `Workflows -> `String "workflows"
 
-        type t = ([ `File_path_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Workflows ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2243,7 +2269,12 @@ module V16 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          type t = { max_file_path_length : int }
+          module Code_scanning_tools = struct
+            type t = Githubc2_components_repository_rule_params_code_scanning_tool.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = { code_scanning_tools : Code_scanning_tools.t }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2270,13 +2301,13 @@ module V16 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "max_file_path_length" -> Ok `Max_file_path_length
+          | `String "code_scanning" -> Ok `Code_scanning
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Max_file_path_length -> `String "max_file_path_length"
+          | `Code_scanning -> `String "code_scanning"
 
-        type t = ([ `Max_file_path_length ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Code_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2297,7 +2328,12 @@ module V16 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          type t = { max_file_path_length : int }
+          module Code_scanning_tools = struct
+            type t = Githubc2_components_repository_rule_params_code_scanning_tool.t list
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = { code_scanning_tools : Code_scanning_tools.t }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2324,13 +2360,13 @@ module V16 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "max_file_path_length" -> Ok `Max_file_path_length
+          | `String "code_scanning" -> Ok `Code_scanning
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Max_file_path_length -> `String "max_file_path_length"
+          | `Code_scanning -> `String "code_scanning"
 
-        type t = ([ `Max_file_path_length ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Code_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2359,11 +2395,10 @@ module V17 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Restricted_file_extensions = struct
-            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          type t = { restricted_file_extensions : Restricted_file_extensions.t }
+          type t = {
+            review_draft_pull_requests : bool option; [@default None]
+            review_on_push : bool option; [@default None]
+          }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2390,13 +2425,13 @@ module V17 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "file_extension_restriction" -> Ok `File_extension_restriction
+          | `String "copilot_code_review" -> Ok `Copilot_code_review
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `File_extension_restriction -> `String "file_extension_restriction"
+          | `Copilot_code_review -> `String "copilot_code_review"
 
-        type t = ([ `File_extension_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Copilot_code_review ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2417,11 +2452,10 @@ module V17 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Restricted_file_extensions = struct
-            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          type t = { restricted_file_extensions : Restricted_file_extensions.t }
+          type t = {
+            review_draft_pull_requests : bool option; [@default None]
+            review_on_push : bool option; [@default None]
+          }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2448,13 +2482,13 @@ module V17 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "file_extension_restriction" -> Ok `File_extension_restriction
+          | `String "copilot_code_review" -> Ok `Copilot_code_review
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `File_extension_restriction -> `String "file_extension_restriction"
+          | `Copilot_code_review -> `String "copilot_code_review"
 
-        type t = ([ `File_extension_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Copilot_code_review ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2481,15 +2515,6 @@ end
 module V18 = struct
   module All_of = struct
     module Primary = struct
-      module Parameters = struct
-        module Primary = struct
-          type t = { max_file_size : int }
-          [@@deriving yojson { strict = false; meta = true }, show, eq]
-        end
-
-        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-      end
-
       module Ruleset_source_type = struct
         let t_of_yojson = function
           | `String "Organization" -> Ok `Organization
@@ -2510,18 +2535,17 @@ module V18 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "max_file_size" -> Ok `Max_file_size
+          | `String "license_compliance_scanning" -> Ok `License_compliance_scanning
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Max_file_size -> `String "max_file_size"
+          | `License_compliance_scanning -> `String "license_compliance_scanning"
 
-        type t = ([ `Max_file_size ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `License_compliance_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
       type t = {
-        parameters : Parameters.t option; [@default None]
         ruleset_id : int option; [@default None]
         ruleset_source : string option; [@default None]
         ruleset_source_type : Ruleset_source_type.t option; [@default None]
@@ -2535,15 +2559,6 @@ module V18 = struct
 
   module T = struct
     module Primary = struct
-      module Parameters = struct
-        module Primary = struct
-          type t = { max_file_size : int }
-          [@@deriving yojson { strict = false; meta = true }, show, eq]
-        end
-
-        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-      end
-
       module Ruleset_source_type = struct
         let t_of_yojson = function
           | `String "Organization" -> Ok `Organization
@@ -2564,18 +2579,17 @@ module V18 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "max_file_size" -> Ok `Max_file_size
+          | `String "license_compliance_scanning" -> Ok `License_compliance_scanning
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Max_file_size -> `String "max_file_size"
+          | `License_compliance_scanning -> `String "license_compliance_scanning"
 
-        type t = ([ `Max_file_size ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `License_compliance_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
       type t = {
-        parameters : Parameters.t option; [@default None]
         ruleset_id : int option; [@default None]
         ruleset_source : string option; [@default None]
         ruleset_source_type : Ruleset_source_type.t option; [@default None]
@@ -2599,15 +2613,11 @@ module V19 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Workflows = struct
-            type t = Githubc2_components_repository_rule_params_workflow_file_reference.t list
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          module Restricted_file_paths = struct
+            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
-          type t = {
-            do_not_enforce_on_create : bool option; [@default None]
-            workflows : Workflows.t;
-          }
+          type t = { restricted_file_paths : Restricted_file_paths.t }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2634,13 +2644,13 @@ module V19 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "workflows" -> Ok `Workflows
+          | `String "file_path_restriction" -> Ok `File_path_restriction
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Workflows -> `String "workflows"
+          | `File_path_restriction -> `String "file_path_restriction"
 
-        type t = ([ `Workflows ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `File_path_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2661,15 +2671,11 @@ module V19 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Workflows = struct
-            type t = Githubc2_components_repository_rule_params_workflow_file_reference.t list
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          module Restricted_file_paths = struct
+            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
 
-          type t = {
-            do_not_enforce_on_create : bool option; [@default None]
-            workflows : Workflows.t;
-          }
+          type t = { restricted_file_paths : Restricted_file_paths.t }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2696,13 +2702,13 @@ module V19 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "workflows" -> Ok `Workflows
+          | `String "file_path_restriction" -> Ok `File_path_restriction
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Workflows -> `String "workflows"
+          | `File_path_restriction -> `String "file_path_restriction"
 
-        type t = ([ `Workflows ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `File_path_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2731,12 +2737,7 @@ module V20 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Code_scanning_tools = struct
-            type t = Githubc2_components_repository_rule_params_code_scanning_tool.t list
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          type t = { code_scanning_tools : Code_scanning_tools.t }
+          type t = { max_file_path_length : int }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2763,13 +2764,13 @@ module V20 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "code_scanning" -> Ok `Code_scanning
+          | `String "max_file_path_length" -> Ok `Max_file_path_length
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Code_scanning -> `String "code_scanning"
+          | `Max_file_path_length -> `String "max_file_path_length"
 
-        type t = ([ `Code_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Max_file_path_length ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2790,12 +2791,7 @@ module V20 = struct
     module Primary = struct
       module Parameters = struct
         module Primary = struct
-          module Code_scanning_tools = struct
-            type t = Githubc2_components_repository_rule_params_code_scanning_tool.t list
-            [@@deriving yojson { strict = false; meta = true }, show, eq]
-          end
-
-          type t = { code_scanning_tools : Code_scanning_tools.t }
+          type t = { max_file_path_length : int }
           [@@deriving yojson { strict = false; meta = true }, show, eq]
         end
 
@@ -2822,13 +2818,253 @@ module V20 = struct
 
       module Type = struct
         let t_of_yojson = function
-          | `String "code_scanning" -> Ok `Code_scanning
+          | `String "max_file_path_length" -> Ok `Max_file_path_length
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
-          | `Code_scanning -> `String "code_scanning"
+          | `Max_file_path_length -> `String "max_file_path_length"
 
-        type t = ([ `Code_scanning ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        type t = ([ `Max_file_path_length ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        parameters : Parameters.t option; [@default None]
+        ruleset_id : int option; [@default None]
+        ruleset_source : string option; [@default None]
+        ruleset_source_type : Ruleset_source_type.t option; [@default None]
+        type_ : Type.t; [@key "type"]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  type t = T.t [@@deriving yojson { strict = false; meta = true }, show, eq]
+
+  let of_yojson json =
+    let open CCResult in
+    flat_map (fun _ -> T.of_yojson json) (All_of.of_yojson json)
+end
+
+module V21 = struct
+  module All_of = struct
+    module Primary = struct
+      module Parameters = struct
+        module Primary = struct
+          module Restricted_file_extensions = struct
+            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = { restricted_file_extensions : Restricted_file_extensions.t }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Ruleset_source_type = struct
+        let t_of_yojson = function
+          | `String "Organization" -> Ok `Organization
+          | `String "Repository" -> Ok `Repository
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Organization -> `String "Organization"
+          | `Repository -> `String "Repository"
+
+        type t =
+          ([ `Organization
+           | `Repository
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Type = struct
+        let t_of_yojson = function
+          | `String "file_extension_restriction" -> Ok `File_extension_restriction
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `File_extension_restriction -> `String "file_extension_restriction"
+
+        type t = ([ `File_extension_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        parameters : Parameters.t option; [@default None]
+        ruleset_id : int option; [@default None]
+        ruleset_source : string option; [@default None]
+        ruleset_source_type : Ruleset_source_type.t option; [@default None]
+        type_ : Type.t; [@key "type"]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module T = struct
+    module Primary = struct
+      module Parameters = struct
+        module Primary = struct
+          module Restricted_file_extensions = struct
+            type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = { restricted_file_extensions : Restricted_file_extensions.t }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Ruleset_source_type = struct
+        let t_of_yojson = function
+          | `String "Organization" -> Ok `Organization
+          | `String "Repository" -> Ok `Repository
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Organization -> `String "Organization"
+          | `Repository -> `String "Repository"
+
+        type t =
+          ([ `Organization
+           | `Repository
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Type = struct
+        let t_of_yojson = function
+          | `String "file_extension_restriction" -> Ok `File_extension_restriction
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `File_extension_restriction -> `String "file_extension_restriction"
+
+        type t = ([ `File_extension_restriction ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        parameters : Parameters.t option; [@default None]
+        ruleset_id : int option; [@default None]
+        ruleset_source : string option; [@default None]
+        ruleset_source_type : Ruleset_source_type.t option; [@default None]
+        type_ : Type.t; [@key "type"]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  type t = T.t [@@deriving yojson { strict = false; meta = true }, show, eq]
+
+  let of_yojson json =
+    let open CCResult in
+    flat_map (fun _ -> T.of_yojson json) (All_of.of_yojson json)
+end
+
+module V22 = struct
+  module All_of = struct
+    module Primary = struct
+      module Parameters = struct
+        module Primary = struct
+          type t = { max_file_size : int }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Ruleset_source_type = struct
+        let t_of_yojson = function
+          | `String "Organization" -> Ok `Organization
+          | `String "Repository" -> Ok `Repository
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Organization -> `String "Organization"
+          | `Repository -> `String "Repository"
+
+        type t =
+          ([ `Organization
+           | `Repository
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Type = struct
+        let t_of_yojson = function
+          | `String "max_file_size" -> Ok `Max_file_size
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Max_file_size -> `String "max_file_size"
+
+        type t = ([ `Max_file_size ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        parameters : Parameters.t option; [@default None]
+        ruleset_id : int option; [@default None]
+        ruleset_source : string option; [@default None]
+        ruleset_source_type : Ruleset_source_type.t option; [@default None]
+        type_ : Type.t; [@key "type"]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module T = struct
+    module Primary = struct
+      module Parameters = struct
+        module Primary = struct
+          type t = { max_file_size : int }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Ruleset_source_type = struct
+        let t_of_yojson = function
+          | `String "Organization" -> Ok `Organization
+          | `String "Repository" -> Ok `Repository
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Organization -> `String "Organization"
+          | `Repository -> `String "Repository"
+
+        type t =
+          ([ `Organization
+           | `Repository
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Type = struct
+        let t_of_yojson = function
+          | `String "max_file_size" -> Ok `Max_file_size
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Max_file_size -> `String "max_file_size"
+
+        type t = ([ `Max_file_size ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -2874,6 +3110,8 @@ type t =
   | V18 of V18.t
   | V19 of V19.t
   | V20 of V20.t
+  | V21 of V21.t
+  | V22 of V22.t
 [@@deriving show, eq]
 
 let of_yojson =
@@ -2901,6 +3139,8 @@ let of_yojson =
        (fun v -> map (fun v -> V18 v) (V18.of_yojson v));
        (fun v -> map (fun v -> V19 v) (V19.of_yojson v));
        (fun v -> map (fun v -> V20 v) (V20.of_yojson v));
+       (fun v -> map (fun v -> V21 v) (V21.of_yojson v));
+       (fun v -> map (fun v -> V22 v) (V22.of_yojson v));
      ])
 
 let to_yojson = function
@@ -2925,3 +3165,5 @@ let to_yojson = function
   | V18 v -> V18.to_yojson v
   | V19 v -> V19.to_yojson v
   | V20 v -> V20.to_yojson v
+  | V21 v -> V21.to_yojson v
+  | V22 v -> V22.to_yojson v

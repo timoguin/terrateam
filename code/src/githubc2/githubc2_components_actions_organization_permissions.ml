@@ -4,6 +4,7 @@ module Primary = struct
     enabled_repositories : Githubc2_components_enabled_repositories.t;
     selected_actions_url : string option; [@default None]
     selected_repositories_url : string option; [@default None]
+    sha_pinning_required : bool option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

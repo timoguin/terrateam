@@ -13,6 +13,7 @@ module Primary = struct
     os : string;
     runner_group_id : int option; [@default None]
     status : string;
+    version : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

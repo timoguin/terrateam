@@ -759,6 +759,24 @@ module Primary = struct
                 include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
               end
 
+              module Pull_request_creation_policy = struct
+                let t_of_yojson = function
+                  | `String "all" -> Ok `All
+                  | `String "collaborators_only" -> Ok `Collaborators_only
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `All -> `String "all"
+                  | `Collaborators_only -> `String "collaborators_only"
+
+                type t =
+                  ([ `All
+                   | `Collaborators_only
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
               module Pushed_at = struct
                 module V0 = struct
                   type t = int option [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -892,6 +910,7 @@ module Primary = struct
                 has_issues : bool; [@default true]
                 has_pages : bool;
                 has_projects : bool; [@default true]
+                has_pull_requests : bool; [@default true]
                 has_wiki : bool; [@default true]
                 homepage : string option; [@default None]
                 hooks_url : string;
@@ -922,6 +941,8 @@ module Primary = struct
                 permissions : Permissions.t option; [@default None]
                 private_ : bool; [@key "private"]
                 public : bool option; [@default None]
+                pull_request_creation_policy : Pull_request_creation_policy.t option;
+                    [@default None]
                 pulls_url : string;
                 pushed_at : Pushed_at.t option; [@default None]
                 releases_url : string;
@@ -1174,6 +1195,24 @@ module Primary = struct
                 include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
               end
 
+              module Pull_request_creation_policy = struct
+                let t_of_yojson = function
+                  | `String "all" -> Ok `All
+                  | `String "collaborators_only" -> Ok `Collaborators_only
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `All -> `String "all"
+                  | `Collaborators_only -> `String "collaborators_only"
+
+                type t =
+                  ([ `All
+                   | `Collaborators_only
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
               module Pushed_at = struct
                 module V0 = struct
                   type t = int option [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -1307,6 +1346,7 @@ module Primary = struct
                 has_issues : bool; [@default true]
                 has_pages : bool;
                 has_projects : bool; [@default true]
+                has_pull_requests : bool; [@default true]
                 has_wiki : bool; [@default true]
                 homepage : string option; [@default None]
                 hooks_url : string;
@@ -1337,6 +1377,8 @@ module Primary = struct
                 permissions : Permissions.t option; [@default None]
                 private_ : bool; [@key "private"]
                 public : bool option; [@default None]
+                pull_request_creation_policy : Pull_request_creation_policy.t option;
+                    [@default None]
                 pulls_url : string;
                 pushed_at : Pushed_at.t option; [@default None]
                 releases_url : string;
@@ -1917,6 +1959,7 @@ module Primary = struct
         requested_teams : Requested_teams.t;
         review_comment_url : string;
         review_comments_url : string;
+        stack : Githubc2_components_pull_request_stack.t option; [@default None]
         state : State.t;
         statuses_url : string;
         title : string;

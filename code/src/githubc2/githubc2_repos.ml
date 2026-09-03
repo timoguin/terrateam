@@ -1396,184 +1396,6 @@ module Download_tarball_archive = struct
       `Get
 end
 
-module Delete_tag_protection = struct
-  module Parameters = struct
-    type t = {
-      owner : string;
-      repo : string;
-      tag_protection_id : int;
-    }
-    [@@deriving make, show, eq]
-  end
-
-  module Responses = struct
-    module No_content = struct end
-
-    module Forbidden = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Not_found = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    type t =
-      [ `No_content
-      | `Forbidden of Forbidden.t
-      | `Not_found of Not_found.t
-      ]
-    [@@deriving show, eq]
-
-    let t =
-      [
-        ("204", fun _ -> Ok `No_content);
-        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
-        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
-      ]
-  end
-
-  let url = "/repos/{owner}/{repo}/tags/protection/{tag_protection_id}"
-
-  let make params =
-    Openapi.Request.make
-      ~headers:[]
-      ~url_params:
-        (let open Openapi.Request.Var in
-         let open Parameters in
-         [
-           ("owner", Var (params.owner, String));
-           ("repo", Var (params.repo, String));
-           ("tag_protection_id", Var (params.tag_protection_id, Int));
-         ])
-      ~query_params:[]
-      ~url
-      ~responses:Responses.t
-      `Delete
-end
-
-module Create_tag_protection = struct
-  module Parameters = struct
-    type t = {
-      owner : string;
-      repo : string;
-    }
-    [@@deriving make, show, eq]
-  end
-
-  module Request_body = struct
-    module Primary = struct
-      type t = { pattern : string }
-      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
-    end
-
-    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-  end
-
-  module Responses = struct
-    module Created = struct
-      type t = Githubc2_components.Tag_protection.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Forbidden = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Not_found = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    type t =
-      [ `Created of Created.t
-      | `Forbidden of Forbidden.t
-      | `Not_found of Not_found.t
-      ]
-    [@@deriving show, eq]
-
-    let t =
-      [
-        ("201", Openapi.of_json_body (fun v -> `Created v) Created.of_yojson);
-        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
-        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
-      ]
-  end
-
-  let url = "/repos/{owner}/{repo}/tags/protection"
-
-  let make ~body =
-   fun params ->
-    Openapi.Request.make
-      ~body:(Request_body.to_yojson body)
-      ~headers:[]
-      ~url_params:
-        (let open Openapi.Request.Var in
-         let open Parameters in
-         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
-      ~query_params:[]
-      ~url
-      ~responses:Responses.t
-      `Post
-end
-
-module List_tag_protection = struct
-  module Parameters = struct
-    type t = {
-      owner : string;
-      repo : string;
-    }
-    [@@deriving make, show, eq]
-  end
-
-  module Responses = struct
-    module OK = struct
-      type t = Githubc2_components.Tag_protection.t list
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Forbidden = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Not_found = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    type t =
-      [ `OK of OK.t
-      | `Forbidden of Forbidden.t
-      | `Not_found of Not_found.t
-      ]
-    [@@deriving show, eq]
-
-    let t =
-      [
-        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
-        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
-        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
-      ]
-  end
-
-  let url = "/repos/{owner}/{repo}/tags/protection"
-
-  let make params =
-    Openapi.Request.make
-      ~headers:[]
-      ~url_params:
-        (let open Openapi.Request.Var in
-         let open Parameters in
-         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
-      ~query_params:[]
-      ~url
-      ~responses:Responses.t
-      `Get
-end
-
 module List_tags = struct
   module Parameters = struct
     type t = {
@@ -2200,6 +2022,11 @@ module Update_repo_ruleset = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Validation_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Internal_server_error = struct
       type t = Githubc2_components.Basic_error.t
       [@@deriving yojson { strict = false; meta = false }, show, eq]
@@ -2208,6 +2035,7 @@ module Update_repo_ruleset = struct
     type t =
       [ `OK of OK.t
       | `Not_found of Not_found.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
@@ -2216,6 +2044,8 @@ module Update_repo_ruleset = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ( "500",
           Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
         );
@@ -2373,6 +2203,27 @@ end
 
 module Get_repo_rule_suites = struct
   module Parameters = struct
+    module Evaluate_status = struct
+      let t_of_yojson = function
+        | `String "active" -> Ok `Active
+        | `String "all" -> Ok `All
+        | `String "evaluate" -> Ok `Evaluate
+        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+      let t_to_yojson = function
+        | `Active -> `String "active"
+        | `All -> `String "all"
+        | `Evaluate -> `String "evaluate"
+
+      type t =
+        ([ `Active
+         | `All
+         | `Evaluate
+         ]
+        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
     module Rule_suite_result = struct
       let t_of_yojson = function
         | `String "all" -> Ok `All
@@ -2423,6 +2274,7 @@ module Get_repo_rule_suites = struct
 
     type t = {
       actor_name : string option; [@default None]
+      evaluate_status : Evaluate_status.t; [@default `All]
       owner : string;
       page : int; [@default 1]
       per_page : int; [@default 30]
@@ -2484,6 +2336,7 @@ module Get_repo_rule_suites = struct
            ("time_period", Var (params.time_period, Enum Time_period.t_to_yojson));
            ("actor_name", Var (params.actor_name, Option String));
            ("rule_suite_result", Var (params.rule_suite_result, Enum Rule_suite_result.t_to_yojson));
+           ("evaluate_status", Var (params.evaluate_status, Enum Evaluate_status.t_to_yojson));
            ("per_page", Var (params.per_page, Int));
            ("page", Var (params.page, Int));
          ])
@@ -2559,6 +2412,11 @@ module Create_repo_ruleset = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Validation_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Internal_server_error = struct
       type t = Githubc2_components.Basic_error.t
       [@@deriving yojson { strict = false; meta = false }, show, eq]
@@ -2567,6 +2425,7 @@ module Create_repo_ruleset = struct
     type t =
       [ `Created of Created.t
       | `Not_found of Not_found.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
@@ -2575,6 +2434,8 @@ module Create_repo_ruleset = struct
       [
         ("201", Openapi.of_json_body (fun v -> `Created v) Created.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ( "500",
           Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
         );
@@ -2919,9 +2780,22 @@ module Delete_release = struct
   module Responses = struct
     module No_content = struct end
 
-    type t = [ `No_content ] [@@deriving show, eq]
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("204", fun _ -> Ok `No_content) ]
+    type t =
+      [ `No_content
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
   end
 
   let url = "/repos/{owner}/{repo}/releases/{release_id}"
@@ -3061,9 +2935,22 @@ module Get_latest_release = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    type t = [ `OK of OK.t ] [@@deriving show, eq]
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson) ]
+    type t =
+      [ `OK of OK.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
   end
 
   let url = "/repos/{owner}/{repo}/releases/latest"
@@ -3213,9 +3100,22 @@ module Delete_release_asset = struct
   module Responses = struct
     module No_content = struct end
 
-    type t = [ `No_content ] [@@deriving show, eq]
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("204", fun _ -> Ok `No_content) ]
+    type t =
+      [ `No_content
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
   end
 
   let url = "/repos/{owner}/{repo}/releases/assets/{asset_id}"
@@ -3574,7 +3474,7 @@ module Get_readme = struct
       `Get
 end
 
-module Create_or_update_custom_properties_values = struct
+module Custom_properties_for_repos_create_or_update_repository_values = struct
   module Parameters = struct
     type t = {
       owner : string;
@@ -3650,7 +3550,7 @@ module Create_or_update_custom_properties_values = struct
       `Patch
 end
 
-module Get_custom_properties_values = struct
+module Custom_properties_for_repos_get_repository_values = struct
   module Parameters = struct
     type t = {
       owner : string;
@@ -5556,6 +5456,54 @@ module List_deploy_keys = struct
       `Get
 end
 
+module List_issue_types = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Issue_type.t list
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/issue-types"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
 module Update_invitation = struct
   module Parameters = struct
     type t = {
@@ -5706,6 +5654,140 @@ module List_invitations = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [ ("per_page", Var (params.per_page, Int)); ("page", Var (params.page, Int)) ])
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
+module Disable_immutable_releases = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Conflict = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Conflict of Conflict.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/immutable-releases"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Delete
+end
+
+module Enable_immutable_releases = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module No_content = struct end
+
+    module Conflict = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `No_content
+      | `Conflict of Conflict.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("204", fun _ -> Ok `No_content);
+        ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/immutable-releases"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Put
+end
+
+module Check_immutable_releases = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Check_immutable_releases.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct end
+
+    type t =
+      [ `OK of OK.t
+      | `Not_found
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson); ("404", fun _ -> Ok `Not_found);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/immutable-releases"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
+      ~query_params:[]
       ~url
       ~responses:Responses.t
       `Get
@@ -5938,12 +6020,31 @@ end
 
 module List_webhook_deliveries = struct
   module Parameters = struct
+    module Status = struct
+      let t_of_yojson = function
+        | `String "failure" -> Ok `Failure
+        | `String "success" -> Ok `Success
+        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+      let t_to_yojson = function
+        | `Failure -> `String "failure"
+        | `Success -> `String "success"
+
+      type t =
+        ([ `Failure
+         | `Success
+         ]
+        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
     type t = {
       cursor : string option; [@default None]
       hook_id : int;
       owner : string;
       per_page : int; [@default 30]
       repo : string;
+      status : Status.t option; [@default None]
     }
     [@@deriving make, show, eq]
   end
@@ -5997,7 +6098,9 @@ module List_webhook_deliveries = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [
-           ("per_page", Var (params.per_page, Int)); ("cursor", Var (params.cursor, Option String));
+           ("per_page", Var (params.per_page, Int));
+           ("cursor", Var (params.cursor, Option String));
+           ("status", Var (params.status, Option (Enum Status.t_to_yojson)));
          ])
       ~url
       ~responses:Responses.t
@@ -6430,6 +6533,61 @@ module List_webhooks = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [ ("per_page", Var (params.per_page, Int)); ("page", Var (params.page, Int)) ])
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
+module Get_hash_algorithm = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Repository_hash_algorithm.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/hash-algorithm"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [ ("owner", Var (params.owner, String)); ("repo", Var (params.repo, String)) ])
+      ~query_params:[]
       ~url
       ~responses:Responses.t
       `Get
@@ -8310,75 +8468,6 @@ end
 module Compare_commits = struct
   module Parameters = struct
     type t = {
-      base : string;
-      head : string;
-      owner : string;
-      page : int; [@default 1]
-      per_page : int; [@default 30]
-      repo : string;
-    }
-    [@@deriving make, show, eq]
-  end
-
-  module Responses = struct
-    module OK = struct
-      type t = Githubc2_components.Commit_comparison.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Not_found = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    module Internal_server_error = struct
-      type t = Githubc2_components.Basic_error.t
-      [@@deriving yojson { strict = false; meta = false }, show, eq]
-    end
-
-    type t =
-      [ `OK of OK.t
-      | `Not_found of Not_found.t
-      | `Internal_server_error of Internal_server_error.t
-      ]
-    [@@deriving show, eq]
-
-    let t =
-      [
-        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
-        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
-        ( "500",
-          Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
-        );
-      ]
-  end
-
-  let url = "/repos/{owner}/{repo}/compare/{base}...{head}"
-
-  let make params =
-    Openapi.Request.make
-      ~headers:[]
-      ~url_params:
-        (let open Openapi.Request.Var in
-         let open Parameters in
-         [
-           ("owner", Var (params.owner, String));
-           ("repo", Var (params.repo, String));
-           ("base", Var (params.base, String));
-           ("head", Var (params.head, String));
-         ])
-      ~query_params:
-        (let open Openapi.Request.Var in
-         let open Parameters in
-         [ ("per_page", Var (params.per_page, Int)); ("page", Var (params.page, Int)) ])
-      ~url
-      ~responses:Responses.t
-      `Get
-end
-
-module Compare_commits_with_basehead = struct
-  module Parameters = struct
-    type t = {
       basehead : string;
       owner : string;
       page : int; [@default 1]
@@ -9992,15 +10081,26 @@ module Remove_team_access_restrictions = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -10073,15 +10173,26 @@ module Add_team_access_restrictions = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -10154,15 +10265,26 @@ module Set_team_access_restrictions = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -10635,15 +10757,26 @@ module Remove_status_check_contexts = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -10722,15 +10855,26 @@ module Add_status_check_contexts = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -10816,15 +10960,26 @@ module Set_status_check_contexts = struct
       include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    type t = V0 of V0.t [@@deriving show, eq]
+    module V1 = struct
+      type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
 
     let of_yojson =
       Json_schema.one_of
         (let open CCResult in
-         [ (fun v -> map (fun v -> V0 v) (V0.of_yojson v)) ])
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
 
     let to_yojson = function
       | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -12413,6 +12568,7 @@ module List_attestations = struct
               type t = {
                 bundle : Bundle.t option; [@default None]
                 bundle_url : string option; [@default None]
+                initiator : string option; [@default None]
                 repository_id : int option; [@default None]
               }
               [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -12750,6 +12906,24 @@ module Update = struct
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
+      module Pull_request_creation_policy = struct
+        let t_of_yojson = function
+          | `String "all" -> Ok `All
+          | `String "collaborators_only" -> Ok `Collaborators_only
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `All -> `String "all"
+          | `Collaborators_only -> `String "collaborators_only"
+
+        type t =
+          ([ `All
+           | `Collaborators_only
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Security_and_analysis = struct
         module Primary = struct
           module Advanced_security = struct
@@ -12788,6 +12962,86 @@ module Update = struct
             include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
           end
 
+          module Secret_scanning_delegated_alert_dismissal = struct
+            module Primary = struct
+              type t = { status : string option [@default None] }
+              [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Secret_scanning_delegated_bypass = struct
+            module Primary = struct
+              type t = { status : string option [@default None] }
+              [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Secret_scanning_delegated_bypass_options = struct
+            module Primary = struct
+              module Reviewers = struct
+                module Items = struct
+                  module Primary = struct
+                    module Mode = struct
+                      let t_of_yojson = function
+                        | `String "ALWAYS" -> Ok `ALWAYS
+                        | `String "EXEMPT" -> Ok `EXEMPT
+                        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                      let t_to_yojson = function
+                        | `ALWAYS -> `String "ALWAYS"
+                        | `EXEMPT -> `String "EXEMPT"
+
+                      type t =
+                        ([ `ALWAYS
+                         | `EXEMPT
+                         ]
+                        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                      [@@deriving yojson { strict = false; meta = true }, show, eq]
+                    end
+
+                    module Reviewer_type = struct
+                      let t_of_yojson = function
+                        | `String "ROLE" -> Ok `ROLE
+                        | `String "TEAM" -> Ok `TEAM
+                        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                      let t_to_yojson = function
+                        | `ROLE -> `String "ROLE"
+                        | `TEAM -> `String "TEAM"
+
+                      type t =
+                        ([ `ROLE
+                         | `TEAM
+                         ]
+                        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                      [@@deriving yojson { strict = false; meta = true }, show, eq]
+                    end
+
+                    type t = {
+                      mode : Mode.t; [@default `ALWAYS]
+                      reviewer_id : int;
+                      reviewer_type : Reviewer_type.t;
+                    }
+                    [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = { reviewers : Reviewers.t option [@default None] }
+              [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
           module Secret_scanning_non_provider_patterns = struct
             module Primary = struct
               type t = { status : string option [@default None] }
@@ -12811,6 +13065,14 @@ module Update = struct
             code_security : Code_security.t option; [@default None]
             secret_scanning : Secret_scanning.t option; [@default None]
             secret_scanning_ai_detection : Secret_scanning_ai_detection.t option; [@default None]
+            secret_scanning_delegated_alert_dismissal :
+              Secret_scanning_delegated_alert_dismissal.t option;
+                [@default None]
+            secret_scanning_delegated_bypass : Secret_scanning_delegated_bypass.t option;
+                [@default None]
+            secret_scanning_delegated_bypass_options :
+              Secret_scanning_delegated_bypass_options.t option;
+                [@default None]
             secret_scanning_non_provider_patterns : Secret_scanning_non_provider_patterns.t option;
                 [@default None]
             secret_scanning_push_protection : Secret_scanning_push_protection.t option;
@@ -12892,6 +13154,7 @@ module Update = struct
         description : string option; [@default None]
         has_issues : bool; [@default true]
         has_projects : bool; [@default true]
+        has_pull_requests : bool; [@default true]
         has_wiki : bool; [@default true]
         homepage : string option; [@default None]
         is_template : bool; [@default false]
@@ -12899,6 +13162,7 @@ module Update = struct
         merge_commit_title : Merge_commit_title.t option; [@default None]
         name : string option; [@default None]
         private_ : bool; [@default false] [@key "private"]
+        pull_request_creation_policy : Pull_request_creation_policy.t option; [@default None]
         security_and_analysis : Security_and_analysis.t option; [@default None]
         squash_merge_commit_message : Squash_merge_commit_message.t option; [@default None]
         squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
@@ -13009,11 +13273,17 @@ module Delete = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Conflict = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     type t =
       [ `No_content
       | `Temporary_redirect of Temporary_redirect.t
       | `Forbidden of Forbidden.t
       | `Not_found of Not_found.t
+      | `Conflict of Conflict.t
       ]
     [@@deriving show, eq]
 
@@ -13023,6 +13293,7 @@ module Delete = struct
         ("307", Openapi.of_json_body (fun v -> `Temporary_redirect v) Temporary_redirect.of_yojson);
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
       ]
   end
 
@@ -13174,7 +13445,7 @@ module Update_org_ruleset = struct
       end
 
       module Rules = struct
-        type t = Githubc2_components.Repository_rule.t list
+        type t = Githubc2_components.Org_rules.t list
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -13227,6 +13498,11 @@ module Update_org_ruleset = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Validation_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Internal_server_error = struct
       type t = Githubc2_components.Basic_error.t
       [@@deriving yojson { strict = false; meta = false }, show, eq]
@@ -13235,6 +13511,7 @@ module Update_org_ruleset = struct
     type t =
       [ `OK of OK.t
       | `Not_found of Not_found.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
@@ -13243,6 +13520,8 @@ module Update_org_ruleset = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ( "500",
           Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
         );
@@ -13382,6 +13661,27 @@ end
 
 module Get_org_rule_suites = struct
   module Parameters = struct
+    module Evaluate_status = struct
+      let t_of_yojson = function
+        | `String "active" -> Ok `Active
+        | `String "all" -> Ok `All
+        | `String "evaluate" -> Ok `Evaluate
+        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+      let t_to_yojson = function
+        | `Active -> `String "active"
+        | `All -> `String "all"
+        | `Evaluate -> `String "evaluate"
+
+      type t =
+        ([ `Active
+         | `All
+         | `Evaluate
+         ]
+        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
     module Rule_suite_result = struct
       let t_of_yojson = function
         | `String "all" -> Ok `All
@@ -13432,6 +13732,7 @@ module Get_org_rule_suites = struct
 
     type t = {
       actor_name : string option; [@default None]
+      evaluate_status : Evaluate_status.t; [@default `All]
       org : string;
       page : int; [@default 1]
       per_page : int; [@default 30]
@@ -13494,6 +13795,7 @@ module Get_org_rule_suites = struct
            ("time_period", Var (params.time_period, Enum Time_period.t_to_yojson));
            ("actor_name", Var (params.actor_name, Option String));
            ("rule_suite_result", Var (params.rule_suite_result, Enum Rule_suite_result.t_to_yojson));
+           ("evaluate_status", Var (params.evaluate_status, Enum Evaluate_status.t_to_yojson));
            ("per_page", Var (params.per_page, Int));
            ("page", Var (params.page, Int));
          ])
@@ -13515,7 +13817,7 @@ module Create_org_ruleset = struct
       end
 
       module Rules = struct
-        type t = Githubc2_components.Repository_rule.t list
+        type t = Githubc2_components.Org_rules.t list
         [@@deriving yojson { strict = false; meta = true }, show, eq]
       end
 
@@ -13568,6 +13870,11 @@ module Create_org_ruleset = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Validation_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Internal_server_error = struct
       type t = Githubc2_components.Basic_error.t
       [@@deriving yojson { strict = false; meta = false }, show, eq]
@@ -13576,6 +13883,7 @@ module Create_org_ruleset = struct
     type t =
       [ `Created of Created.t
       | `Not_found of Not_found.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
@@ -13584,6 +13892,8 @@ module Create_org_ruleset = struct
       [
         ("201", Openapi.of_json_body (fun v -> `Created v) Created.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ( "500",
           Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
         );

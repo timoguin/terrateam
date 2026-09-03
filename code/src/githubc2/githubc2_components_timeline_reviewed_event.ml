@@ -41,6 +41,7 @@ module Primary = struct
     pull_request_url : string;
     state : string;
     submitted_at : string option; [@default None]
+    updated_at : string option; [@default None]
     user : Githubc2_components_simple_user.t;
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]

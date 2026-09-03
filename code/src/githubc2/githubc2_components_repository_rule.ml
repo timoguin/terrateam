@@ -20,6 +20,11 @@ type t =
       Githubc2_components_repository_rule_committer_email_pattern.t
   | Repository_rule_branch_name_pattern of Githubc2_components_repository_rule_branch_name_pattern.t
   | Repository_rule_tag_name_pattern of Githubc2_components_repository_rule_tag_name_pattern.t
+  | Repository_rule_workflows of Githubc2_components_repository_rule_workflows.t
+  | Repository_rule_code_scanning of Githubc2_components_repository_rule_code_scanning.t
+  | Repository_rule_copilot_code_review of Githubc2_components_repository_rule_copilot_code_review.t
+  | Repository_rule_license_compliance_scanning of
+      Githubc2_components_repository_rule_license_compliance_scanning.t
   | Repository_rule_file_path_restriction of
       Githubc2_components_repository_rule_file_path_restriction.t
   | Repository_rule_max_file_path_length of
@@ -27,8 +32,6 @@ type t =
   | Repository_rule_file_extension_restriction of
       Githubc2_components_repository_rule_file_extension_restriction.t
   | Repository_rule_max_file_size of Githubc2_components_repository_rule_max_file_size.t
-  | Repository_rule_workflows of Githubc2_components_repository_rule_workflows.t
-  | Repository_rule_code_scanning of Githubc2_components_repository_rule_code_scanning.t
 [@@deriving show, eq]
 
 let of_yojson =
@@ -97,6 +100,22 @@ let of_yojson =
            (Githubc2_components_repository_rule_tag_name_pattern.of_yojson v));
        (fun v ->
          map
+           (fun v -> Repository_rule_workflows v)
+           (Githubc2_components_repository_rule_workflows.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Repository_rule_code_scanning v)
+           (Githubc2_components_repository_rule_code_scanning.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Repository_rule_copilot_code_review v)
+           (Githubc2_components_repository_rule_copilot_code_review.of_yojson v));
+       (fun v ->
+         map
+           (fun v -> Repository_rule_license_compliance_scanning v)
+           (Githubc2_components_repository_rule_license_compliance_scanning.of_yojson v));
+       (fun v ->
+         map
            (fun v -> Repository_rule_file_path_restriction v)
            (Githubc2_components_repository_rule_file_path_restriction.of_yojson v));
        (fun v ->
@@ -111,14 +130,6 @@ let of_yojson =
          map
            (fun v -> Repository_rule_max_file_size v)
            (Githubc2_components_repository_rule_max_file_size.of_yojson v));
-       (fun v ->
-         map
-           (fun v -> Repository_rule_workflows v)
-           (Githubc2_components_repository_rule_workflows.of_yojson v));
-       (fun v ->
-         map
-           (fun v -> Repository_rule_code_scanning v)
-           (Githubc2_components_repository_rule_code_scanning.of_yojson v));
      ])
 
 let to_yojson = function
@@ -147,6 +158,12 @@ let to_yojson = function
       Githubc2_components_repository_rule_branch_name_pattern.to_yojson v
   | Repository_rule_tag_name_pattern v ->
       Githubc2_components_repository_rule_tag_name_pattern.to_yojson v
+  | Repository_rule_workflows v -> Githubc2_components_repository_rule_workflows.to_yojson v
+  | Repository_rule_code_scanning v -> Githubc2_components_repository_rule_code_scanning.to_yojson v
+  | Repository_rule_copilot_code_review v ->
+      Githubc2_components_repository_rule_copilot_code_review.to_yojson v
+  | Repository_rule_license_compliance_scanning v ->
+      Githubc2_components_repository_rule_license_compliance_scanning.to_yojson v
   | Repository_rule_file_path_restriction v ->
       Githubc2_components_repository_rule_file_path_restriction.to_yojson v
   | Repository_rule_max_file_path_length v ->
@@ -154,5 +171,3 @@ let to_yojson = function
   | Repository_rule_file_extension_restriction v ->
       Githubc2_components_repository_rule_file_extension_restriction.to_yojson v
   | Repository_rule_max_file_size v -> Githubc2_components_repository_rule_max_file_size.to_yojson v
-  | Repository_rule_workflows v -> Githubc2_components_repository_rule_workflows.to_yojson v
-  | Repository_rule_code_scanning v -> Githubc2_components_repository_rule_code_scanning.to_yojson v

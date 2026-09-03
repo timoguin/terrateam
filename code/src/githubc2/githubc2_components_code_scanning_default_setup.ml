@@ -114,6 +114,24 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Threat_model = struct
+    let t_of_yojson = function
+      | `String "remote" -> Ok `Remote
+      | `String "remote_and_local" -> Ok `Remote_and_local
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Remote -> `String "remote"
+      | `Remote_and_local -> `String "remote_and_local"
+
+    type t =
+      ([ `Remote
+       | `Remote_and_local
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   type t = {
     languages : Languages.t option; [@default None]
     query_suite : Query_suite.t option; [@default None]
@@ -121,6 +139,7 @@ module Primary = struct
     runner_type : Runner_type.t option; [@default None]
     schedule : Schedule.t option; [@default None]
     state : State.t option; [@default None]
+    threat_model : Threat_model.t option; [@default None]
     updated_at : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]

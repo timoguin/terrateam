@@ -4,6 +4,11 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Issue_field_values = struct
+    type t = Githubc2_components_issue_field_value.t list
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Labels = struct
     module Items = struct
       module Primary = struct
@@ -40,19 +45,6 @@ module Primary = struct
     include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
   end
 
-  module Sub_issues_summary_ = struct
-    module Primary = struct
-      type t = {
-        completed : int;
-        percent_completed : int;
-        total : int;
-      }
-      [@@deriving yojson { strict = false; meta = true }, show, eq]
-    end
-
-    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-  end
-
   type t = {
     active_lock_reason : string option; [@default None]
     assignee : Githubc2_components_nullable_simple_user.t option; [@default None]
@@ -69,6 +61,9 @@ module Primary = struct
     events_url : string;
     html_url : string;
     id : int64;
+    issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+        [@default None]
+    issue_field_values : Issue_field_values.t option; [@default None]
     labels : Labels.t;
     labels_url : string;
     locked : bool;
@@ -76,6 +71,7 @@ module Primary = struct
     node_id : string;
     number : int;
     performed_via_github_app : Githubc2_components_nullable_integration.t option; [@default None]
+    pinned_comment : Githubc2_components_nullable_issue_comment.t option; [@default None]
     pull_request : Pull_request_.t option; [@default None]
     reactions : Githubc2_components_reaction_rollup.t option; [@default None]
     repository : Githubc2_components_repository.t option; [@default None]
@@ -83,7 +79,7 @@ module Primary = struct
     score : float;
     state : string;
     state_reason : string option; [@default None]
-    sub_issues_summary : Sub_issues_summary_.t option; [@default None]
+    sub_issues_summary : Githubc2_components_sub_issues_summary.t option; [@default None]
     text_matches : Githubc2_components_search_result_text_matches.t option; [@default None]
     timeline_url : string option; [@default None]
     title : string;

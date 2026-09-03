@@ -1,4 +1,8 @@
 module Primary = struct
+  module Enterprise_teams_providing_indirect_membership = struct
+    type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module User = struct
     module Primary = struct
       module Type = struct
@@ -53,6 +57,10 @@ module Primary = struct
   end
 
   type t = {
+    direct_membership : bool option; [@default None]
+    enterprise_teams_providing_indirect_membership :
+      Enterprise_teams_providing_indirect_membership.t option;
+        [@default None]
     organization_url : string;
     role : string;
     state : string;

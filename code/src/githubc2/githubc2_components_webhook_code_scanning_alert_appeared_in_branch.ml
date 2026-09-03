@@ -13,6 +13,11 @@ module Primary = struct
 
   module Alert = struct
     module Primary = struct
+      module Assignees = struct
+        type t = Githubc2_components_simple_user.t list
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
       module Dismissed_by = struct
         module Primary = struct
           module Type = struct
@@ -69,17 +74,20 @@ module Primary = struct
       module Dismissed_reason = struct
         let t_of_yojson = function
           | `String "false positive" -> Ok `False_positive
+          | `String "mitigated" -> Ok `Mitigated
           | `String "used in tests" -> Ok `Used_in_tests
           | `String "won't fix" -> Ok `Won_t_fix
           | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
         let t_to_yojson = function
           | `False_positive -> `String "false positive"
+          | `Mitigated -> `String "mitigated"
           | `Used_in_tests -> `String "used in tests"
           | `Won_t_fix -> `String "won't fix"
 
         type t =
           ([ `False_positive
+           | `Mitigated
            | `Used_in_tests
            | `Won_t_fix
            ]
@@ -230,6 +238,7 @@ module Primary = struct
       end
 
       type t = {
+        assignees : Assignees.t option; [@default None]
         created_at : string;
         dismissed_at : string option; [@default None]
         dismissed_by : Dismissed_by.t option; [@default None]

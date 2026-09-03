@@ -923,8 +923,203 @@ let fetch_pull_request_review_decision ~request_id repo pull_number client =
             err);
       Abbs_future_combinators.return_err `Error
 
-let merge_pull_request' ?(retain_pr_title = false) request_id client pull_request merge_strategy =
+(* The merge of a pull request.
+
+   GitHub has two merge endpoints.  The asynchronous one is the only one that can
+   merge a pull request which is part of a stack -- GitHub's documentation says a
+   stack "cannot be merged with the legacy synchronous merge endpoints" -- and it
+   merges an unstacked pull request just as well, so it is the one to reach for.
+   It is recent, so a GitHub Enterprise Server that has not been upgraded answers
+   404 for it; those installations fall back to the synchronous endpoint.
+
+   Failures divide in two, and the distinction is the whole point of the split:
+
+   [`Merge_retry] is a merge that is not ready yet.  Most often GitHub still
+   reports a required check as pending for a while after the check was set, so the
+   first attempts are refused and later ones succeed.  Only these are retried.
+
+   [`Merge_err] is a merge GitHub declined for a settled reason.  Retrying cannot
+   help, and the caller reports the message to the user.
+
+   Every response GitHub describes maps to one of the two, so an automerge that
+   fails always says why.  It used to be that only a 405 or a 409 carrying a
+   message did, and every other failure became an internal error that was written
+   to the log and never reached the pull request. *)
+
+let merge_err_of_basic_error what err =
+  let module Be = Githubc2_components.Basic_error in
+  let { Be.primary = { Be.Primary.message; _ }; _ } = err in
+  `Merge_err (CCOption.get_or ~default:what message)
+
+(* The detail of an asynchronous merge.  Which fields are set depends on the
+   status, so they are all optional; see the note on this schema in
+   api_schemas/github_api/README.md. *)
+let merge_async_detail result =
+  let module R = Githubc2_components.Pull_request_merge_async_result in
+  let module D = R.Details in
+  let { R.details; _ } = result in
+  let { D.primary = { D.Primary.message; uuid; _ }; _ } = details in
+  (message, uuid)
+
+let merge_async_message ~default result = CCOption.get_or ~default (fst (merge_async_detail result))
+
+(* Ask for the result of an asynchronous merge until it settles.  A merge of a
+   whole stack takes several seconds, so this needs a longer budget than a single
+   call, but it must still end: a merge left pending is reported rather than
+   waited on for ever, because the merge may yet land and asking again is safe
+   only through the 409 that says one is already enqueued. *)
+let poll_merge_async request_id client repo pull_number uuid =
   let open Abbs_future_combinators.Infix_result_monad in
+  let module R = Githubc2_components.Pull_request_merge_async_result in
+  let num_tries = 10 in
+  let settled = function
+    | Ok (`Pending _) -> false
+    | Ok (`Settled _) | Error _ -> true
+  in
+  Abbs_future_combinators.retry
+    ~f:(fun () ->
+      let open Abb.Future.Infix_monad in
+      Githubc2_abb.call
+        client.Client.client
+        Githubc2_pulls.Get_merge_async_result.(
+          make Parameters.(make ~owner:repo.Repo.owner ~repo:repo.Repo.name ~pull_number ~uuid))
+      >>= function
+      | Ok resp -> (
+          match Openapi.Response.value resp with
+          | `OK ({ R.status = `Merged | `Enqueued; _ } as result) ->
+              Logs.info (fun m ->
+                  m
+                    "%s : MERGE_PULL_REQUEST : ASYNC_SETTLED : uuid=%s : %s"
+                    request_id
+                    uuid
+                    (merge_async_message ~default:"merged" result));
+              Abbs_future_combinators.return_ok (`Settled ())
+          | `OK ({ R.status = `Failed; _ } as result) ->
+              Abbs_future_combinators.return_err
+                (`Merge_err (merge_async_message ~default:"The merge failed." result))
+          | `OK ({ R.status = `Pending; _ } as result) ->
+              Abbs_future_combinators.return_ok (`Pending result)
+          | `Forbidden err | `Not_found err ->
+              Abbs_future_combinators.return_err
+                (merge_err_of_basic_error "GitHub would not report the result of the merge." err))
+      | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST_ASYNC_RESULT"
+      | Error (#Githubc2_abb.call_err as err) ->
+          Logs.info (fun m ->
+              m
+                "%s : MERGE_PULL_REQUEST : ASYNC_RESULT : %a"
+                request_id
+                Githubc2_abb.pp_call_err
+                err);
+          Abbs_future_combinators.return_err
+            (`Merge_err "GitHub sent a response that could not be read."))
+    ~while_:(Abbs_future_combinators.finite_tries num_tries (fun r -> not (settled r)))
+    ~betwixt:
+      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
+  >>= function
+  | `Settled () -> Abbs_future_combinators.return_ok ()
+  | `Pending _ ->
+      (* Do not send the merge again.  It may still land, and a second request is
+         only safe because of the 409 that says one is already enqueued. *)
+      Abbs_future_combinators.return_err
+        (`Merge_err "The merge did not finish in time.  Look at the pull request for its state.")
+
+let merge_pull_request_async request_id client pull_request ~merge_method ~commit_title =
+  let open Abbs_future_combinators.Infix_result_monad in
+  let module R = Githubc2_components.Pull_request_merge_async_result in
+  let repo = Terrat_pull_request.repo pull_request in
+  let pull_number = Terrat_pull_request.id pull_request in
+  Githubc2_abb.call
+    client.Client.client
+    Githubc2_pulls.Merge_async.(
+      make
+        ~body:
+          Request_body.(
+            make
+              Primary.(
+                make
+                  ~commit_title:(Some commit_title)
+                  ~merge_method:(Some merge_method)
+                    (* Terrateam has no merge queue support, so ask for the merge
+                       that the synchronous endpoint used to perform. *)
+                  ~merge_action:(Some `Direct_merge)
+                  ()))
+        Parameters.(make ~owner:repo.Repo.owner ~repo:repo.Repo.name ~pull_number))
+  >>= fun resp ->
+  (* [settle] is the same for every status that carries a result, because what to
+     do next is in the result and not in the status.  A 409 is one of them: it
+     says a merge is already enqueued and describes that merge, so following it is
+     right, and it is how the synchronous endpoint's "Merge already in progress"
+     was treated. *)
+  let settle result =
+    match result.R.status with
+    | `Merged | `Enqueued -> Abbs_future_combinators.return_ok ()
+    | `Pending -> (
+        match snd (merge_async_detail result) with
+        | Some uuid -> poll_merge_async request_id client repo pull_number uuid
+        | None ->
+            Abbs_future_combinators.return_err
+              (`Merge_err "GitHub accepted the merge but gave no way to follow it."))
+    | `Failed ->
+        Abbs_future_combinators.return_err
+          (`Merge_err (merge_async_message ~default:"The merge failed." result))
+  in
+  match Openapi.Response.value resp with
+  | `OK result | `Accepted result | `Conflict result -> settle result
+  | `Bad_request result ->
+      (* The pull request is not ready to be merged.  A required check that GitHub
+         has not caught up with is the usual cause, so this is worth another try. *)
+      Abbs_future_combinators.return_err
+        (`Merge_retry
+           (merge_async_message ~default:"The pull request is not ready to merge." result))
+  | `Not_found _ ->
+      (* This GitHub does not have the asynchronous merge endpoint. *)
+      Abbs_future_combinators.return_err `Async_unsupported
+  | `Forbidden err ->
+      Abbs_future_combinators.return_err
+        (merge_err_of_basic_error "GitHub would not permit the merge." err)
+  | `Unprocessable_entity err ->
+      let module Ve = Githubc2_components.Validation_error in
+      let { Ve.primary = { Ve.Primary.message; _ }; _ } = err in
+      Abbs_future_combinators.return_err (`Merge_err message)
+
+let merge_pull_request_sync client pull_request ~merge_method ~commit_title =
+  let open Abbs_future_combinators.Infix_result_monad in
+  let repo = Terrat_pull_request.repo pull_request in
+  let pull_number = Terrat_pull_request.id pull_request in
+  let module Mna = Githubc2_pulls.Merge.Responses.Method_not_allowed in
+  let module Cf = Githubc2_pulls.Merge.Responses.Conflict in
+  let module Ve = Githubc2_components.Validation_error in
+  Githubc2_abb.call
+    client.Client.client
+    Githubc2_pulls.Merge.(
+      make
+        ~body:
+          Request_body.(
+            make
+              Primary.(make ~commit_title:(Some commit_title) ~merge_method:(Some merge_method) ()))
+        Parameters.(make ~owner:repo.Repo.owner ~repo:repo.Repo.name ~pull_number))
+  >>= fun resp ->
+  match Openapi.Response.value resp with
+  | `OK _ -> Abbs_future_combinators.return_ok ()
+  | `Method_not_allowed { Mna.primary = { Mna.Primary.message = Some message; _ }; _ }
+    when CCString.equal "Merge already in progress" message -> Abbs_future_combinators.return_ok ()
+  | `Method_not_allowed { Mna.primary = { Mna.Primary.message; _ }; _ } ->
+      Abbs_future_combinators.return_err
+        (`Merge_err (CCOption.get_or ~default:"GitHub would not merge the pull request." message))
+  | `Conflict { Cf.primary = { Cf.Primary.message; _ }; _ } ->
+      (* The head moved, or a check has not settled.  Both are worth another try. *)
+      Abbs_future_combinators.return_err
+        (`Merge_retry (CCOption.get_or ~default:"The pull request is not ready to merge." message))
+  | `Forbidden err ->
+      Abbs_future_combinators.return_err
+        (merge_err_of_basic_error "GitHub would not permit the merge." err)
+  | `Not_found err ->
+      Abbs_future_combinators.return_err
+        (merge_err_of_basic_error "GitHub could not find the pull request." err)
+  | `Unprocessable_entity { Ve.primary = { Ve.Primary.message; _ }; _ } ->
+      Abbs_future_combinators.return_err (`Merge_err message)
+
+let merge_pull_request' ?(retain_pr_title = false) request_id client pull_request merge_strategy =
   let module Ms = Terrat_base_repo_config_v1.Automerge.Merge_strategy in
   let repo = Terrat_pull_request.repo pull_request in
   let merge_method =
@@ -940,6 +1135,24 @@ let merge_pull_request' ?(retain_pr_title = false) request_id client pull_reques
     | (true | false), (Some _ | None) ->
         Printf.sprintf "Terrateam Automerge #%d" (Terrat_pull_request.id pull_request)
   in
+  let merge ~merge_method =
+    let open Abb.Future.Infix_monad in
+    merge_pull_request_async request_id client pull_request ~merge_method ~commit_title
+    >>= function
+    | Error `Async_unsupported ->
+        Logs.info (fun m ->
+            m
+              "%s : MERGE_PULL_REQUEST : ASYNC_UNSUPPORTED : %s : %s : %d"
+              request_id
+              (Repo.owner repo)
+              (Repo.name repo)
+              (Terrat_pull_request.id pull_request));
+        merge_pull_request_sync client pull_request ~merge_method ~commit_title
+    | ( Ok ()
+      | Error
+          ( `Merge_err _ | `Merge_retry _ | `Timeout | `Vcs_api_timeout_err _
+          | #Githubc2_abb.call_err ) ) as r -> Abb.Future.return r
+  in
   Logs.info (fun m ->
       m
         "%s : MERGE_PULL_REQUEST : %s : %s : %d"
@@ -947,26 +1160,13 @@ let merge_pull_request' ?(retain_pr_title = false) request_id client pull_reques
         (Repo.owner repo)
         (Repo.name repo)
         (Terrat_pull_request.id pull_request));
-  Githubc2_abb.call
-    client.Client.client
-    Githubc2_pulls.Merge.(
-      make
-        ~body:
-          Request_body.(
-            make
-              Primary.(make ~commit_title:(Some commit_title) ~merge_method:(Some merge_method) ()))
-        Parameters.(
-          make
-            ~owner:repo.Repo.owner
-            ~repo:repo.Repo.name
-            ~pull_number:(Terrat_pull_request.id pull_request)))
-  >>= fun resp ->
-  let module Mna = Githubc2_pulls.Merge.Responses.Method_not_allowed in
-  match Openapi.Response.value resp with
-  | `OK _ -> Abbs_future_combinators.return_ok ()
-  | `Method_not_allowed { Mna.primary = { Mna.Primary.message = Some message; _ }; _ }
-    when CCString.equal "Merge already in progress" message -> Abbs_future_combinators.return_ok ()
-  | `Method_not_allowed _ when merge_strategy = Ms.Auto -> (
+  let open Abb.Future.Infix_monad in
+  merge ~merge_method
+  >>= function
+  | Error (`Merge_err _) when merge_strategy = Ms.Auto && merge_method <> `Squash ->
+      (* [Auto] means "whatever this repository allows".  A repository that does
+         not allow merge commits declines the merge, so squash is the fallback,
+         which is what the synchronous path did on a 405. *)
       Logs.info (fun m ->
           m
             "%s : MERGE_METHOD_NOT_ALLOWED : METHOD %s : %s : %s : %d"
@@ -975,23 +1175,8 @@ let merge_pull_request' ?(retain_pr_title = false) request_id client pull_reques
             (Repo.owner repo)
             (Repo.name repo)
             (Terrat_pull_request.id pull_request));
-      Githubc2_abb.call
-        client.Client.client
-        Githubc2_pulls.Merge.(
-          make
-            ~body:Request_body.(make Primary.(make ~merge_method:(Some `Squash) ()))
-            Parameters.(
-              make
-                ~owner:repo.Repo.owner
-                ~repo:repo.Repo.name
-                ~pull_number:(Terrat_pull_request.id pull_request)))
-      >>? fun resp ->
-      match Openapi.Response.value resp with
-      | `OK _ -> Ok ()
-      | (`Method_not_allowed _ | `Conflict _ | `Forbidden _ | `Not_found _ | `Unprocessable_entity _)
-        as err -> Error err)
-  | (`Conflict _ | `Forbidden _ | `Method_not_allowed _ | `Not_found _ | `Unprocessable_entity _) as
-    err -> Abbs_future_combinators.return_err err
+      merge ~merge_method:`Squash
+  | r -> Abb.Future.return r
 
 let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_strategy =
   (* GitHub can still report a required status check as pending for a while after
@@ -1004,9 +1189,9 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
      takes that long to be reported, which is the cheaper of the two mistakes.
      Note [finite_tries] permits one attempt more than the count it is given. *)
   let num_tries = 6 in
+  let open Abb.Future.Infix_monad in
   Abbs_future_combinators.retry
     ~f:(fun () ->
-      let open Abb.Future.Infix_monad in
       merge_pull_request' ?retain_pr_title request_id client pull_request merge_strategy
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
@@ -1014,27 +1199,31 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
       | Error (#Githubc2_abb.call_err as err) ->
           Logs.info (fun m ->
               m "%s : MERGE_PULL_REQUEST : %a" request_id Githubc2_abb.pp_call_err err);
-          Abbs_future_combinators.return_err `Error
-      | Error
-          (( `Method_not_allowed
-               Githubc2_pulls.Merge.Responses.Method_not_allowed.
-                 { primary = Primary.{ message = Some message; _ }; _ }
-           | `Conflict
-               Githubc2_pulls.Merge.Responses.Conflict.
-                 { primary = Primary.{ message = Some message; _ }; _ } ) as err) ->
+          (* GitHub answered with something this client cannot read.  That is still
+             a merge that did not happen, and the user is owed a reason. *)
+          Abbs_future_combinators.return_err
+            (`Merge_err "GitHub sent a response that could not be read.")
+      | Error ((`Merge_err _ | `Merge_retry _) as err) ->
           Logs.info (fun m ->
-              m "%s : MERGE_PULL_REQUEST : %a" request_id Githubc2_pulls.Merge.Responses.pp err);
-          Abbs_future_combinators.return_err (`Merge_err message)
-      | Error (#Githubc2_pulls.Merge.Responses.t as err) ->
-          Logs.info (fun m ->
-              m "%s : MERGE_PULL_REQUEST : %a" request_id Githubc2_pulls.Merge.Responses.pp err);
-          Abbs_future_combinators.return_err `Error)
+              m
+                "%s : MERGE_PULL_REQUEST : %s"
+                request_id
+                (match err with
+                | `Merge_err message -> "MERGE_ERR : " ^ message
+                | `Merge_retry message -> "MERGE_RETRY : " ^ message));
+          Abbs_future_combinators.return_err err
+      | Error (`Vcs_api_timeout_err _) as err -> Abb.Future.return err)
     ~while_:
       (Abbs_future_combinators.finite_tries num_tries (function
-        | Error (`Merge_err _) -> true
+        | Error (`Merge_retry _) -> true
         | Ok _ | Error _ -> false))
     ~betwixt:
       (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
+  >>= function
+  (* The tries ran out on a merge that was never ready.  Tell the user why rather
+     than letting it become an internal error nobody sees. *)
+  | Error (`Merge_retry message) -> Abbs_future_combinators.return_err (`Merge_err message)
+  | (Ok () | Error (`Merge_err _ | `Error | `Vcs_api_timeout_err _)) as r -> Abb.Future.return r
 
 let delete_branch' request_id client repo branch =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -1052,16 +1241,15 @@ let delete_branch' request_id client repo branch =
   >>| fun resp ->
   match Openapi.Response.value resp with
   | `No_content -> ()
-  | `Unprocessable_entity err ->
+  | `Unprocessable_entity ->
+      (* GitHub sends this with no body, so there is nothing to log but the branch. *)
       Logs.info (fun m ->
           m
-            "%s : DELETE_PULL_REQUEST_BRANCH : %s : %s : %s : %a"
+            "%s : DELETE_PULL_REQUEST_BRANCH : %s : %s : %s : UNPROCESSABLE_ENTITY"
             request_id
             repo.Repo.owner
             repo.Repo.name
-            branch
-            Githubc2_git.Delete_ref.Responses.Unprocessable_entity.pp
-            err);
+            branch);
       ()
   | `Conflict err ->
       Logs.info (fun m ->

@@ -1,0 +1,1818 @@
+module Primary = struct
+  module Action = struct
+    let t_of_yojson = function
+      | `String "stacked" -> Ok `Stacked
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Stacked -> `String "stacked"
+
+    type t = ([ `Stacked ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
+  module Pull_request_ = struct
+    module Primary = struct
+      module Links_ = struct
+        module Primary = struct
+          module Comments = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Commits = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Html = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Issue_ = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Review_comment_ = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Review_comments = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Self = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Statuses = struct
+            module Primary = struct
+              type t = { href : string }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t = {
+            comments : Comments.t;
+            commits : Commits.t;
+            html : Html.t;
+            issue : Issue_.t;
+            review_comment : Review_comment_.t;
+            review_comments : Review_comments.t;
+            self : Self.t;
+            statuses : Statuses.t;
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Active_lock_reason = struct
+        let t_of_yojson = function
+          | `String "off-topic" -> Ok `Off_topic
+          | `String "resolved" -> Ok `Resolved
+          | `String "spam" -> Ok `Spam
+          | `String "too heated" -> Ok `Too_heated
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Off_topic -> `String "off-topic"
+          | `Resolved -> `String "resolved"
+          | `Spam -> `String "spam"
+          | `Too_heated -> `String "too heated"
+
+        type t =
+          ([ `Off_topic
+           | `Resolved
+           | `Spam
+           | `Too_heated
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Assignee = struct
+        module Primary = struct
+          module Type = struct
+            let t_of_yojson = function
+              | `String "Bot" -> Ok `Bot
+              | `String "Mannequin" -> Ok `Mannequin
+              | `String "Organization" -> Ok `Organization
+              | `String "User" -> Ok `User
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `Bot -> `String "Bot"
+              | `Mannequin -> `String "Mannequin"
+              | `Organization -> `String "Organization"
+              | `User -> `String "User"
+
+            type t =
+              ([ `Bot
+               | `Mannequin
+               | `Organization
+               | `User
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            avatar_url : string option; [@default None]
+            deleted : bool option; [@default None]
+            email : string option; [@default None]
+            events_url : string option; [@default None]
+            followers_url : string option; [@default None]
+            following_url : string option; [@default None]
+            gists_url : string option; [@default None]
+            gravatar_id : string option; [@default None]
+            html_url : string option; [@default None]
+            id : int;
+            login : string;
+            name : string option; [@default None]
+            node_id : string option; [@default None]
+            organizations_url : string option; [@default None]
+            received_events_url : string option; [@default None]
+            repos_url : string option; [@default None]
+            site_admin : bool option; [@default None]
+            starred_url : string option; [@default None]
+            subscriptions_url : string option; [@default None]
+            type_ : Type.t option; [@default None] [@key "type"]
+            url : string option; [@default None]
+            user_view_type : string option; [@default None]
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Assignees = struct
+        module Items = struct
+          module Primary = struct
+            module Type = struct
+              let t_of_yojson = function
+                | `String "Bot" -> Ok `Bot
+                | `String "Mannequin" -> Ok `Mannequin
+                | `String "Organization" -> Ok `Organization
+                | `String "User" -> Ok `User
+                | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+              let t_to_yojson = function
+                | `Bot -> `String "Bot"
+                | `Mannequin -> `String "Mannequin"
+                | `Organization -> `String "Organization"
+                | `User -> `String "User"
+
+              type t =
+                ([ `Bot
+                 | `Mannequin
+                 | `Organization
+                 | `User
+                 ]
+                [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            type t = {
+              avatar_url : string option; [@default None]
+              deleted : bool option; [@default None]
+              email : string option; [@default None]
+              events_url : string option; [@default None]
+              followers_url : string option; [@default None]
+              following_url : string option; [@default None]
+              gists_url : string option; [@default None]
+              gravatar_id : string option; [@default None]
+              html_url : string option; [@default None]
+              id : int;
+              login : string;
+              name : string option; [@default None]
+              node_id : string option; [@default None]
+              organizations_url : string option; [@default None]
+              received_events_url : string option; [@default None]
+              repos_url : string option; [@default None]
+              site_admin : bool option; [@default None]
+              starred_url : string option; [@default None]
+              subscriptions_url : string option; [@default None]
+              type_ : Type.t option; [@default None] [@key "type"]
+              url : string option; [@default None]
+            }
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        end
+
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Author_association_ = struct
+        let t_of_yojson = function
+          | `String "COLLABORATOR" -> Ok `COLLABORATOR
+          | `String "CONTRIBUTOR" -> Ok `CONTRIBUTOR
+          | `String "FIRST_TIMER" -> Ok `FIRST_TIMER
+          | `String "FIRST_TIME_CONTRIBUTOR" -> Ok `FIRST_TIME_CONTRIBUTOR
+          | `String "MANNEQUIN" -> Ok `MANNEQUIN
+          | `String "MEMBER" -> Ok `MEMBER
+          | `String "NONE" -> Ok `NONE
+          | `String "OWNER" -> Ok `OWNER
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `COLLABORATOR -> `String "COLLABORATOR"
+          | `CONTRIBUTOR -> `String "CONTRIBUTOR"
+          | `FIRST_TIMER -> `String "FIRST_TIMER"
+          | `FIRST_TIME_CONTRIBUTOR -> `String "FIRST_TIME_CONTRIBUTOR"
+          | `MANNEQUIN -> `String "MANNEQUIN"
+          | `MEMBER -> `String "MEMBER"
+          | `NONE -> `String "NONE"
+          | `OWNER -> `String "OWNER"
+
+        type t =
+          ([ `COLLABORATOR
+           | `CONTRIBUTOR
+           | `FIRST_TIMER
+           | `FIRST_TIME_CONTRIBUTOR
+           | `MANNEQUIN
+           | `MEMBER
+           | `NONE
+           | `OWNER
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Auto_merge_ = struct
+        module Primary = struct
+          module Enabled_by = struct
+            module Primary = struct
+              module Type = struct
+                let t_of_yojson = function
+                  | `String "Bot" -> Ok `Bot
+                  | `String "Organization" -> Ok `Organization
+                  | `String "User" -> Ok `User
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Bot -> `String "Bot"
+                  | `Organization -> `String "Organization"
+                  | `User -> `String "User"
+
+                type t =
+                  ([ `Bot
+                   | `Organization
+                   | `User
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                avatar_url : string option; [@default None]
+                deleted : bool option; [@default None]
+                email : string option; [@default None]
+                events_url : string option; [@default None]
+                followers_url : string option; [@default None]
+                following_url : string option; [@default None]
+                gists_url : string option; [@default None]
+                gravatar_id : string option; [@default None]
+                html_url : string option; [@default None]
+                id : int;
+                login : string;
+                name : string option; [@default None]
+                node_id : string option; [@default None]
+                organizations_url : string option; [@default None]
+                received_events_url : string option; [@default None]
+                repos_url : string option; [@default None]
+                site_admin : bool option; [@default None]
+                starred_url : string option; [@default None]
+                subscriptions_url : string option; [@default None]
+                type_ : Type.t option; [@default None] [@key "type"]
+                url : string option; [@default None]
+                user_view_type : string option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module Merge_method = struct
+            let t_of_yojson = function
+              | `String "merge" -> Ok `Merge
+              | `String "rebase" -> Ok `Rebase
+              | `String "squash" -> Ok `Squash
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `Merge -> `String "merge"
+              | `Rebase -> `String "rebase"
+              | `Squash -> `String "squash"
+
+            type t =
+              ([ `Merge
+               | `Rebase
+               | `Squash
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            commit_message : string option; [@default None]
+            commit_title : string option; [@default None]
+            enabled_by : Enabled_by.t option; [@default None]
+            merge_method : Merge_method.t;
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Base = struct
+        module Primary = struct
+          module Repo = struct
+            module Primary = struct
+              module Created_at = struct
+                module V0 = struct
+                  type t = int [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                module V1 = struct
+                  type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                type t =
+                  | V0 of V0.t
+                  | V1 of V1.t
+                [@@deriving show, eq]
+
+                let of_yojson =
+                  Json_schema.one_of
+                    (let open CCResult in
+                     [
+                       (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+                       (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+                     ])
+
+                let to_yojson = function
+                  | V0 v -> V0.to_yojson v
+                  | V1 v -> V1.to_yojson v
+              end
+
+              module License_ = struct
+                module Primary = struct
+                  type t = {
+                    key : string;
+                    name : string;
+                    node_id : string;
+                    spdx_id : string;
+                    url : string option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Merge_commit_message = struct
+                let t_of_yojson = function
+                  | `String "BLANK" -> Ok `BLANK
+                  | `String "PR_BODY" -> Ok `PR_BODY
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `BLANK -> `String "BLANK"
+                  | `PR_BODY -> `String "PR_BODY"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `BLANK
+                   | `PR_BODY
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Merge_commit_title = struct
+                let t_of_yojson = function
+                  | `String "MERGE_MESSAGE" -> Ok `MERGE_MESSAGE
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `MERGE_MESSAGE -> `String "MERGE_MESSAGE"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `MERGE_MESSAGE
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Owner = struct
+                module Primary = struct
+                  module Type = struct
+                    let t_of_yojson = function
+                      | `String "Bot" -> Ok `Bot
+                      | `String "Organization" -> Ok `Organization
+                      | `String "User" -> Ok `User
+                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                    let t_to_yojson = function
+                      | `Bot -> `String "Bot"
+                      | `Organization -> `String "Organization"
+                      | `User -> `String "User"
+
+                    type t =
+                      ([ `Bot
+                       | `Organization
+                       | `User
+                       ]
+                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  type t = {
+                    avatar_url : string option; [@default None]
+                    deleted : bool option; [@default None]
+                    email : string option; [@default None]
+                    events_url : string option; [@default None]
+                    followers_url : string option; [@default None]
+                    following_url : string option; [@default None]
+                    gists_url : string option; [@default None]
+                    gravatar_id : string option; [@default None]
+                    html_url : string option; [@default None]
+                    id : int;
+                    login : string;
+                    name : string option; [@default None]
+                    node_id : string option; [@default None]
+                    organizations_url : string option; [@default None]
+                    received_events_url : string option; [@default None]
+                    repos_url : string option; [@default None]
+                    site_admin : bool option; [@default None]
+                    starred_url : string option; [@default None]
+                    subscriptions_url : string option; [@default None]
+                    type_ : Type.t option; [@default None] [@key "type"]
+                    url : string option; [@default None]
+                    user_view_type : string option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Permissions = struct
+                module Primary = struct
+                  type t = {
+                    admin : bool;
+                    maintain : bool option; [@default None]
+                    pull : bool;
+                    push : bool;
+                    triage : bool option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Pull_request_creation_policy = struct
+                let t_of_yojson = function
+                  | `String "all" -> Ok `All
+                  | `String "collaborators_only" -> Ok `Collaborators_only
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `All -> `String "all"
+                  | `Collaborators_only -> `String "collaborators_only"
+
+                type t =
+                  ([ `All
+                   | `Collaborators_only
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Pushed_at = struct
+                module V0 = struct
+                  type t = int option [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                module V1 = struct
+                  type t = string option
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                type t =
+                  | V0 of V0.t
+                  | V1 of V1.t
+                [@@deriving show, eq]
+
+                let of_yojson =
+                  Json_schema.one_of
+                    (let open CCResult in
+                     [
+                       (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+                       (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+                     ])
+
+                let to_yojson = function
+                  | V0 v -> V0.to_yojson v
+                  | V1 v -> V1.to_yojson v
+              end
+
+              module Squash_merge_commit_message = struct
+                let t_of_yojson = function
+                  | `String "BLANK" -> Ok `BLANK
+                  | `String "COMMIT_MESSAGES" -> Ok `COMMIT_MESSAGES
+                  | `String "PR_BODY" -> Ok `PR_BODY
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `BLANK -> `String "BLANK"
+                  | `COMMIT_MESSAGES -> `String "COMMIT_MESSAGES"
+                  | `PR_BODY -> `String "PR_BODY"
+
+                type t =
+                  ([ `BLANK
+                   | `COMMIT_MESSAGES
+                   | `PR_BODY
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Squash_merge_commit_title = struct
+                let t_of_yojson = function
+                  | `String "COMMIT_OR_PR_TITLE" -> Ok `COMMIT_OR_PR_TITLE
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `COMMIT_OR_PR_TITLE -> `String "COMMIT_OR_PR_TITLE"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `COMMIT_OR_PR_TITLE
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Topics = struct
+                type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Visibility = struct
+                let t_of_yojson = function
+                  | `String "internal" -> Ok `Internal
+                  | `String "private" -> Ok `Private
+                  | `String "public" -> Ok `Public
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Internal -> `String "internal"
+                  | `Private -> `String "private"
+                  | `Public -> `String "public"
+
+                type t =
+                  ([ `Internal
+                   | `Private
+                   | `Public
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                allow_auto_merge : bool; [@default false]
+                allow_forking : bool option; [@default None]
+                allow_merge_commit : bool; [@default true]
+                allow_rebase_merge : bool; [@default true]
+                allow_squash_merge : bool; [@default true]
+                allow_update_branch : bool option; [@default None]
+                archive_url : string;
+                archived : bool; [@default false]
+                assignees_url : string;
+                blobs_url : string;
+                branches_url : string;
+                clone_url : string;
+                collaborators_url : string;
+                comments_url : string;
+                commits_url : string;
+                compare_url : string;
+                contents_url : string;
+                contributors_url : string;
+                created_at : Created_at.t;
+                default_branch : string;
+                delete_branch_on_merge : bool; [@default false]
+                deployments_url : string;
+                description : string option; [@default None]
+                disabled : bool option; [@default None]
+                downloads_url : string;
+                events_url : string;
+                fork : bool;
+                forks : int;
+                forks_count : int;
+                forks_url : string;
+                full_name : string;
+                git_commits_url : string;
+                git_refs_url : string;
+                git_tags_url : string;
+                git_url : string;
+                has_discussions : bool; [@default false]
+                has_downloads : bool; [@default true]
+                has_issues : bool; [@default true]
+                has_pages : bool;
+                has_projects : bool; [@default true]
+                has_pull_requests : bool; [@default true]
+                has_wiki : bool; [@default true]
+                homepage : string option; [@default None]
+                hooks_url : string;
+                html_url : string;
+                id : int64;
+                is_template : bool option; [@default None]
+                issue_comment_url : string;
+                issue_events_url : string;
+                issues_url : string;
+                keys_url : string;
+                labels_url : string;
+                language : string option; [@default None]
+                languages_url : string;
+                license : License_.t option; [@default None]
+                master_branch : string option; [@default None]
+                merge_commit_message : Merge_commit_message.t option; [@default None]
+                merge_commit_title : Merge_commit_title.t option; [@default None]
+                merges_url : string;
+                milestones_url : string;
+                mirror_url : string option; [@default None]
+                name : string;
+                node_id : string;
+                notifications_url : string;
+                open_issues : int;
+                open_issues_count : int;
+                organization : string option; [@default None]
+                owner : Owner.t option; [@default None]
+                permissions : Permissions.t option; [@default None]
+                private_ : bool; [@key "private"]
+                public : bool option; [@default None]
+                pull_request_creation_policy : Pull_request_creation_policy.t option;
+                    [@default None]
+                pulls_url : string;
+                pushed_at : Pushed_at.t option; [@default None]
+                releases_url : string;
+                role_name : string option; [@default None]
+                size : int;
+                squash_merge_commit_message : Squash_merge_commit_message.t option; [@default None]
+                squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+                ssh_url : string;
+                stargazers : int option; [@default None]
+                stargazers_count : int;
+                stargazers_url : string;
+                statuses_url : string;
+                subscribers_url : string;
+                subscription_url : string;
+                svn_url : string;
+                tags_url : string;
+                teams_url : string;
+                topics : Topics.t;
+                trees_url : string;
+                updated_at : string;
+                url : string;
+                use_squash_pr_title_as_default : bool; [@default false]
+                visibility : Visibility.t;
+                watchers : int;
+                watchers_count : int;
+                web_commit_signoff_required : bool option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module User = struct
+            module Primary = struct
+              module Type = struct
+                let t_of_yojson = function
+                  | `String "Bot" -> Ok `Bot
+                  | `String "Organization" -> Ok `Organization
+                  | `String "User" -> Ok `User
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Bot -> `String "Bot"
+                  | `Organization -> `String "Organization"
+                  | `User -> `String "User"
+
+                type t =
+                  ([ `Bot
+                   | `Organization
+                   | `User
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                avatar_url : string option; [@default None]
+                deleted : bool option; [@default None]
+                email : string option; [@default None]
+                events_url : string option; [@default None]
+                followers_url : string option; [@default None]
+                following_url : string option; [@default None]
+                gists_url : string option; [@default None]
+                gravatar_id : string option; [@default None]
+                html_url : string option; [@default None]
+                id : int64;
+                login : string;
+                name : string option; [@default None]
+                node_id : string option; [@default None]
+                organizations_url : string option; [@default None]
+                received_events_url : string option; [@default None]
+                repos_url : string option; [@default None]
+                site_admin : bool option; [@default None]
+                starred_url : string option; [@default None]
+                subscriptions_url : string option; [@default None]
+                type_ : Type.t option; [@default None] [@key "type"]
+                url : string option; [@default None]
+                user_view_type : string option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t = {
+            label : string;
+            ref_ : string; [@key "ref"]
+            repo : Repo.t;
+            sha : string;
+            user : User.t option; [@default None]
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Head = struct
+        module Primary = struct
+          module Repo = struct
+            module Primary = struct
+              module Created_at = struct
+                module V0 = struct
+                  type t = int [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                module V1 = struct
+                  type t = string [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                type t =
+                  | V0 of V0.t
+                  | V1 of V1.t
+                [@@deriving show, eq]
+
+                let of_yojson =
+                  Json_schema.one_of
+                    (let open CCResult in
+                     [
+                       (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+                       (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+                     ])
+
+                let to_yojson = function
+                  | V0 v -> V0.to_yojson v
+                  | V1 v -> V1.to_yojson v
+              end
+
+              module License_ = struct
+                module Primary = struct
+                  type t = {
+                    key : string;
+                    name : string;
+                    node_id : string;
+                    spdx_id : string;
+                    url : string option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Merge_commit_message = struct
+                let t_of_yojson = function
+                  | `String "BLANK" -> Ok `BLANK
+                  | `String "PR_BODY" -> Ok `PR_BODY
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `BLANK -> `String "BLANK"
+                  | `PR_BODY -> `String "PR_BODY"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `BLANK
+                   | `PR_BODY
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Merge_commit_title = struct
+                let t_of_yojson = function
+                  | `String "MERGE_MESSAGE" -> Ok `MERGE_MESSAGE
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `MERGE_MESSAGE -> `String "MERGE_MESSAGE"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `MERGE_MESSAGE
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Owner = struct
+                module Primary = struct
+                  module Type = struct
+                    let t_of_yojson = function
+                      | `String "Bot" -> Ok `Bot
+                      | `String "Organization" -> Ok `Organization
+                      | `String "User" -> Ok `User
+                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                    let t_to_yojson = function
+                      | `Bot -> `String "Bot"
+                      | `Organization -> `String "Organization"
+                      | `User -> `String "User"
+
+                    type t =
+                      ([ `Bot
+                       | `Organization
+                       | `User
+                       ]
+                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  type t = {
+                    avatar_url : string option; [@default None]
+                    deleted : bool option; [@default None]
+                    email : string option; [@default None]
+                    events_url : string option; [@default None]
+                    followers_url : string option; [@default None]
+                    following_url : string option; [@default None]
+                    gists_url : string option; [@default None]
+                    gravatar_id : string option; [@default None]
+                    html_url : string option; [@default None]
+                    id : int;
+                    login : string;
+                    name : string option; [@default None]
+                    node_id : string option; [@default None]
+                    organizations_url : string option; [@default None]
+                    received_events_url : string option; [@default None]
+                    repos_url : string option; [@default None]
+                    site_admin : bool option; [@default None]
+                    starred_url : string option; [@default None]
+                    subscriptions_url : string option; [@default None]
+                    type_ : Type.t option; [@default None] [@key "type"]
+                    url : string option; [@default None]
+                    user_view_type : string option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Permissions = struct
+                module Primary = struct
+                  type t = {
+                    admin : bool;
+                    maintain : bool option; [@default None]
+                    pull : bool;
+                    push : bool;
+                    triage : bool option; [@default None]
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Pull_request_creation_policy = struct
+                let t_of_yojson = function
+                  | `String "all" -> Ok `All
+                  | `String "collaborators_only" -> Ok `Collaborators_only
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `All -> `String "all"
+                  | `Collaborators_only -> `String "collaborators_only"
+
+                type t =
+                  ([ `All
+                   | `Collaborators_only
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Pushed_at = struct
+                module V0 = struct
+                  type t = int option [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                module V1 = struct
+                  type t = string option
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                type t =
+                  | V0 of V0.t
+                  | V1 of V1.t
+                [@@deriving show, eq]
+
+                let of_yojson =
+                  Json_schema.one_of
+                    (let open CCResult in
+                     [
+                       (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+                       (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+                     ])
+
+                let to_yojson = function
+                  | V0 v -> V0.to_yojson v
+                  | V1 v -> V1.to_yojson v
+              end
+
+              module Squash_merge_commit_message = struct
+                let t_of_yojson = function
+                  | `String "BLANK" -> Ok `BLANK
+                  | `String "COMMIT_MESSAGES" -> Ok `COMMIT_MESSAGES
+                  | `String "PR_BODY" -> Ok `PR_BODY
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `BLANK -> `String "BLANK"
+                  | `COMMIT_MESSAGES -> `String "COMMIT_MESSAGES"
+                  | `PR_BODY -> `String "PR_BODY"
+
+                type t =
+                  ([ `BLANK
+                   | `COMMIT_MESSAGES
+                   | `PR_BODY
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Squash_merge_commit_title = struct
+                let t_of_yojson = function
+                  | `String "COMMIT_OR_PR_TITLE" -> Ok `COMMIT_OR_PR_TITLE
+                  | `String "PR_TITLE" -> Ok `PR_TITLE
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `COMMIT_OR_PR_TITLE -> `String "COMMIT_OR_PR_TITLE"
+                  | `PR_TITLE -> `String "PR_TITLE"
+
+                type t =
+                  ([ `COMMIT_OR_PR_TITLE
+                   | `PR_TITLE
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Topics = struct
+                type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Visibility = struct
+                let t_of_yojson = function
+                  | `String "internal" -> Ok `Internal
+                  | `String "private" -> Ok `Private
+                  | `String "public" -> Ok `Public
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Internal -> `String "internal"
+                  | `Private -> `String "private"
+                  | `Public -> `String "public"
+
+                type t =
+                  ([ `Internal
+                   | `Private
+                   | `Public
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                allow_auto_merge : bool; [@default false]
+                allow_forking : bool option; [@default None]
+                allow_merge_commit : bool; [@default true]
+                allow_rebase_merge : bool; [@default true]
+                allow_squash_merge : bool; [@default true]
+                allow_update_branch : bool option; [@default None]
+                archive_url : string;
+                archived : bool; [@default false]
+                assignees_url : string;
+                blobs_url : string;
+                branches_url : string;
+                clone_url : string;
+                collaborators_url : string;
+                comments_url : string;
+                commits_url : string;
+                compare_url : string;
+                contents_url : string;
+                contributors_url : string;
+                created_at : Created_at.t;
+                default_branch : string;
+                delete_branch_on_merge : bool; [@default false]
+                deployments_url : string;
+                description : string option; [@default None]
+                disabled : bool option; [@default None]
+                downloads_url : string;
+                events_url : string;
+                fork : bool;
+                forks : int;
+                forks_count : int;
+                forks_url : string;
+                full_name : string;
+                git_commits_url : string;
+                git_refs_url : string;
+                git_tags_url : string;
+                git_url : string;
+                has_discussions : bool; [@default false]
+                has_downloads : bool; [@default true]
+                has_issues : bool; [@default true]
+                has_pages : bool;
+                has_projects : bool; [@default true]
+                has_pull_requests : bool; [@default true]
+                has_wiki : bool; [@default true]
+                homepage : string option; [@default None]
+                hooks_url : string;
+                html_url : string;
+                id : int64;
+                is_template : bool option; [@default None]
+                issue_comment_url : string;
+                issue_events_url : string;
+                issues_url : string;
+                keys_url : string;
+                labels_url : string;
+                language : string option; [@default None]
+                languages_url : string;
+                license : License_.t option; [@default None]
+                master_branch : string option; [@default None]
+                merge_commit_message : Merge_commit_message.t option; [@default None]
+                merge_commit_title : Merge_commit_title.t option; [@default None]
+                merges_url : string;
+                milestones_url : string;
+                mirror_url : string option; [@default None]
+                name : string;
+                node_id : string;
+                notifications_url : string;
+                open_issues : int;
+                open_issues_count : int;
+                organization : string option; [@default None]
+                owner : Owner.t option; [@default None]
+                permissions : Permissions.t option; [@default None]
+                private_ : bool; [@key "private"]
+                public : bool option; [@default None]
+                pull_request_creation_policy : Pull_request_creation_policy.t option;
+                    [@default None]
+                pulls_url : string;
+                pushed_at : Pushed_at.t option; [@default None]
+                releases_url : string;
+                role_name : string option; [@default None]
+                size : int;
+                squash_merge_commit_message : Squash_merge_commit_message.t option; [@default None]
+                squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+                ssh_url : string;
+                stargazers : int option; [@default None]
+                stargazers_count : int;
+                stargazers_url : string;
+                statuses_url : string;
+                subscribers_url : string;
+                subscription_url : string;
+                svn_url : string;
+                tags_url : string;
+                teams_url : string;
+                topics : Topics.t;
+                trees_url : string;
+                updated_at : string;
+                url : string;
+                use_squash_pr_title_as_default : bool; [@default false]
+                visibility : Visibility.t;
+                watchers : int;
+                watchers_count : int;
+                web_commit_signoff_required : bool option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module User = struct
+            module Primary = struct
+              module Type = struct
+                let t_of_yojson = function
+                  | `String "Bot" -> Ok `Bot
+                  | `String "Organization" -> Ok `Organization
+                  | `String "User" -> Ok `User
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Bot -> `String "Bot"
+                  | `Organization -> `String "Organization"
+                  | `User -> `String "User"
+
+                type t =
+                  ([ `Bot
+                   | `Organization
+                   | `User
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                avatar_url : string option; [@default None]
+                deleted : bool option; [@default None]
+                email : string option; [@default None]
+                events_url : string option; [@default None]
+                followers_url : string option; [@default None]
+                following_url : string option; [@default None]
+                gists_url : string option; [@default None]
+                gravatar_id : string option; [@default None]
+                html_url : string option; [@default None]
+                id : int64;
+                login : string;
+                name : string option; [@default None]
+                node_id : string option; [@default None]
+                organizations_url : string option; [@default None]
+                received_events_url : string option; [@default None]
+                repos_url : string option; [@default None]
+                site_admin : bool option; [@default None]
+                starred_url : string option; [@default None]
+                subscriptions_url : string option; [@default None]
+                type_ : Type.t option; [@default None] [@key "type"]
+                url : string option; [@default None]
+                user_view_type : string option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t = {
+            label : string option; [@default None]
+            ref_ : string; [@key "ref"]
+            repo : Repo.t option; [@default None]
+            sha : string;
+            user : User.t option; [@default None]
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Labels = struct
+        module Items = struct
+          module Primary = struct
+            type t = {
+              color : string;
+              default : bool;
+              description : string option; [@default None]
+              id : int;
+              name : string;
+              node_id : string;
+              url : string;
+            }
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        end
+
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Merged_by = struct
+        module Primary = struct
+          module Type = struct
+            let t_of_yojson = function
+              | `String "Bot" -> Ok `Bot
+              | `String "Mannequin" -> Ok `Mannequin
+              | `String "Organization" -> Ok `Organization
+              | `String "User" -> Ok `User
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `Bot -> `String "Bot"
+              | `Mannequin -> `String "Mannequin"
+              | `Organization -> `String "Organization"
+              | `User -> `String "User"
+
+            type t =
+              ([ `Bot
+               | `Mannequin
+               | `Organization
+               | `User
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            avatar_url : string option; [@default None]
+            deleted : bool option; [@default None]
+            email : string option; [@default None]
+            events_url : string option; [@default None]
+            followers_url : string option; [@default None]
+            following_url : string option; [@default None]
+            gists_url : string option; [@default None]
+            gravatar_id : string option; [@default None]
+            html_url : string option; [@default None]
+            id : int;
+            login : string;
+            name : string option; [@default None]
+            node_id : string option; [@default None]
+            organizations_url : string option; [@default None]
+            received_events_url : string option; [@default None]
+            repos_url : string option; [@default None]
+            site_admin : bool option; [@default None]
+            starred_url : string option; [@default None]
+            subscriptions_url : string option; [@default None]
+            type_ : Type.t option; [@default None] [@key "type"]
+            url : string option; [@default None]
+            user_view_type : string option; [@default None]
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Milestone_ = struct
+        module Primary = struct
+          module Creator = struct
+            module Primary = struct
+              module Type = struct
+                let t_of_yojson = function
+                  | `String "Bot" -> Ok `Bot
+                  | `String "Mannequin" -> Ok `Mannequin
+                  | `String "Organization" -> Ok `Organization
+                  | `String "User" -> Ok `User
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Bot -> `String "Bot"
+                  | `Mannequin -> `String "Mannequin"
+                  | `Organization -> `String "Organization"
+                  | `User -> `String "User"
+
+                type t =
+                  ([ `Bot
+                   | `Mannequin
+                   | `Organization
+                   | `User
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                avatar_url : string option; [@default None]
+                deleted : bool option; [@default None]
+                email : string option; [@default None]
+                events_url : string option; [@default None]
+                followers_url : string option; [@default None]
+                following_url : string option; [@default None]
+                gists_url : string option; [@default None]
+                gravatar_id : string option; [@default None]
+                html_url : string option; [@default None]
+                id : int;
+                login : string;
+                name : string option; [@default None]
+                node_id : string option; [@default None]
+                organizations_url : string option; [@default None]
+                received_events_url : string option; [@default None]
+                repos_url : string option; [@default None]
+                site_admin : bool option; [@default None]
+                starred_url : string option; [@default None]
+                subscriptions_url : string option; [@default None]
+                type_ : Type.t option; [@default None] [@key "type"]
+                url : string option; [@default None]
+                user_view_type : string option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module State = struct
+            let t_of_yojson = function
+              | `String "closed" -> Ok `Closed
+              | `String "open" -> Ok `Open
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `Closed -> `String "closed"
+              | `Open -> `String "open"
+
+            type t =
+              ([ `Closed
+               | `Open
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            closed_at : string option; [@default None]
+            closed_issues : int;
+            created_at : string;
+            creator : Creator.t option; [@default None]
+            description : string option; [@default None]
+            due_on : string option; [@default None]
+            html_url : string;
+            id : int;
+            labels_url : string;
+            node_id : string;
+            number : int;
+            open_issues : int;
+            state : State.t;
+            title : string;
+            updated_at : string;
+            url : string;
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      module Requested_reviewers = struct
+        module Items = struct
+          module V0 = struct
+            module Primary = struct
+              module Type = struct
+                let t_of_yojson = function
+                  | `String "Bot" -> Ok `Bot
+                  | `String "Mannequin" -> Ok `Mannequin
+                  | `String "Organization" -> Ok `Organization
+                  | `String "User" -> Ok `User
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Bot -> `String "Bot"
+                  | `Mannequin -> `String "Mannequin"
+                  | `Organization -> `String "Organization"
+                  | `User -> `String "User"
+
+                type t =
+                  ([ `Bot
+                   | `Mannequin
+                   | `Organization
+                   | `User
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                avatar_url : string option; [@default None]
+                deleted : bool option; [@default None]
+                email : string option; [@default None]
+                events_url : string option; [@default None]
+                followers_url : string option; [@default None]
+                following_url : string option; [@default None]
+                gists_url : string option; [@default None]
+                gravatar_id : string option; [@default None]
+                html_url : string option; [@default None]
+                id : int;
+                login : string;
+                name : string option; [@default None]
+                node_id : string option; [@default None]
+                organizations_url : string option; [@default None]
+                received_events_url : string option; [@default None]
+                repos_url : string option; [@default None]
+                site_admin : bool option; [@default None]
+                starred_url : string option; [@default None]
+                subscriptions_url : string option; [@default None]
+                type_ : Type.t option; [@default None] [@key "type"]
+                url : string option; [@default None]
+                user_view_type : string option; [@default None]
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          module V1 = struct
+            module Primary = struct
+              module Parent = struct
+                module Primary = struct
+                  module Privacy = struct
+                    let t_of_yojson = function
+                      | `String "closed" -> Ok `Closed
+                      | `String "open" -> Ok `Open
+                      | `String "secret" -> Ok `Secret
+                      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                    let t_to_yojson = function
+                      | `Closed -> `String "closed"
+                      | `Open -> `String "open"
+                      | `Secret -> `String "secret"
+
+                    type t =
+                      ([ `Closed
+                       | `Open
+                       | `Secret
+                       ]
+                      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  type t = {
+                    description : string option; [@default None]
+                    html_url : string;
+                    id : int;
+                    members_url : string;
+                    name : string;
+                    node_id : string;
+                    permission : string;
+                    privacy : Privacy.t;
+                    repositories_url : string;
+                    slug : string;
+                    url : string;
+                  }
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+              end
+
+              module Privacy = struct
+                let t_of_yojson = function
+                  | `String "closed" -> Ok `Closed
+                  | `String "open" -> Ok `Open
+                  | `String "secret" -> Ok `Secret
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Closed -> `String "closed"
+                  | `Open -> `String "open"
+                  | `Secret -> `String "secret"
+
+                type t =
+                  ([ `Closed
+                   | `Open
+                   | `Secret
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              type t = {
+                deleted : bool option; [@default None]
+                description : string option; [@default None]
+                html_url : string;
+                id : int;
+                members_url : string;
+                name : string;
+                node_id : string;
+                parent : Parent.t option; [@default None]
+                permission : string;
+                privacy : Privacy.t;
+                repositories_url : string;
+                slug : string;
+                url : string;
+              }
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+          end
+
+          type t =
+            | V0 of V0.t
+            | V1 of V1.t
+          [@@deriving show, eq]
+
+          let of_yojson =
+            Json_schema.one_of
+              (let open CCResult in
+               [
+                 (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+                 (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+               ])
+
+          let to_yojson = function
+            | V0 v -> V0.to_yojson v
+            | V1 v -> V1.to_yojson v
+        end
+
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Requested_teams = struct
+        module Items = struct
+          module Primary = struct
+            module Parent = struct
+              module Primary = struct
+                module Privacy = struct
+                  let t_of_yojson = function
+                    | `String "closed" -> Ok `Closed
+                    | `String "open" -> Ok `Open
+                    | `String "secret" -> Ok `Secret
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `Closed -> `String "closed"
+                    | `Open -> `String "open"
+                    | `Secret -> `String "secret"
+
+                  type t =
+                    ([ `Closed
+                     | `Open
+                     | `Secret
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = true }, show, eq]
+                end
+
+                type t = {
+                  description : string option; [@default None]
+                  html_url : string;
+                  id : int;
+                  members_url : string;
+                  name : string;
+                  node_id : string;
+                  permission : string;
+                  privacy : Privacy.t;
+                  repositories_url : string;
+                  slug : string;
+                  url : string;
+                }
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+            end
+
+            module Privacy = struct
+              let t_of_yojson = function
+                | `String "closed" -> Ok `Closed
+                | `String "open" -> Ok `Open
+                | `String "secret" -> Ok `Secret
+                | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+              let t_to_yojson = function
+                | `Closed -> `String "closed"
+                | `Open -> `String "open"
+                | `Secret -> `String "secret"
+
+              type t =
+                ([ `Closed
+                 | `Open
+                 | `Secret
+                 ]
+                [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
+            type t = {
+              deleted : bool option; [@default None]
+              description : string option; [@default None]
+              html_url : string option; [@default None]
+              id : int;
+              members_url : string option; [@default None]
+              name : string;
+              node_id : string option; [@default None]
+              parent : Parent.t option; [@default None]
+              permission : string option; [@default None]
+              privacy : Privacy.t option; [@default None]
+              repositories_url : string option; [@default None]
+              slug : string option; [@default None]
+              url : string option; [@default None]
+            }
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+        end
+
+        type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module State = struct
+        let t_of_yojson = function
+          | `String "closed" -> Ok `Closed
+          | `String "open" -> Ok `Open
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Closed -> `String "closed"
+          | `Open -> `String "open"
+
+        type t =
+          ([ `Closed
+           | `Open
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module User = struct
+        module Primary = struct
+          module Type = struct
+            let t_of_yojson = function
+              | `String "Bot" -> Ok `Bot
+              | `String "Mannequin" -> Ok `Mannequin
+              | `String "Organization" -> Ok `Organization
+              | `String "User" -> Ok `User
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `Bot -> `String "Bot"
+              | `Mannequin -> `String "Mannequin"
+              | `Organization -> `String "Organization"
+              | `User -> `String "User"
+
+            type t =
+              ([ `Bot
+               | `Mannequin
+               | `Organization
+               | `User
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = true }, show, eq]
+          end
+
+          type t = {
+            avatar_url : string option; [@default None]
+            deleted : bool option; [@default None]
+            email : string option; [@default None]
+            events_url : string option; [@default None]
+            followers_url : string option; [@default None]
+            following_url : string option; [@default None]
+            gists_url : string option; [@default None]
+            gravatar_id : string option; [@default None]
+            html_url : string option; [@default None]
+            id : int64;
+            login : string;
+            name : string option; [@default None]
+            node_id : string option; [@default None]
+            organizations_url : string option; [@default None]
+            received_events_url : string option; [@default None]
+            repos_url : string option; [@default None]
+            site_admin : bool option; [@default None]
+            starred_url : string option; [@default None]
+            subscriptions_url : string option; [@default None]
+            type_ : Type.t option; [@default None] [@key "type"]
+            url : string option; [@default None]
+            user_view_type : string option; [@default None]
+          }
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+      end
+
+      type t = {
+        links_ : Links_.t; [@key "_links"]
+        active_lock_reason : Active_lock_reason.t option; [@default None]
+        additions : int option; [@default None]
+        assignee : Assignee.t option; [@default None]
+        assignees : Assignees.t;
+        author_association : Author_association_.t;
+        auto_merge : Auto_merge_.t option; [@default None]
+        base : Base.t;
+        body : string option; [@default None]
+        changed_files : int option; [@default None]
+        closed_at : string option; [@default None]
+        comments : int option; [@default None]
+        comments_url : string;
+        commits : int option; [@default None]
+        commits_url : string;
+        created_at : string;
+        deletions : int option; [@default None]
+        diff_url : string;
+        draft : bool;
+        head : Head.t;
+        html_url : string;
+        id : int;
+        issue_url : string;
+        labels : Labels.t;
+        locked : bool;
+        maintainer_can_modify : bool option; [@default None]
+        merge_commit_sha : string option; [@default None]
+        mergeable : bool option; [@default None]
+        mergeable_state : string option; [@default None]
+        merged : bool option; [@default None]
+        merged_at : string option; [@default None]
+        merged_by : Merged_by.t option; [@default None]
+        milestone : Milestone_.t option; [@default None]
+        node_id : string;
+        number : int;
+        patch_url : string;
+        rebaseable : bool option; [@default None]
+        requested_reviewers : Requested_reviewers.t;
+        requested_teams : Requested_teams.t;
+        review_comment_url : string;
+        review_comments : int option; [@default None]
+        review_comments_url : string;
+        stack : Githubc2_components_pull_request_stack.t option; [@default None]
+        state : State.t;
+        statuses_url : string;
+        title : string;
+        updated_at : string;
+        url : string;
+        user : User.t option; [@default None]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  type t = {
+    action : Action.t;
+    enterprise : Githubc2_components_enterprise_webhooks.t option; [@default None]
+    installation : Githubc2_components_simple_installation.t option; [@default None]
+    number : int;
+    organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
+    pull_request : Pull_request_.t;
+    repository : Githubc2_components_repository_webhooks.t;
+    sender : Githubc2_components_simple_user.t;
+    stack : Githubc2_components_pull_request_stack.t option; [@default None]
+  }
+  [@@deriving yojson { strict = false; meta = true }, show, eq]
+end
+
+include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)

@@ -97,6 +97,7 @@ type fetch_diff_files_err =
   [ Githubc2_abb.call_err
   | `Not_found of Githubc2_components.Basic_error.t
   | `Internal_server_error of Githubc2_components.Basic_error.t
+  | `Service_unavailable of Githubc2_repos.Compare_commits.Responses.Service_unavailable.t
   ]
 [@@deriving show]
 
@@ -348,9 +349,11 @@ let fetch_diff_files ~owner ~repo ~base_ref ~branch_ref client =
       match Openapi.Response.value resp with
       | `OK { C.primary = { C.Primary.files; _ }; _ } ->
           Abbs_future_combinators.return_ok (CCOption.get_or ~default:[] files @ acc)
-      | (`Not_found _ | `Internal_server_error _) as err -> Abbs_future_combinators.return_err err)
+      | (`Not_found _ | `Internal_server_error _ | `Service_unavailable _) as err ->
+          Abbs_future_combinators.return_err err)
+    (* GitHub's API takes the pair as one path segment, [base...head]. *)
     Githubc2_repos.Compare_commits.(
-      make Parameters.(make ~owner ~repo ~base:base_ref ~head:branch_ref ~per_page:250 ()))
+      make Parameters.(make ~owner ~repo ~basehead:(base_ref ^ "..." ^ branch_ref) ~per_page:250 ()))
 
 let fetch_pull_request ~owner ~repo ~pull_number client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_pull_request");

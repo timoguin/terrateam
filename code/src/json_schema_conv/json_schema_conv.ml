@@ -312,6 +312,78 @@ module Gen = struct
     let variant_map = unique_variant_names enum_strings in
     CCList.assoc_opt ~eq:CCString.equal s variant_map
 
+  (* Every OCaml keyword, plus [ref], which is not a keyword but shadows the
+     standard library's.  A schema property named after one of these would make a
+     record field of the same name, which is a syntax error, so the field takes a
+     trailing underscore and a [@key] back to the name on the wire.
+
+     The list is complete rather than only the words the schemas in this
+     repository happen to use.  The failure is a syntax error in generated code,
+     and the schema update that adds the word is what finds it. *)
+  let reserved_words =
+    Sln_set.String.of_list
+      [
+        "and";
+        "as";
+        "assert";
+        "asr";
+        "begin";
+        "class";
+        "constraint";
+        "do";
+        "done";
+        "downto";
+        "else";
+        "end";
+        "exception";
+        "external";
+        "false";
+        "for";
+        "fun";
+        "function";
+        "functor";
+        "if";
+        "in";
+        "include";
+        "inherit";
+        "initializer";
+        "land";
+        "lazy";
+        "let";
+        "lor";
+        "lsl";
+        "lsr";
+        "lxor";
+        "match";
+        "method";
+        "mod";
+        "module";
+        "mutable";
+        "new";
+        "nonrec";
+        "object";
+        "of";
+        "open";
+        "or";
+        "private";
+        "rec";
+        "ref";
+        "sig";
+        "struct";
+        "then";
+        "to";
+        "true";
+        "try";
+        "type";
+        "val";
+        "virtual";
+        "when";
+        "while";
+        "with";
+      ]
+
+  let is_reserved_word s = Sln_set.String.mem (CCString.lowercase_ascii s) reserved_words
+
   let yojson_key_name name =
     [
       Ast_helper.Attr.mk

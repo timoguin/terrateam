@@ -99,18 +99,7 @@ let variant_name_of_ref ref_ =
 
 let field_name_of_schema s =
   match CCString.lowercase_ascii s with
-  | ( "class"
-    | "end"
-    | "external"
-    | "in"
-    | "include"
-    | "method"
-    | "module"
-    | "object"
-    | "private"
-    | "ref"
-    | "to"
-    | "type" ) as s -> s ^ "_"
+  | s when Json_schema_conv.Gen.is_reserved_word s -> s ^ "_"
   | s when CCString.prefix ~pre:"_" s -> CCString.drop_while (( = ) '_') s ^ "_"
   | s when CCString.prefix ~pre:"$" s -> CCString.drop_while (( = ) '$') s ^ "_"
   | s when CCString.prefix ~pre:"@" s -> CCString.drop_while (( = ) '@') s ^ "_"

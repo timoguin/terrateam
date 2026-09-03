@@ -1,17 +1,23 @@
 module Primary = struct
   module Advanced_security = struct
     let t_of_yojson = function
+      | `String "code_security" -> Ok `Code_security
       | `String "disabled" -> Ok `Disabled
       | `String "enabled" -> Ok `Enabled
+      | `String "secret_protection" -> Ok `Secret_protection
       | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
     let t_to_yojson = function
+      | `Code_security -> `String "code_security"
       | `Disabled -> `String "disabled"
       | `Enabled -> `String "enabled"
+      | `Secret_protection -> `String "secret_protection"
 
     type t =
-      ([ `Disabled
+      ([ `Code_security
+       | `Disabled
        | `Enabled
+       | `Secret_protection
        ]
       [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
     [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -92,7 +98,37 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Code_scanning_options_ = struct
+    module Primary = struct
+      type t = { allow_advanced : bool option [@default None] }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
   module Dependabot_alerts = struct
+    let t_of_yojson = function
+      | `String "disabled" -> Ok `Disabled
+      | `String "enabled" -> Ok `Enabled
+      | `String "not_set" -> Ok `Not_set
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Disabled -> `String "disabled"
+      | `Enabled -> `String "enabled"
+      | `Not_set -> `String "not_set"
+
+    type t =
+      ([ `Disabled
+       | `Enabled
+       | `Not_set
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
+  module Dependabot_delegated_alert_dismissal = struct
     let t_of_yojson = function
       | `String "disabled" -> Ok `Disabled
       | `String "enabled" -> Ok `Enabled
@@ -292,6 +328,24 @@ module Primary = struct
       module Reviewers = struct
         module Items = struct
           module Primary = struct
+            module Mode = struct
+              let t_of_yojson = function
+                | `String "ALWAYS" -> Ok `ALWAYS
+                | `String "EXEMPT" -> Ok `EXEMPT
+                | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+              let t_to_yojson = function
+                | `ALWAYS -> `String "ALWAYS"
+                | `EXEMPT -> `String "EXEMPT"
+
+              type t =
+                ([ `ALWAYS
+                 | `EXEMPT
+                 ]
+                [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+              [@@deriving yojson { strict = false; meta = true }, show, eq]
+            end
+
             module Reviewer_type = struct
               let t_of_yojson = function
                 | `String "ROLE" -> Ok `ROLE
@@ -311,8 +365,10 @@ module Primary = struct
             end
 
             type t = {
+              mode : Mode.t; [@default `ALWAYS]
               reviewer_id : int;
               reviewer_type : Reviewer_type.t;
+              security_configuration_id : int option; [@default None]
             }
             [@@deriving yojson { strict = false; meta = true }, show, eq]
           end
@@ -328,6 +384,27 @@ module Primary = struct
     end
 
     include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Secret_scanning_extended_metadata = struct
+    let t_of_yojson = function
+      | `String "disabled" -> Ok `Disabled
+      | `String "enabled" -> Ok `Enabled
+      | `String "not_set" -> Ok `Not_set
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Disabled -> `String "disabled"
+      | `Enabled -> `String "enabled"
+      | `Not_set -> `String "not_set"
+
+    type t =
+      ([ `Disabled
+       | `Enabled
+       | `Not_set
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
   module Secret_scanning_generic_secrets = struct
@@ -442,8 +519,11 @@ module Primary = struct
         [@default None]
     code_scanning_delegated_alert_dismissal : Code_scanning_delegated_alert_dismissal.t option;
         [@default None]
+    code_scanning_options : Code_scanning_options_.t option; [@default None]
     created_at : string option; [@default None]
     dependabot_alerts : Dependabot_alerts.t option; [@default None]
+    dependabot_delegated_alert_dismissal : Dependabot_delegated_alert_dismissal.t option;
+        [@default None]
     dependabot_security_updates : Dependabot_security_updates.t option; [@default None]
     dependency_graph : Dependency_graph.t option; [@default None]
     dependency_graph_autosubmit_action : Dependency_graph_autosubmit_action.t option;
@@ -463,6 +543,7 @@ module Primary = struct
     secret_scanning_delegated_bypass : Secret_scanning_delegated_bypass.t option; [@default None]
     secret_scanning_delegated_bypass_options : Secret_scanning_delegated_bypass_options.t option;
         [@default None]
+    secret_scanning_extended_metadata : Secret_scanning_extended_metadata.t option; [@default None]
     secret_scanning_generic_secrets : Secret_scanning_generic_secrets.t option; [@default None]
     secret_scanning_non_provider_patterns : Secret_scanning_non_provider_patterns.t option;
         [@default None]

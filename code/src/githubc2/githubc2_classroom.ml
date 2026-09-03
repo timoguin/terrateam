@@ -14,9 +14,22 @@ module List_assignments_for_a_classroom = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    type t = [ `OK of OK.t ] [@@deriving show, eq]
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson) ]
+    type t =
+      [ `OK of OK.t
+      | `Gone of Gone.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
+      ]
   end
 
   let url = "/classrooms/{classroom_id}/assignments"
@@ -53,9 +66,15 @@ module Get_a_classroom = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     type t =
       [ `OK of OK.t
       | `Not_found of Not_found.t
+      | `Gone of Gone.t
       ]
     [@@deriving show, eq]
 
@@ -63,6 +82,7 @@ module Get_a_classroom = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
       ]
   end
 
@@ -96,9 +116,22 @@ module List_classrooms = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    type t = [ `OK of OK.t ] [@@deriving show, eq]
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson) ]
+    type t =
+      [ `OK of OK.t
+      | `Gone of Gone.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
+      ]
   end
 
   let url = "/classrooms"
@@ -132,9 +165,15 @@ module Get_assignment_grades = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     type t =
       [ `OK of OK.t
       | `Not_found of Not_found.t
+      | `Gone of Gone.t
       ]
     [@@deriving show, eq]
 
@@ -142,6 +181,7 @@ module Get_assignment_grades = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
       ]
   end
 
@@ -176,9 +216,22 @@ module List_accepted_assignments_for_an_assignment = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    type t = [ `OK of OK.t ] [@@deriving show, eq]
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
-    let t = [ ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson) ]
+    type t =
+      [ `OK of OK.t
+      | `Gone of Gone.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
+      ]
   end
 
   let url = "/assignments/{assignment_id}/accepted_assignments"
@@ -215,9 +268,15 @@ module Get_an_assignment = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Gone = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     type t =
       [ `OK of OK.t
       | `Not_found of Not_found.t
+      | `Gone of Gone.t
       ]
     [@@deriving show, eq]
 
@@ -225,6 +284,7 @@ module Get_an_assignment = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ("410", Openapi.of_json_body (fun v -> `Gone v) Gone.of_yojson);
       ]
   end
 

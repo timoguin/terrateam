@@ -114,6 +114,7 @@ module Primary = struct
     requested_teams : Requested_teams.t option; [@default None]
     review_comment_url : string;
     review_comments_url : string;
+    stack : Githubc2_components_pull_request_stack.t option; [@default None]
     state : string;
     statuses_url : string;
     title : string;

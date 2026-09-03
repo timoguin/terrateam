@@ -11,7 +11,7 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
-  module Project_card_ = struct
+  module Project_card = struct
     module Primary = struct
       module Creator = struct
         module Primary = struct
@@ -95,7 +95,7 @@ module Primary = struct
     enterprise : Githubc2_components_enterprise_webhooks.t option; [@default None]
     installation : Githubc2_components_simple_installation.t option; [@default None]
     organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
-    project_card : Project_card_.t;
+    project_card : Project_card.t;
     repository : Githubc2_components_nullable_repository_webhooks.t option; [@default None]
     sender : Githubc2_components_simple_user.t;
   }

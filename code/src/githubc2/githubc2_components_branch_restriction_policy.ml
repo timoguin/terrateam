@@ -79,30 +79,8 @@ module Primary = struct
   end
 
   module Teams = struct
-    module Items = struct
-      module Primary = struct
-        type t = {
-          description : string option; [@default None]
-          html_url : string option; [@default None]
-          id : int option; [@default None]
-          members_url : string option; [@default None]
-          name : string option; [@default None]
-          node_id : string option; [@default None]
-          notification_setting : string option; [@default None]
-          parent : string option; [@default None]
-          permission : string option; [@default None]
-          privacy : string option; [@default None]
-          repositories_url : string option; [@default None]
-          slug : string option; [@default None]
-          url : string option; [@default None]
-        }
-        [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-    end
-
-    type t = Items.t list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    type t = Githubc2_components_team.t list
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
   module Users = struct

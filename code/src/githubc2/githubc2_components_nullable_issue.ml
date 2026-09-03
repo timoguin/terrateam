@@ -4,6 +4,11 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Issue_field_values = struct
+    type t = Githubc2_components_issue_field_value.t list
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Labels = struct
     module Items = struct
       module V0 = struct
@@ -66,17 +71,20 @@ module Primary = struct
   module State_reason = struct
     let t_of_yojson = function
       | `String "completed" -> Ok `Completed
+      | `String "duplicate" -> Ok `Duplicate
       | `String "not_planned" -> Ok `Not_planned
       | `String "reopened" -> Ok `Reopened
       | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
     let t_to_yojson = function
       | `Completed -> `String "completed"
+      | `Duplicate -> `String "duplicate"
       | `Not_planned -> `String "not_planned"
       | `Reopened -> `String "reopened"
 
     type t =
       ([ `Completed
+       | `Duplicate
        | `Not_planned
        | `Reopened
        ]
@@ -88,7 +96,7 @@ module Primary = struct
     active_lock_reason : string option; [@default None]
     assignee : Githubc2_components_nullable_simple_user.t option; [@default None]
     assignees : Assignees.t option; [@default None]
-    author_association : Githubc2_components_author_association.t;
+    author_association : Githubc2_components_author_association.t option; [@default None]
     body : string option; [@default None]
     body_html : string option; [@default None]
     body_text : string option; [@default None]
@@ -101,13 +109,18 @@ module Primary = struct
     events_url : string;
     html_url : string;
     id : int64;
+    issue_dependencies_summary : Githubc2_components_issue_dependencies_summary.t option;
+        [@default None]
+    issue_field_values : Issue_field_values.t option; [@default None]
     labels : Labels.t;
     labels_url : string;
     locked : bool;
     milestone : Githubc2_components_nullable_milestone.t option; [@default None]
     node_id : string;
     number : int;
+    parent_issue_url : string option; [@default None]
     performed_via_github_app : Githubc2_components_nullable_integration.t option; [@default None]
+    pinned_comment : Githubc2_components_nullable_issue_comment.t option; [@default None]
     pull_request : Pull_request_.t option; [@default None]
     reactions : Githubc2_components_reaction_rollup.t option; [@default None]
     repository : Githubc2_components_repository.t option; [@default None]

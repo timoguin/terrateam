@@ -281,7 +281,61 @@ module Primary = struct
                 [@@deriving yojson { strict = false; meta = true }, show, eq]
               end
 
+              module Artifact_metadata = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Attestations = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
               module Checks = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Code_quality = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
                   | `String "write" -> Ok `Write
@@ -335,6 +389,18 @@ module Primary = struct
                 [@@deriving yojson { strict = false; meta = true }, show, eq]
               end
 
+              module Copilot_requests = struct
+                let t_of_yojson = function
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Write -> `String "write"
+
+                type t = ([ `Write ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
               module Deployments = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
@@ -354,6 +420,24 @@ module Primary = struct
               end
 
               module Discussions = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Drives = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
                   | `String "write" -> Ok `Write
@@ -461,7 +545,43 @@ module Primary = struct
                 [@@deriving yojson { strict = false; meta = true }, show, eq]
               end
 
+              module Merge_queues = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
               module Metadata_ = struct
+                let t_of_yojson = function
+                  | `String "read" -> Ok `Read
+                  | `String "write" -> Ok `Write
+                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                let t_to_yojson = function
+                  | `Read -> `String "read"
+                  | `Write -> `String "write"
+
+                type t =
+                  ([ `Read
+                   | `Write
+                   ]
+                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              module Models = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
                   | `String "write" -> Ok `Write
@@ -827,24 +947,6 @@ module Primary = struct
                 [@@deriving yojson { strict = false; meta = true }, show, eq]
               end
 
-              module Team_discussions = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = true }, show, eq]
-              end
-
               module Vulnerability_alerts = struct
                 let t_of_yojson = function
                   | `String "read" -> Ok `Read
@@ -884,17 +986,24 @@ module Primary = struct
               type t = {
                 actions : Actions.t option; [@default None]
                 administration : Administration.t option; [@default None]
+                artifact_metadata : Artifact_metadata.t option; [@default None]
+                attestations : Attestations.t option; [@default None]
                 checks : Checks.t option; [@default None]
+                code_quality : Code_quality.t option; [@default None]
                 content_references : Content_references.t option; [@default None]
                 contents : Contents.t option; [@default None]
+                copilot_requests : Copilot_requests.t option; [@default None]
                 deployments : Deployments.t option; [@default None]
                 discussions : Discussions.t option; [@default None]
+                drives : Drives.t option; [@default None]
                 emails : Emails.t option; [@default None]
                 environments : Environments.t option; [@default None]
                 issues : Issues.t option; [@default None]
                 keys : Keys.t option; [@default None]
                 members : Members.t option; [@default None]
+                merge_queues : Merge_queues.t option; [@default None]
                 metadata : Metadata_.t option; [@default None]
+                models : Models.t option; [@default None]
                 organization_administration : Organization_administration.t option; [@default None]
                 organization_hooks : Organization_hooks.t option; [@default None]
                 organization_packages : Organization_packages.t option; [@default None]
@@ -915,7 +1024,6 @@ module Primary = struct
                 security_scanning_alert : Security_scanning_alert.t option; [@default None]
                 single_file : Single_file.t option; [@default None]
                 statuses : Statuses.t option; [@default None]
-                team_discussions : Team_discussions.t option; [@default None]
                 vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
                 workflows : Workflows.t option; [@default None]
               }

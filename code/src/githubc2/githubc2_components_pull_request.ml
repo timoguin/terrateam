@@ -144,6 +144,7 @@ module Primary = struct
     review_comment_url : string;
     review_comments : int;
     review_comments_url : string;
+    stack : Githubc2_components_pull_request_stack.t option; [@default None]
     state : State.t;
     statuses_url : string;
     title : string;

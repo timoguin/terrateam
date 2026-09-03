@@ -1,4 +1,16 @@
 module Primary = struct
+  module Code_search_index_status = struct
+    module Primary = struct
+      type t = {
+        lexical_commit_sha : string option; [@default None]
+        lexical_search_ok : bool option; [@default None]
+      }
+      [@@deriving yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
   module Merge_commit_message = struct
     let t_of_yojson = function
       | `String "BLANK" -> Ok `BLANK
@@ -51,6 +63,24 @@ module Primary = struct
     end
 
     include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Pull_request_creation_policy = struct
+    let t_of_yojson = function
+      | `String "all" -> Ok `All
+      | `String "collaborators_only" -> Ok `Collaborators_only
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `All -> `String "all"
+      | `Collaborators_only -> `String "collaborators_only"
+
+    type t =
+      ([ `All
+       | `Collaborators_only
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
   module Squash_merge_commit_message = struct
@@ -110,6 +140,7 @@ module Primary = struct
     blobs_url : string;
     branches_url : string;
     clone_url : string;
+    code_search_index_status : Code_search_index_status.t option; [@default None]
     collaborators_url : string;
     comments_url : string;
     commits_url : string;
@@ -138,6 +169,7 @@ module Primary = struct
     has_issues : bool; [@default true]
     has_pages : bool;
     has_projects : bool; [@default true]
+    has_pull_requests : bool; [@default true]
     has_wiki : bool; [@default true]
     homepage : string option; [@default None]
     hooks_url : string;
@@ -166,6 +198,7 @@ module Primary = struct
     owner : Githubc2_components_simple_user.t;
     permissions : Permissions.t option; [@default None]
     private_ : bool; [@default false] [@key "private"]
+    pull_request_creation_policy : Pull_request_creation_policy.t option; [@default None]
     pulls_url : string;
     pushed_at : string option; [@default None]
     releases_url : string;

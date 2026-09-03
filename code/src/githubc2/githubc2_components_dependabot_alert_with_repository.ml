@@ -1,19 +1,27 @@
+module Assignees = struct
+  type t = Githubc2_components_simple_user.t list
+  [@@deriving yojson { strict = false; meta = true }, show, eq]
+end
+
 module Dependency_ = struct
   module Primary = struct
     module Relationship = struct
       let t_of_yojson = function
         | `String "direct" -> Ok `Direct
+        | `String "inconclusive" -> Ok `Inconclusive
         | `String "transitive" -> Ok `Transitive
         | `String "unknown" -> Ok `Unknown
         | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
       let t_to_yojson = function
         | `Direct -> `String "direct"
+        | `Inconclusive -> `String "inconclusive"
         | `Transitive -> `String "transitive"
         | `Unknown -> `String "unknown"
 
       type t =
         ([ `Direct
+         | `Inconclusive
          | `Transitive
          | `Unknown
          ]
@@ -103,9 +111,12 @@ module State = struct
 end
 
 type t = {
+  assignees : Assignees.t option; [@default None]
   auto_dismissed_at : string option; [@default None]
   created_at : string;
   dependency : Dependency_.t;
+  dismissal_request : Githubc2_components_dependabot_alert_dismissal_request_simple.t option;
+      [@default None]
   dismissed_at : string option; [@default None]
   dismissed_by : Githubc2_components_nullable_simple_user.t option; [@default None]
   dismissed_comment : string option; [@default None]

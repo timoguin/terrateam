@@ -15,11 +15,11 @@ module Primary = struct
     action : Action.t;
     installation : Githubc2_components_simple_installation.t option; [@default None]
     organization : Githubc2_components_organization_simple_webhooks.t option; [@default None]
-    parent_issue : Githubc2_components_issue.t;
-    parent_issue_id : float;
-    parent_issue_repo : Githubc2_components_repository.t;
-    repository : Githubc2_components_repository_webhooks.t option; [@default None]
-    sender : Githubc2_components_simple_user.t option; [@default None]
+    parent_issue : Githubc2_components_issue.t option; [@default None]
+    parent_issue_id : float option; [@default None]
+    parent_issue_repo : Githubc2_components_repository.t option; [@default None]
+    repository : Githubc2_components_repository_webhooks.t;
+    sender : Githubc2_components_simple_user.t;
     sub_issue : Githubc2_components_issue.t;
     sub_issue_id : float;
   }

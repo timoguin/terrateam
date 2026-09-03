@@ -203,6 +203,11 @@ module Update_default_setup = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Service_unavailable = struct
       module Primary = struct
         type t = {
@@ -222,6 +227,7 @@ module Update_default_setup = struct
       | `Forbidden of Forbidden.t
       | `Not_found of Not_found.t
       | `Conflict of Conflict.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Service_unavailable of Service_unavailable.t
       ]
     [@@deriving show, eq]
@@ -233,6 +239,8 @@ module Update_default_setup = struct
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
         ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ("503", Openapi.of_json_body (fun v -> `Service_unavailable v) Service_unavailable.of_yojson);
       ]
   end
@@ -963,6 +971,11 @@ module Get_analysis = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
     module Service_unavailable = struct
       module Primary = struct
         type t = {
@@ -980,6 +993,7 @@ module Get_analysis = struct
       [ `OK of OK.t
       | `Forbidden of Forbidden.t
       | `Not_found of Not_found.t
+      | `Unprocessable_entity of Unprocessable_entity.t
       | `Service_unavailable of Service_unavailable.t
       ]
     [@@deriving show, eq]
@@ -989,6 +1003,8 @@ module Get_analysis = struct
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
         ("503", Openapi.of_json_body (fun v -> `Service_unavailable v) Service_unavailable.of_yojson);
       ]
   end
@@ -1149,7 +1165,7 @@ module List_alert_instances = struct
 
   module Responses = struct
     module OK = struct
-      type t = Githubc2_components.Code_scanning_alert_instance.t list
+      type t = Githubc2_components.Code_scanning_alert_instance_list.t list
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
@@ -1351,17 +1367,9 @@ module Create_autofix = struct
 
     module Unprocessable_entity = struct end
 
-    module Service_unavailable = struct
-      module Primary = struct
-        type t = {
-          code : string option; [@default None]
-          documentation_url : string option; [@default None]
-          message : string option; [@default None]
-        }
-        [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    module Internal_server_error = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
     type t =
@@ -1371,7 +1379,7 @@ module Create_autofix = struct
       | `Forbidden of Forbidden.t
       | `Not_found of Not_found.t
       | `Unprocessable_entity
-      | `Service_unavailable of Service_unavailable.t
+      | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
 
@@ -1383,7 +1391,9 @@ module Create_autofix = struct
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
         ("422", fun _ -> Ok `Unprocessable_entity);
-        ("503", Openapi.of_json_body (fun v -> `Service_unavailable v) Service_unavailable.of_yojson);
+        ( "500",
+          Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
+        );
       ]
   end
 
@@ -1437,17 +1447,9 @@ module Get_autofix = struct
       [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
-    module Service_unavailable = struct
-      module Primary = struct
-        type t = {
-          code : string option; [@default None]
-          documentation_url : string option; [@default None]
-          message : string option; [@default None]
-        }
-        [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    module Internal_server_error = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
     type t =
@@ -1455,7 +1457,7 @@ module Get_autofix = struct
       | `Bad_request of Bad_request.t
       | `Forbidden of Forbidden.t
       | `Not_found of Not_found.t
-      | `Service_unavailable of Service_unavailable.t
+      | `Internal_server_error of Internal_server_error.t
       ]
     [@@deriving show, eq]
 
@@ -1465,7 +1467,9 @@ module Get_autofix = struct
         ("400", Openapi.of_json_body (fun v -> `Bad_request v) Bad_request.of_yojson);
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
-        ("503", Openapi.of_json_body (fun v -> `Service_unavailable v) Service_unavailable.of_yojson);
+        ( "500",
+          Openapi.of_json_body (fun v -> `Internal_server_error v) Internal_server_error.of_yojson
+        );
       ]
   end
 
@@ -1499,18 +1503,54 @@ module Update_alert = struct
   end
 
   module Request_body = struct
-    module Primary = struct
-      type t = {
-        create_request : bool option; [@default None]
-        dismissed_comment : string option; [@default None]
-        dismissed_reason : Githubc2_components.Code_scanning_alert_dismissed_reason.t option;
-            [@default None]
-        state : Githubc2_components.Code_scanning_alert_set_state.t;
-      }
-      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    module V0 = struct
+      module Primary = struct
+        type t = {
+          assignees : Githubc2_components.Code_scanning_alert_assignees.t option; [@default None]
+          create_request : bool option; [@default None]
+          dismissed_comment : string option; [@default None]
+          dismissed_reason : Githubc2_components.Code_scanning_alert_dismissed_reason.t option;
+              [@default None]
+          state : Githubc2_components.Code_scanning_alert_set_state.t;
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    module V1 = struct
+      module Primary = struct
+        type t = {
+          assignees : Githubc2_components.Code_scanning_alert_assignees.t;
+          create_request : bool option; [@default None]
+          dismissed_comment : string option; [@default None]
+          dismissed_reason : Githubc2_components.Code_scanning_alert_dismissed_reason.t option;
+              [@default None]
+          state : Githubc2_components.Code_scanning_alert_set_state.t option; [@default None]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
+
+    let of_yojson =
+      Json_schema.any_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -1689,18 +1729,15 @@ module List_alerts_for_repo = struct
     module Sort = struct
       let t_of_yojson = function
         | `String "created" -> Ok `Created
-        | `String "number" -> Ok `Number
         | `String "updated" -> Ok `Updated
         | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
 
       let t_to_yojson = function
         | `Created -> `String "created"
-        | `Number -> `String "number"
         | `Updated -> `String "updated"
 
       type t =
         ([ `Created
-         | `Number
          | `Updated
          ]
         [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
@@ -1708,14 +1745,19 @@ module List_alerts_for_repo = struct
     end
 
     type t = {
+      after : string option; [@default None]
+      assignees : string option; [@default None]
+      before : string option; [@default None]
       direction : Direction.t; [@default `Desc]
       owner : string;
       page : int; [@default 1]
       per_page : int; [@default 30]
+      pr : int option; [@default None]
       ref_ : string option; [@default None] [@key "ref"]
       repo : string;
+      severity : Githubc2_components.Code_scanning_alert_severity.t option; [@default None]
       sort : Sort.t; [@default `Created]
-      state : Githubc2_components.Code_scanning_alert_state.t; [@default None]
+      state : Githubc2_components.Code_scanning_alert_state_query.t option; [@default None]
       tool_guid : string option; [@default None]
       tool_name : string option; [@default None]
     }
@@ -1790,12 +1832,20 @@ module List_alerts_for_repo = struct
            ("page", Var (params.page, Int));
            ("per_page", Var (params.per_page, Int));
            ("ref", Var (params.ref_, Option String));
+           ("pr", Var (params.pr, Option Int));
            ("direction", Var (params.direction, Enum Direction.t_to_yojson));
+           ("before", Var (params.before, Option String));
+           ("after", Var (params.after, Option String));
            ("sort", Var (params.sort, Enum Sort.t_to_yojson));
            ( "state",
              Var
                ( params.state,
-                 Option (Enum Githubc2_components.Code_scanning_alert_state.t_to_yojson) ) );
+                 Option (Enum Githubc2_components.Code_scanning_alert_state_query.t_to_yojson) ) );
+           ( "severity",
+             Var
+               ( params.severity,
+                 Option (Enum Githubc2_components.Code_scanning_alert_severity.t_to_yojson) ) );
+           ("assignees", Var (params.assignees, Option String));
          ])
       ~url
       ~responses:Responses.t
@@ -1842,6 +1892,7 @@ module List_alerts_for_org = struct
 
     type t = {
       after : string option; [@default None]
+      assignees : string option; [@default None]
       before : string option; [@default None]
       direction : Direction.t; [@default `Desc]
       org : string;
@@ -1924,6 +1975,7 @@ module List_alerts_for_org = struct
              Var
                ( params.severity,
                  Option (Enum Githubc2_components.Code_scanning_alert_severity.t_to_yojson) ) );
+           ("assignees", Var (params.assignees, Option String));
          ])
       ~url
       ~responses:Responses.t

@@ -127,6 +127,7 @@ module Primary = struct
     pull_request_url : string;
     state : string;
     submitted_at : string option; [@default None]
+    updated_at : string option; [@default None]
     user : User.t option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]

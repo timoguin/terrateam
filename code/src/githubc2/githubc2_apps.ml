@@ -274,8 +274,503 @@ module List_installation_repos_for_authenticated_user = struct
     module OK = struct
       module Primary = struct
         module Repositories = struct
-          type t = Githubc2_components.Repository.t list
-          [@@deriving yojson { strict = false; meta = false }, show, eq]
+          module Items = struct
+            module All_of = struct
+              module Primary = struct
+                module Code_search_index_status = struct
+                  module Primary = struct
+                    type t = {
+                      lexical_commit_sha : string option; [@default None]
+                      lexical_search_ok : bool option; [@default None]
+                    }
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                module Custom_properties = struct
+                  include
+                    Json_schema.Additional_properties.Make (Json_schema.Empty_obj) (Json_schema.Obj)
+                end
+
+                module Merge_commit_message = struct
+                  let t_of_yojson = function
+                    | `String "BLANK" -> Ok `BLANK
+                    | `String "PR_BODY" -> Ok `PR_BODY
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `BLANK -> `String "BLANK"
+                    | `PR_BODY -> `String "PR_BODY"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `BLANK
+                     | `PR_BODY
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Merge_commit_title = struct
+                  let t_of_yojson = function
+                    | `String "MERGE_MESSAGE" -> Ok `MERGE_MESSAGE
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `MERGE_MESSAGE -> `String "MERGE_MESSAGE"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `MERGE_MESSAGE
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Permissions = struct
+                  module Primary = struct
+                    type t = {
+                      admin : bool;
+                      maintain : bool option; [@default None]
+                      pull : bool;
+                      push : bool;
+                      triage : bool option; [@default None]
+                    }
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                module Pull_request_creation_policy = struct
+                  let t_of_yojson = function
+                    | `String "all" -> Ok `All
+                    | `String "collaborators_only" -> Ok `Collaborators_only
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `All -> `String "all"
+                    | `Collaborators_only -> `String "collaborators_only"
+
+                  type t =
+                    ([ `All
+                     | `Collaborators_only
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Squash_merge_commit_message = struct
+                  let t_of_yojson = function
+                    | `String "BLANK" -> Ok `BLANK
+                    | `String "COMMIT_MESSAGES" -> Ok `COMMIT_MESSAGES
+                    | `String "PR_BODY" -> Ok `PR_BODY
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `BLANK -> `String "BLANK"
+                    | `COMMIT_MESSAGES -> `String "COMMIT_MESSAGES"
+                    | `PR_BODY -> `String "PR_BODY"
+
+                  type t =
+                    ([ `BLANK
+                     | `COMMIT_MESSAGES
+                     | `PR_BODY
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Squash_merge_commit_title = struct
+                  let t_of_yojson = function
+                    | `String "COMMIT_OR_PR_TITLE" -> Ok `COMMIT_OR_PR_TITLE
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `COMMIT_OR_PR_TITLE -> `String "COMMIT_OR_PR_TITLE"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `COMMIT_OR_PR_TITLE
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Topics = struct
+                  type t = string list
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                type t = {
+                  allow_auto_merge : bool; [@default false]
+                  allow_forking : bool option; [@default None]
+                  allow_merge_commit : bool; [@default true]
+                  allow_rebase_merge : bool; [@default true]
+                  allow_squash_merge : bool; [@default true]
+                  allow_update_branch : bool; [@default false]
+                  anonymous_access_enabled : bool option; [@default None]
+                  archive_url : string;
+                  archived : bool; [@default false]
+                  assignees_url : string;
+                  blobs_url : string;
+                  branches_url : string;
+                  clone_url : string;
+                  code_search_index_status : Code_search_index_status.t option; [@default None]
+                  collaborators_url : string;
+                  comments_url : string;
+                  commits_url : string;
+                  compare_url : string;
+                  contents_url : string;
+                  contributors_url : string;
+                  created_at : string option; [@default None]
+                  custom_properties : Custom_properties.t option; [@default None]
+                  default_branch : string;
+                  delete_branch_on_merge : bool; [@default false]
+                  deployments_url : string;
+                  description : string option; [@default None]
+                  disabled : bool;
+                  downloads_url : string;
+                  events_url : string;
+                  fork : bool;
+                  forks : int;
+                  forks_count : int;
+                  forks_url : string;
+                  full_name : string;
+                  git_commits_url : string;
+                  git_refs_url : string;
+                  git_tags_url : string;
+                  git_url : string;
+                  has_discussions : bool; [@default false]
+                  has_downloads : bool; [@default true]
+                  has_issues : bool; [@default true]
+                  has_pages : bool;
+                  has_projects : bool; [@default true]
+                  has_pull_requests : bool; [@default true]
+                  has_wiki : bool; [@default true]
+                  homepage : string option; [@default None]
+                  hooks_url : string;
+                  html_url : string;
+                  id : int64;
+                  is_template : bool; [@default false]
+                  issue_comment_url : string;
+                  issue_events_url : string;
+                  issues_url : string;
+                  keys_url : string;
+                  labels_url : string;
+                  language : string option; [@default None]
+                  languages_url : string;
+                  license : Githubc2_components.Nullable_license_simple.t option; [@default None]
+                  master_branch : string option; [@default None]
+                  merge_commit_message : Merge_commit_message.t option; [@default None]
+                  merge_commit_title : Merge_commit_title.t option; [@default None]
+                  merges_url : string;
+                  milestones_url : string;
+                  mirror_url : string option; [@default None]
+                  name : string;
+                  node_id : string;
+                  notifications_url : string;
+                  open_issues : int;
+                  open_issues_count : int;
+                  owner : Githubc2_components.Simple_user.t;
+                  permissions : Permissions.t option; [@default None]
+                  private_ : bool; [@default false] [@key "private"]
+                  pull_request_creation_policy : Pull_request_creation_policy.t option;
+                      [@default None]
+                  pulls_url : string;
+                  pushed_at : string option; [@default None]
+                  releases_url : string;
+                  size : int;
+                  squash_merge_commit_message : Squash_merge_commit_message.t option;
+                      [@default None]
+                  squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+                  ssh_url : string;
+                  stargazers_count : int;
+                  stargazers_url : string;
+                  starred_at : string option; [@default None]
+                  statuses_url : string;
+                  subscribers_url : string;
+                  subscription_url : string;
+                  svn_url : string;
+                  tags_url : string;
+                  teams_url : string;
+                  temp_clone_token : string option; [@default None]
+                  topics : Topics.t option; [@default None]
+                  trees_url : string;
+                  updated_at : string option; [@default None]
+                  url : string;
+                  use_squash_pr_title_as_default : bool; [@default false]
+                  visibility : string; [@default "public"]
+                  watchers : int;
+                  watchers_count : int;
+                  web_commit_signoff_required : bool; [@default false]
+                }
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+            end
+
+            module T = struct
+              module Primary = struct
+                module Code_search_index_status = struct
+                  module Primary = struct
+                    type t = {
+                      lexical_commit_sha : string option; [@default None]
+                      lexical_search_ok : bool option; [@default None]
+                    }
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                module Custom_properties = struct
+                  include
+                    Json_schema.Additional_properties.Make (Json_schema.Empty_obj) (Json_schema.Obj)
+                end
+
+                module Merge_commit_message = struct
+                  let t_of_yojson = function
+                    | `String "BLANK" -> Ok `BLANK
+                    | `String "PR_BODY" -> Ok `PR_BODY
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `BLANK -> `String "BLANK"
+                    | `PR_BODY -> `String "PR_BODY"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `BLANK
+                     | `PR_BODY
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Merge_commit_title = struct
+                  let t_of_yojson = function
+                    | `String "MERGE_MESSAGE" -> Ok `MERGE_MESSAGE
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `MERGE_MESSAGE -> `String "MERGE_MESSAGE"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `MERGE_MESSAGE
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Permissions = struct
+                  module Primary = struct
+                    type t = {
+                      admin : bool;
+                      maintain : bool option; [@default None]
+                      pull : bool;
+                      push : bool;
+                      triage : bool option; [@default None]
+                    }
+                    [@@deriving yojson { strict = false; meta = true }, show, eq]
+                  end
+
+                  include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+                end
+
+                module Pull_request_creation_policy = struct
+                  let t_of_yojson = function
+                    | `String "all" -> Ok `All
+                    | `String "collaborators_only" -> Ok `Collaborators_only
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `All -> `String "all"
+                    | `Collaborators_only -> `String "collaborators_only"
+
+                  type t =
+                    ([ `All
+                     | `Collaborators_only
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Squash_merge_commit_message = struct
+                  let t_of_yojson = function
+                    | `String "BLANK" -> Ok `BLANK
+                    | `String "COMMIT_MESSAGES" -> Ok `COMMIT_MESSAGES
+                    | `String "PR_BODY" -> Ok `PR_BODY
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `BLANK -> `String "BLANK"
+                    | `COMMIT_MESSAGES -> `String "COMMIT_MESSAGES"
+                    | `PR_BODY -> `String "PR_BODY"
+
+                  type t =
+                    ([ `BLANK
+                     | `COMMIT_MESSAGES
+                     | `PR_BODY
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Squash_merge_commit_title = struct
+                  let t_of_yojson = function
+                    | `String "COMMIT_OR_PR_TITLE" -> Ok `COMMIT_OR_PR_TITLE
+                    | `String "PR_TITLE" -> Ok `PR_TITLE
+                    | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+                  let t_to_yojson = function
+                    | `COMMIT_OR_PR_TITLE -> `String "COMMIT_OR_PR_TITLE"
+                    | `PR_TITLE -> `String "PR_TITLE"
+
+                  type t =
+                    ([ `COMMIT_OR_PR_TITLE
+                     | `PR_TITLE
+                     ]
+                    [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                module Topics = struct
+                  type t = string list
+                  [@@deriving yojson { strict = false; meta = false }, show, eq]
+                end
+
+                type t = {
+                  allow_auto_merge : bool; [@default false]
+                  allow_forking : bool option; [@default None]
+                  allow_merge_commit : bool; [@default true]
+                  allow_rebase_merge : bool; [@default true]
+                  allow_squash_merge : bool; [@default true]
+                  allow_update_branch : bool; [@default false]
+                  anonymous_access_enabled : bool option; [@default None]
+                  archive_url : string;
+                  archived : bool; [@default false]
+                  assignees_url : string;
+                  blobs_url : string;
+                  branches_url : string;
+                  clone_url : string;
+                  code_search_index_status : Code_search_index_status.t option; [@default None]
+                  collaborators_url : string;
+                  comments_url : string;
+                  commits_url : string;
+                  compare_url : string;
+                  contents_url : string;
+                  contributors_url : string;
+                  created_at : string option; [@default None]
+                  custom_properties : Custom_properties.t option; [@default None]
+                  default_branch : string;
+                  delete_branch_on_merge : bool; [@default false]
+                  deployments_url : string;
+                  description : string option; [@default None]
+                  disabled : bool;
+                  downloads_url : string;
+                  events_url : string;
+                  fork : bool;
+                  forks : int;
+                  forks_count : int;
+                  forks_url : string;
+                  full_name : string;
+                  git_commits_url : string;
+                  git_refs_url : string;
+                  git_tags_url : string;
+                  git_url : string;
+                  has_discussions : bool; [@default false]
+                  has_downloads : bool; [@default true]
+                  has_issues : bool; [@default true]
+                  has_pages : bool;
+                  has_projects : bool; [@default true]
+                  has_pull_requests : bool; [@default true]
+                  has_wiki : bool; [@default true]
+                  homepage : string option; [@default None]
+                  hooks_url : string;
+                  html_url : string;
+                  id : int64;
+                  is_template : bool; [@default false]
+                  issue_comment_url : string;
+                  issue_events_url : string;
+                  issues_url : string;
+                  keys_url : string;
+                  labels_url : string;
+                  language : string option; [@default None]
+                  languages_url : string;
+                  license : Githubc2_components.Nullable_license_simple.t option; [@default None]
+                  master_branch : string option; [@default None]
+                  merge_commit_message : Merge_commit_message.t option; [@default None]
+                  merge_commit_title : Merge_commit_title.t option; [@default None]
+                  merges_url : string;
+                  milestones_url : string;
+                  mirror_url : string option; [@default None]
+                  name : string;
+                  node_id : string;
+                  notifications_url : string;
+                  open_issues : int;
+                  open_issues_count : int;
+                  owner : Githubc2_components.Simple_user.t;
+                  permissions : Permissions.t option; [@default None]
+                  private_ : bool; [@default false] [@key "private"]
+                  pull_request_creation_policy : Pull_request_creation_policy.t option;
+                      [@default None]
+                  pulls_url : string;
+                  pushed_at : string option; [@default None]
+                  releases_url : string;
+                  size : int;
+                  squash_merge_commit_message : Squash_merge_commit_message.t option;
+                      [@default None]
+                  squash_merge_commit_title : Squash_merge_commit_title.t option; [@default None]
+                  ssh_url : string;
+                  stargazers_count : int;
+                  stargazers_url : string;
+                  starred_at : string option; [@default None]
+                  statuses_url : string;
+                  subscribers_url : string;
+                  subscription_url : string;
+                  svn_url : string;
+                  tags_url : string;
+                  teams_url : string;
+                  temp_clone_token : string option; [@default None]
+                  topics : Topics.t option; [@default None]
+                  trees_url : string;
+                  updated_at : string option; [@default None]
+                  url : string;
+                  use_squash_pr_title_as_default : bool; [@default false]
+                  visibility : string; [@default "public"]
+                  watchers : int;
+                  watchers_count : int;
+                  web_commit_signoff_required : bool; [@default false]
+                }
+                [@@deriving yojson { strict = false; meta = true }, show, eq]
+              end
+
+              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+            end
+
+            type t = T.t [@@deriving yojson { strict = false; meta = false }, show, eq]
+
+            let of_yojson json =
+              let open CCResult in
+              flat_map (fun _ -> T.of_yojson json) (All_of.of_yojson json)
+          end
+
+          type t = Items.t list [@@deriving yojson { strict = false; meta = false }, show, eq]
         end
 
         type t = {
@@ -1632,829 +2127,8 @@ module List_installations = struct
 
   module Responses = struct
     module OK = struct
-      module Items = struct
-        module Primary = struct
-          module Account = struct
-            module All_of = struct
-              module Primary = struct
-                type t = {
-                  avatar_url : string;
-                  created_at : string option; [@default None]
-                  description : string option; [@default None]
-                  email : string option; [@default None]
-                  events_url : string;
-                  followers_url : string;
-                  following_url : string;
-                  gists_url : string;
-                  gravatar_id : string option; [@default None]
-                  html_url : string;
-                  id : int;
-                  login : string;
-                  name : string option; [@default None]
-                  node_id : string;
-                  organizations_url : string;
-                  received_events_url : string;
-                  repos_url : string;
-                  site_admin : bool;
-                  slug : string;
-                  starred_at : string option; [@default None]
-                  starred_url : string;
-                  subscriptions_url : string;
-                  type_ : string; [@key "type"]
-                  updated_at : string option; [@default None]
-                  url : string;
-                  website_url : string option; [@default None]
-                }
-                [@@deriving yojson { strict = false; meta = true }, show, eq]
-              end
-
-              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-            end
-
-            module T = struct
-              module Primary = struct
-                type t = {
-                  avatar_url : string;
-                  created_at : string option; [@default None]
-                  description : string option; [@default None]
-                  email : string option; [@default None]
-                  events_url : string;
-                  followers_url : string;
-                  following_url : string;
-                  gists_url : string;
-                  gravatar_id : string option; [@default None]
-                  html_url : string;
-                  id : int;
-                  login : string;
-                  name : string option; [@default None]
-                  node_id : string;
-                  organizations_url : string;
-                  received_events_url : string;
-                  repos_url : string;
-                  site_admin : bool;
-                  slug : string;
-                  starred_at : string option; [@default None]
-                  starred_url : string;
-                  subscriptions_url : string;
-                  type_ : string; [@key "type"]
-                  updated_at : string option; [@default None]
-                  url : string;
-                  website_url : string option; [@default None]
-                }
-                [@@deriving yojson { strict = false; meta = true }, show, eq]
-              end
-
-              include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-            end
-
-            type t = T.t [@@deriving yojson { strict = false; meta = false }, show, eq]
-
-            let of_yojson json =
-              let open CCResult in
-              flat_map (fun _ -> T.of_yojson json) (All_of.of_yojson json)
-          end
-
-          module Events = struct
-            type t = string list [@@deriving yojson { strict = false; meta = false }, show, eq]
-          end
-
-          module Permissions = struct
-            module Primary = struct
-              module Actions = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Administration = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Checks = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Contents = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Deployments = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Environments = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Issues = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Members = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Metadata = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_administration = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_announcement_banners = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_custom_roles = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_hooks = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_packages = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_personal_access_token_requests = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_personal_access_tokens = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_plan = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-
-                type t = ([ `Read ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_projects = struct
-                let t_of_yojson = function
-                  | `String "admin" -> Ok `Admin
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Admin -> `String "admin"
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Admin
-                   | `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_secrets = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_self_hosted_runners = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Organization_user_blocking = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Packages = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Pages = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Pull_requests = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Repository_hooks = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Repository_projects = struct
-                let t_of_yojson = function
-                  | `String "admin" -> Ok `Admin
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Admin -> `String "admin"
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Admin
-                   | `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Secret_scanning_alerts = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Secrets = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Security_events = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Single_file = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Statuses = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Team_discussions = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Vulnerability_alerts = struct
-                let t_of_yojson = function
-                  | `String "read" -> Ok `Read
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Read -> `String "read"
-                  | `Write -> `String "write"
-
-                type t =
-                  ([ `Read
-                   | `Write
-                   ]
-                  [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              module Workflows = struct
-                let t_of_yojson = function
-                  | `String "write" -> Ok `Write
-                  | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-                let t_to_yojson = function
-                  | `Write -> `String "write"
-
-                type t = ([ `Write ][@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-                [@@deriving yojson { strict = false; meta = false }, show, eq]
-              end
-
-              type t = {
-                actions : Actions.t option; [@default None]
-                administration : Administration.t option; [@default None]
-                checks : Checks.t option; [@default None]
-                contents : Contents.t option; [@default None]
-                deployments : Deployments.t option; [@default None]
-                environments : Environments.t option; [@default None]
-                issues : Issues.t option; [@default None]
-                members : Members.t option; [@default None]
-                metadata : Metadata.t option; [@default None]
-                organization_administration : Organization_administration.t option; [@default None]
-                organization_announcement_banners : Organization_announcement_banners.t option;
-                    [@default None]
-                organization_custom_roles : Organization_custom_roles.t option; [@default None]
-                organization_hooks : Organization_hooks.t option; [@default None]
-                organization_packages : Organization_packages.t option; [@default None]
-                organization_personal_access_token_requests :
-                  Organization_personal_access_token_requests.t option;
-                    [@default None]
-                organization_personal_access_tokens : Organization_personal_access_tokens.t option;
-                    [@default None]
-                organization_plan : Organization_plan.t option; [@default None]
-                organization_projects : Organization_projects.t option; [@default None]
-                organization_secrets : Organization_secrets.t option; [@default None]
-                organization_self_hosted_runners : Organization_self_hosted_runners.t option;
-                    [@default None]
-                organization_user_blocking : Organization_user_blocking.t option; [@default None]
-                packages : Packages.t option; [@default None]
-                pages : Pages.t option; [@default None]
-                pull_requests : Pull_requests.t option; [@default None]
-                repository_hooks : Repository_hooks.t option; [@default None]
-                repository_projects : Repository_projects.t option; [@default None]
-                secret_scanning_alerts : Secret_scanning_alerts.t option; [@default None]
-                secrets : Secrets.t option; [@default None]
-                security_events : Security_events.t option; [@default None]
-                single_file : Single_file.t option; [@default None]
-                statuses : Statuses.t option; [@default None]
-                team_discussions : Team_discussions.t option; [@default None]
-                vulnerability_alerts : Vulnerability_alerts.t option; [@default None]
-                workflows : Workflows.t option; [@default None]
-              }
-              [@@deriving yojson { strict = false; meta = true }, show, eq]
-            end
-
-            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-          end
-
-          module Repository_selection = struct
-            let t_of_yojson = function
-              | `String "all" -> Ok `All
-              | `String "selected" -> Ok `Selected
-              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
-
-            let t_to_yojson = function
-              | `All -> `String "all"
-              | `Selected -> `String "selected"
-
-            type t =
-              ([ `All
-               | `Selected
-               ]
-              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
-            [@@deriving yojson { strict = false; meta = false }, show, eq]
-          end
-
-          module Single_file_paths = struct
-            type t = string list [@@deriving yojson { strict = false; meta = false }, show, eq]
-          end
-
-          module Suspended_by = struct
-            module Primary = struct
-              type t = {
-                avatar_url : string;
-                email : string option; [@default None]
-                events_url : string;
-                followers_url : string;
-                following_url : string;
-                gists_url : string;
-                gravatar_id : string option; [@default None]
-                html_url : string;
-                id : int;
-                login : string;
-                name : string option; [@default None]
-                node_id : string;
-                organizations_url : string;
-                received_events_url : string;
-                repos_url : string;
-                site_admin : bool;
-                starred_at : string option; [@default None]
-                starred_url : string;
-                subscriptions_url : string;
-                type_ : string; [@key "type"]
-                url : string;
-              }
-              [@@deriving yojson { strict = false; meta = true }, show, eq]
-            end
-
-            include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-          end
-
-          type t = {
-            access_tokens_url : string;
-            account : Account.t option; [@default None]
-            app_id : int;
-            app_slug : string;
-            contact_email : string option; [@default None]
-            created_at : string;
-            events : Events.t;
-            has_multiple_single_files : bool option; [@default None]
-            html_url : string;
-            id : int;
-            permissions : Permissions.t;
-            repositories_url : string;
-            repository_selection : Repository_selection.t;
-            single_file_name : string option; [@default None]
-            single_file_paths : Single_file_paths.t option; [@default None]
-            suspended_at : string option; [@default None]
-            suspended_by : Suspended_by.t option; [@default None]
-            target_id : int;
-            target_type : string;
-            updated_at : string;
-          }
-          [@@deriving yojson { strict = false; meta = true }, show, eq]
-        end
-
-        include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
-      end
-
-      type t = Items.t list [@@deriving yojson { strict = false; meta = false }, show, eq]
+      type t = Githubc2_components.Installation.t list
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
     end
 
     type t = [ `OK of OK.t ] [@@deriving show, eq]
@@ -2639,9 +2313,28 @@ end
 
 module List_webhook_deliveries = struct
   module Parameters = struct
+    module Status = struct
+      let t_of_yojson = function
+        | `String "failure" -> Ok `Failure
+        | `String "success" -> Ok `Success
+        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+      let t_to_yojson = function
+        | `Failure -> `String "failure"
+        | `Success -> `String "success"
+
+      type t =
+        ([ `Failure
+         | `Success
+         ]
+        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
     type t = {
       cursor : string option; [@default None]
       per_page : int; [@default 30]
+      status : Status.t option; [@default None]
     }
     [@@deriving make, show, eq]
   end
@@ -2688,7 +2381,9 @@ module List_webhook_deliveries = struct
         (let open Openapi.Request.Var in
          let open Parameters in
          [
-           ("per_page", Var (params.per_page, Int)); ("cursor", Var (params.cursor, Option String));
+           ("per_page", Var (params.per_page, Int));
+           ("cursor", Var (params.cursor, Option String));
+           ("status", Var (params.status, Option (Enum Status.t_to_yojson)));
          ])
       ~url
       ~responses:Responses.t

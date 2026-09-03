@@ -89,7 +89,7 @@ module Primary = struct
   end
 
   type t = {
-    app : Githubc2_components_nullable_integration.t option; [@default None]
+    app : Githubc2_components_integration.t option; [@default None]
     check_suite : Githubc2_components_simple_check_suite.t;
     completed_at : string option; [@default None]
     conclusion : Conclusion.t option; [@default None]

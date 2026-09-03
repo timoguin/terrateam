@@ -35,9 +35,28 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Type = struct
+    let t_of_yojson = function
+      | `String "enterprise" -> Ok `Enterprise
+      | `String "organization" -> Ok `Organization
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `Enterprise -> `String "enterprise"
+      | `Organization -> `String "organization"
+
+    type t =
+      ([ `Enterprise
+       | `Organization
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   type t = {
     created_at : string;
     description : string option; [@default None]
+    enterprise_id : int option; [@default None]
     html_url : string;
     id : int;
     ldap_dn : string option; [@default None]
@@ -47,12 +66,14 @@ module Primary = struct
     node_id : string;
     notification_setting : Notification_setting.t option; [@default None]
     organization : Githubc2_components_team_organization.t;
+    organization_id : int option; [@default None]
     parent : Githubc2_components_nullable_team_simple.t option; [@default None]
     permission : string;
     privacy : Privacy.t option; [@default None]
     repos_count : int;
     repositories_url : string;
     slug : string;
+    type_ : Type.t; [@key "type"]
     updated_at : string;
     url : string;
   }

@@ -1,0 +1,101 @@
+module Primary = struct
+  module Release_ = struct
+    module All_of = struct
+      module Primary = struct
+        module Assets = struct
+          type t = Githubc2_components_release_asset.t list
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = {
+          assets : Assets.t;
+          assets_url : string;
+          author : Githubc2_components_simple_user.t;
+          body : string option; [@default None]
+          body_html : string option; [@default None]
+          body_text : string option; [@default None]
+          created_at : string;
+          discussion_url : string option; [@default None]
+          draft : bool;
+          html_url : string;
+          id : int;
+          immutable : bool option; [@default None]
+          is_short_description_html_truncated : bool option; [@default None]
+          mentions_count : int option; [@default None]
+          name : string option; [@default None]
+          node_id : string;
+          prerelease : bool;
+          published_at : string option; [@default None]
+          reactions : Githubc2_components_reaction_rollup.t option; [@default None]
+          short_description_html : string option; [@default None]
+          tag_name : string;
+          tarball_url : string option; [@default None]
+          target_commitish : string;
+          updated_at : string option; [@default None]
+          upload_url : string;
+          url : string;
+          zipball_url : string option; [@default None]
+        }
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    module T = struct
+      module Primary = struct
+        module Assets = struct
+          type t = Githubc2_components_release_asset.t list
+          [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = {
+          assets : Assets.t;
+          assets_url : string;
+          author : Githubc2_components_simple_user.t;
+          body : string option; [@default None]
+          body_html : string option; [@default None]
+          body_text : string option; [@default None]
+          created_at : string;
+          discussion_url : string option; [@default None]
+          draft : bool;
+          html_url : string;
+          id : int;
+          immutable : bool option; [@default None]
+          is_short_description_html_truncated : bool option; [@default None]
+          mentions_count : int option; [@default None]
+          name : string option; [@default None]
+          node_id : string;
+          prerelease : bool;
+          published_at : string option; [@default None]
+          reactions : Githubc2_components_reaction_rollup.t option; [@default None]
+          short_description_html : string option; [@default None]
+          tag_name : string;
+          tarball_url : string option; [@default None]
+          target_commitish : string;
+          updated_at : string option; [@default None]
+          upload_url : string;
+          url : string;
+          zipball_url : string option; [@default None]
+        }
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t = T.t [@@deriving yojson { strict = false; meta = true }, show, eq]
+
+    let of_yojson json =
+      let open CCResult in
+      flat_map (fun _ -> T.of_yojson json) (All_of.of_yojson json)
+  end
+
+  type t = {
+    action : string;
+    release : Release_.t;
+  }
+  [@@deriving yojson { strict = false; meta = true }, show, eq]
+end
+
+include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)

@@ -1,4 +1,8 @@
 module Primary = struct
+  module Custom_properties = struct
+    include Json_schema.Additional_properties.Make (Json_schema.Empty_obj) (Json_schema.Obj)
+  end
+
   module License_ = struct
     module Primary = struct
       type t = {
@@ -29,6 +33,24 @@ module Primary = struct
     include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
   end
 
+  module Pull_request_creation_policy = struct
+    let t_of_yojson = function
+      | `String "all" -> Ok `All
+      | `String "collaborators_only" -> Ok `Collaborators_only
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `All -> `String "all"
+      | `Collaborators_only -> `String "collaborators_only"
+
+    type t =
+      ([ `All
+       | `Collaborators_only
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   module Topics = struct
     type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
@@ -49,6 +71,7 @@ module Primary = struct
     contents_url : string;
     contributors_url : string;
     created_at : string option; [@default None]
+    custom_properties : Custom_properties.t option; [@default None]
     default_branch : string option; [@default None]
     delete_branch_on_merge : bool option; [@default None]
     deployments_url : string;
@@ -70,6 +93,7 @@ module Primary = struct
     has_issues : bool option; [@default None]
     has_pages : bool option; [@default None]
     has_projects : bool option; [@default None]
+    has_pull_requests : bool option; [@default None]
     has_wiki : bool option; [@default None]
     homepage : string option; [@default None]
     hooks_url : string;
@@ -96,6 +120,7 @@ module Primary = struct
     owner : Githubc2_components_simple_user.t;
     permissions : Permissions.t option; [@default None]
     private_ : bool; [@key "private"]
+    pull_request_creation_policy : Pull_request_creation_policy.t option; [@default None]
     pulls_url : string;
     pushed_at : string option; [@default None]
     releases_url : string;

@@ -48,6 +48,24 @@ module Primary = struct
     [@@deriving yojson { strict = false; meta = true }, show, eq]
   end
 
+  module Subject_type = struct
+    let t_of_yojson = function
+      | `String "file" -> Ok `File
+      | `String "line" -> Ok `Line
+      | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+    let t_to_yojson = function
+      | `File -> `String "file"
+      | `Line -> `String "line"
+
+    type t =
+      ([ `File
+       | `Line
+       ]
+      [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+    [@@deriving yojson { strict = false; meta = true }, show, eq]
+  end
+
   type t = {
     links_ : Links_.t; [@key "_links"]
     author_association : Githubc2_components_author_association.t;
@@ -74,6 +92,7 @@ module Primary = struct
     side : Side.t; [@default `RIGHT]
     start_line : int option; [@default None]
     start_side : Start_side.t option; [@default Some `RIGHT]
+    subject_type : Subject_type.t option; [@default None]
     updated_at : string;
     url : string;
     user : Githubc2_components_nullable_simple_user.t option; [@default None]

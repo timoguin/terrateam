@@ -1,7 +1,9 @@
 module Primary = struct
   type t = {
+    created_at : string option; [@default None]
     id : int;
     key : string;
+    last_used : string option; [@default None]
   }
   [@@deriving yojson { strict = false; meta = true }, show, eq]
 end

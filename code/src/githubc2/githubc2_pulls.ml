@@ -766,23 +766,62 @@ module Request_reviewers = struct
   end
 
   module Request_body = struct
-    module Primary = struct
-      module Reviewers = struct
-        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+    module V0 = struct
+      module Primary = struct
+        module Reviewers = struct
+          type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Team_reviewers = struct
+          type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = {
+          reviewers : Reviewers.t;
+          team_reviewers : Team_reviewers.t option; [@default None]
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
       end
 
-      module Team_reviewers = struct
-        type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
-      end
-
-      type t = {
-        reviewers : Reviewers.t option; [@default None]
-        team_reviewers : Team_reviewers.t option; [@default None]
-      }
-      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
     end
 
-    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    module V1 = struct
+      module Primary = struct
+        module Reviewers = struct
+          type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        module Team_reviewers = struct
+          type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+        end
+
+        type t = {
+          reviewers : Reviewers.t option; [@default None]
+          team_reviewers : Team_reviewers.t;
+        }
+        [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+      end
+
+      include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+    end
+
+    type t =
+      | V0 of V0.t
+      | V1 of V1.t
+    [@@deriving show, eq]
+
+    let of_yojson =
+      Json_schema.any_of
+        (let open CCResult in
+         [
+           (fun v -> map (fun v -> V0 v) (V0.of_yojson v));
+           (fun v -> map (fun v -> V1 v) (V1.of_yojson v));
+         ])
+
+    let to_yojson = function
+      | V0 v -> V0.to_yojson v
+      | V1 v -> V1.to_yojson v
   end
 
   module Responses = struct
@@ -872,6 +911,216 @@ module List_requested_reviewers = struct
       ~url
       ~responses:Responses.t
       `Get
+end
+
+module Get_merge_async_result = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      pull_number : int;
+      repo : string;
+      uuid : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Pull_request_merge_async_result.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async/{uuid}"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("owner", Var (params.owner, String));
+           ("repo", Var (params.repo, String));
+           ("pull_number", Var (params.pull_number, Int));
+           ("uuid", Var (params.uuid, String));
+         ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
+module Merge_async = struct
+  module Parameters = struct
+    type t = {
+      owner : string;
+      pull_number : int;
+      repo : string;
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Request_body = struct
+    module Primary = struct
+      module Merge_action = struct
+        let t_of_yojson = function
+          | `String "default" -> Ok `Default
+          | `String "direct_merge" -> Ok `Direct_merge
+          | `String "merge_queue" -> Ok `Merge_queue
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Default -> `String "default"
+          | `Direct_merge -> `String "direct_merge"
+          | `Merge_queue -> `String "merge_queue"
+
+        type t =
+          ([ `Default
+           | `Direct_merge
+           | `Merge_queue
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      module Merge_method = struct
+        let t_of_yojson = function
+          | `String "merge" -> Ok `Merge
+          | `String "rebase" -> Ok `Rebase
+          | `String "squash" -> Ok `Squash
+          | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+        let t_to_yojson = function
+          | `Merge -> `String "merge"
+          | `Rebase -> `String "rebase"
+          | `Squash -> `String "squash"
+
+        type t =
+          ([ `Merge
+           | `Rebase
+           | `Squash
+           ]
+          [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+        [@@deriving yojson { strict = false; meta = true }, show, eq]
+      end
+
+      type t = {
+        commit_message : string option; [@default None]
+        commit_title : string option; [@default None]
+        merge_action : Merge_action.t option; [@default None]
+        merge_method : Merge_method.t option; [@default None]
+        sha : string option; [@default None]
+      }
+      [@@deriving make, yojson { strict = false; meta = true }, show, eq]
+    end
+
+    include Json_schema.Additional_properties.Make (Primary) (Json_schema.Obj)
+  end
+
+  module Responses = struct
+    module OK = struct
+      type t = Githubc2_components.Pull_request_merge_async_result.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Accepted = struct
+      type t = Githubc2_components.Pull_request_merge_async_result.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Bad_request = struct
+      type t = Githubc2_components.Pull_request_merge_async_result.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Forbidden = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Not_found = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Conflict = struct
+      type t = Githubc2_components.Pull_request_merge_async_result.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Unprocessable_entity = struct
+      type t = Githubc2_components.Validation_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    type t =
+      [ `OK of OK.t
+      | `Accepted of Accepted.t
+      | `Bad_request of Bad_request.t
+      | `Forbidden of Forbidden.t
+      | `Not_found of Not_found.t
+      | `Conflict of Conflict.t
+      | `Unprocessable_entity of Unprocessable_entity.t
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("202", Openapi.of_json_body (fun v -> `Accepted v) Accepted.of_yojson);
+        ("400", Openapi.of_json_body (fun v -> `Bad_request v) Bad_request.of_yojson);
+        ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
+        ("404", Openapi.of_json_body (fun v -> `Not_found v) Not_found.of_yojson);
+        ("409", Openapi.of_json_body (fun v -> `Conflict v) Conflict.of_yojson);
+        ( "422",
+          Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
+      ]
+  end
+
+  let url = "/repos/{owner}/{repo}/pulls/{pull_number}/merge-async"
+
+  let make ?body =
+   fun params ->
+    Openapi.Request.make
+      ?body:(CCOption.map Request_body.to_yojson body)
+      ~headers:[]
+      ~url_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("owner", Var (params.owner, String));
+           ("repo", Var (params.repo, String));
+           ("pull_number", Var (params.pull_number, Int));
+         ])
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Put
 end
 
 module Merge = struct

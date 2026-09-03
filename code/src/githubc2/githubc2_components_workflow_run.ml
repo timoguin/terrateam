@@ -13,7 +13,7 @@ module Primary = struct
     actor : Githubc2_components_simple_user.t option; [@default None]
     artifacts_url : string;
     cancel_url : string;
-    check_suite_id : int option; [@default None]
+    check_suite_id : int64 option; [@default None]
     check_suite_node_id : string option; [@default None]
     check_suite_url : string;
     conclusion : string option; [@default None]
@@ -26,7 +26,7 @@ module Primary = struct
     head_repository_id : int option; [@default None]
     head_sha : string;
     html_url : string;
-    id : int;
+    id : int64;
     jobs_url : string;
     logs_url : string;
     name : string option; [@default None]

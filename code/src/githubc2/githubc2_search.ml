@@ -469,6 +469,24 @@ module Issues_and_pull_requests = struct
       [@@deriving show, eq]
     end
 
+    module Search_type = struct
+      let t_of_yojson = function
+        | `String "hybrid" -> Ok `Hybrid
+        | `String "semantic" -> Ok `Semantic
+        | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+      let t_to_yojson = function
+        | `Hybrid -> `String "hybrid"
+        | `Semantic -> `String "semantic"
+
+      type t =
+        ([ `Hybrid
+         | `Semantic
+         ]
+        [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+      [@@deriving show, eq]
+    end
+
     module Sort = struct
       let t_of_yojson = function
         | `String "comments" -> Ok `Comments
@@ -520,6 +538,7 @@ module Issues_and_pull_requests = struct
       page : int; [@default 1]
       per_page : int; [@default 30]
       q : string;
+      search_type : Search_type.t option; [@default None]
       sort : Sort.t option; [@default None]
     }
     [@@deriving make, show, eq]
@@ -533,9 +552,73 @@ module Issues_and_pull_requests = struct
           [@@deriving yojson { strict = false; meta = false }, show, eq]
         end
 
+        module Lexical_fallback_reason = struct
+          module Items = struct
+            let t_of_yojson = function
+              | `String "no_accessible_repos" -> Ok `No_accessible_repos
+              | `String "no_text_terms" -> Ok `No_text_terms
+              | `String "non_issue_target" -> Ok `Non_issue_target
+              | `String "only_non_semantic_fields_requested" ->
+                  Ok `Only_non_semantic_fields_requested
+              | `String "or_boolean_not_supported" -> Ok `Or_boolean_not_supported
+              | `String "quoted_text" -> Ok `Quoted_text
+              | `String "server_error" -> Ok `Server_error
+              | `String "service_unavailable" -> Ok `Service_unavailable
+              | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+            let t_to_yojson = function
+              | `No_accessible_repos -> `String "no_accessible_repos"
+              | `No_text_terms -> `String "no_text_terms"
+              | `Non_issue_target -> `String "non_issue_target"
+              | `Only_non_semantic_fields_requested -> `String "only_non_semantic_fields_requested"
+              | `Or_boolean_not_supported -> `String "or_boolean_not_supported"
+              | `Quoted_text -> `String "quoted_text"
+              | `Server_error -> `String "server_error"
+              | `Service_unavailable -> `String "service_unavailable"
+
+            type t =
+              ([ `No_accessible_repos
+               | `No_text_terms
+               | `Non_issue_target
+               | `Only_non_semantic_fields_requested
+               | `Or_boolean_not_supported
+               | `Quoted_text
+               | `Server_error
+               | `Service_unavailable
+               ]
+              [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+            [@@deriving yojson { strict = false; meta = false }, show, eq]
+          end
+
+          type t = Items.t list [@@deriving yojson { strict = false; meta = false }, show, eq]
+        end
+
+        module Search_type = struct
+          let t_of_yojson = function
+            | `String "hybrid" -> Ok `Hybrid
+            | `String "lexical" -> Ok `Lexical
+            | `String "semantic" -> Ok `Semantic
+            | json -> Error ("Unknown value: " ^ Yojson.Safe.pretty_to_string json)
+
+          let t_to_yojson = function
+            | `Hybrid -> `String "hybrid"
+            | `Lexical -> `String "lexical"
+            | `Semantic -> `String "semantic"
+
+          type t =
+            ([ `Hybrid
+             | `Lexical
+             | `Semantic
+             ]
+            [@of_yojson t_of_yojson] [@to_yojson t_to_yojson])
+          [@@deriving yojson { strict = false; meta = false }, show, eq]
+        end
+
         type t = {
           incomplete_results : bool;
           items : Items.t;
+          lexical_fallback_reason : Lexical_fallback_reason.t option; [@default None]
+          search_type : Search_type.t;
           total_count : int;
         }
         [@@deriving yojson { strict = false; meta = true }, show, eq]
@@ -545,6 +628,11 @@ module Issues_and_pull_requests = struct
     end
 
     module Not_modified = struct end
+
+    module Unauthorized = struct
+      type t = Githubc2_components.Basic_error.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
 
     module Forbidden = struct
       type t = Githubc2_components.Basic_error.t
@@ -572,6 +660,7 @@ module Issues_and_pull_requests = struct
     type t =
       [ `OK of OK.t
       | `Not_modified
+      | `Unauthorized of Unauthorized.t
       | `Forbidden of Forbidden.t
       | `Unprocessable_entity of Unprocessable_entity.t
       | `Service_unavailable of Service_unavailable.t
@@ -582,6 +671,7 @@ module Issues_and_pull_requests = struct
       [
         ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
         ("304", fun _ -> Ok `Not_modified);
+        ("401", Openapi.of_json_body (fun v -> `Unauthorized v) Unauthorized.of_yojson);
         ("403", Openapi.of_json_body (fun v -> `Forbidden v) Forbidden.of_yojson);
         ( "422",
           Openapi.of_json_body (fun v -> `Unprocessable_entity v) Unprocessable_entity.of_yojson );
@@ -605,6 +695,7 @@ module Issues_and_pull_requests = struct
            ("per_page", Var (params.per_page, Int));
            ("page", Var (params.page, Int));
            ("advanced_search", Var (params.advanced_search, Option String));
+           ("search_type", Var (params.search_type, Option (Enum Search_type.t_to_yojson)));
          ])
       ~url
       ~responses:Responses.t
