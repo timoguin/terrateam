@@ -452,6 +452,21 @@ let clear_tenant_grant caps g =
   | `Admin -> { caps with admin = None }
   | `Users_manage -> { caps with users_manage = None }
 
+let is_instance_admin caps =
+  match tenant_scope caps `Admin with
+  | Some None -> true (* present, and no allow-list to narrow it: every tenant *)
+  | Some (Some tenants) when Sg_caps_match.grants_all tenants ->
+      (* [...; "*"; no_negation; ....] *) true
+  | Some (Some _) | None -> false
+
+let is_some_tenants_admin caps =
+  match tenant_scope caps `Admin with
+  (* Administers what the list names: it permits something, but not everything -- everything is
+     [is_instance_admin]'s answer, and nothing at all leaves an [admin] key authorizing no tenant. *)
+  | Some (Some tenants) ->
+      (not (Sg_caps_match.grants_all tenants)) && not (Tenant_scope.grants_nothing (Some tenants))
+  | Some None | None -> false
+
 let tenant_coverage caps g tenant =
   match tenant_scope caps g with
   | None -> Tenant_scope.Not_covered (* the capability itself is absent *)

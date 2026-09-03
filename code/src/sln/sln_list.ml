@@ -3,6 +3,7 @@ module String = struct
   let sort = CCList.sort CCString.compare
   let equal = CCList.equal CCString.equal
   let uniq = CCList.uniq ~eq:CCString.equal
+  let remove key l = CCList.remove ~eq:CCString.equal ~key l
   let assoc_opt k l = CCList.assoc_opt ~eq:CCString.equal k l
 end
 

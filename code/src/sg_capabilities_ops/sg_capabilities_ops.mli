@@ -112,6 +112,18 @@ val show_tenant_grant : tenant_grant -> string
 
 val pp_tenant_grant : Format.formatter -> tenant_grant -> unit
 
+(** [is_instance_admin caps] is [true] when [caps] carries [admin] with either no [tenants] or a
+    list containing ["*"] and no negation (e.g. granting access to every tenant, past, present, and
+    future; for eternity). *)
+val is_instance_admin : Sgs_session_caps_capabilities.t -> bool
+
+(** [is_some_tenants_admin caps] is [true] when [caps] carries an [admin] grant that administers the
+    tenants its allow-list names rather than the installation: the list permits something, but not
+    everything.
+
+    Mutually exclusive with {!is_instance_admin} by construction. *)
+val is_some_tenants_admin : Sgs_session_caps_capabilities.t -> bool
+
 (** [tenant_coverage caps g tenant] is [Tenant_scope.Not_covered] when [caps] has no [g] grant at
     all, otherwise the coverage of that grant's [tenants] list. *)
 val tenant_coverage :
