@@ -535,7 +535,7 @@ select json_build_object('modules', num_modules.num_modules) from num_modules|};
             (Mql_to_pgsql.of_mql ~schema ast);
           ());
       (* Tenant scoping relies on a query only ever reaching a table through
-         its same-named scoping CTE (see sgs_ep_mql); a schema-qualified name
+         its same-named scoping CTE (see sgs_mql_paged); a schema-qualified name
          would resolve past the CTE to the real relation. Both layers refuse
          it: the grammar has no [schema.table] form, and [of_mql] rejects the
          dotted identifier should one ever be built directly. *)
@@ -553,7 +553,7 @@ select json_build_object('modules', num_modules.num_modules) from num_modules|};
       Oth.test ~name:"sensitive Terraform-state columns are queryable" (fun _ ->
           (* Documents (does not flag) the deliberate exposure: instance
              attributes/sensitive_attributes/private and output values are
-             queryable by any tenant member. See sgs_ep_mql.ml / the CTE
+             queryable by any tenant member. See sgs_mql_paged.ml / the CTE
              wrapper in select_mql_page.sql. *)
           CCList.iter
             (fun query ->
