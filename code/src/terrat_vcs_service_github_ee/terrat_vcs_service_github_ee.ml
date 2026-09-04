@@ -382,58 +382,41 @@ module Provider :
   module Work_manifest = Terrat_vcs_service_github_provider.Work_manifest
 
   module Repo_config = struct
-    let fetch_repo_config_file request_id client repo ref_ basename =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
-        (fun yml yaml ->
-          match (yml, yaml) with
-          | Some yml, _ ->
-              Some
-                ( Api.Repo.to_string repo ^ ":" ^ Api.Ref.to_string ref_ ^ ":" ^ basename ^ ".yml",
-                  yml )
-          | _, Some yaml ->
-              Some
-                ( Api.Repo.to_string repo ^ ":" ^ Api.Ref.to_string ref_ ^ ":" ^ basename ^ ".yaml",
-                  yaml )
-          | _, _ -> None)
-        <$> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yml")
-        <*> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yaml"))
-      >>= function
-      | None -> Abbs_future_combinators.return_ok None
-      | Some (_, content) when CCString.is_empty (CCString.trim content) ->
-          Abbs_future_combinators.return_ok None
-      | Some (fname, content) ->
-          Abb.Future.return
-          @@ CCResult.map_err
-               (fun (`Yaml_decode_err err) -> `Yaml_decode_err (fname, err))
-               (Jsonu.of_yaml_string content)
-          >>| fun json -> Some (fname, json)
+    module Rc = Terrat_vcs_service_github_repo_config
 
-    (* Config parity (#1442): [.stategraph/config] wins when both exist;
-       [.terrateam/config] keeps working so existing repos need no rename. *)
-    let fetch_repo_config_file_with_fallback request_id client repo ref_ =
+    (* The centralized repository holds five configuration files, in two
+       directories.  Listing the two directories one time replaces the ten
+       content requests that a probe of each name made, which is the larger
+       half of the requests of one configuration load. *)
+    let fetch_centralized_repo_configs request_id client centralized_repo repo =
       let open Abbs_future_combinators.Infix_result_monad in
-      fetch_repo_config_file request_id client repo ref_ ".stategraph/config"
-      >>= function
-      | Some _ as r -> Abb.Future.return (Ok r)
-      | None -> fetch_repo_config_file request_id client repo ref_ ".terrateam/config"
-
-    let maybe_fetch_centralized_repo_config_file request_id client centralized_repo basename =
       match centralized_repo with
       | Some (remote_repo, branch) ->
-          fetch_repo_config_file
-            request_id
+          let centralized_repo = Api.Remote_repo.to_repo remote_repo in
+          let repo_directory = "config/" ^ Api.Repo.name repo in
+          Rc.list_directories
+            ~request_id
             client
-            (Api.Remote_repo.to_repo remote_repo)
+            centralized_repo
             branch
-            basename
-      | None -> Abbs_future_combinators.return_ok None
+            [ "config"; repo_directory ]
+          >>= fun listings ->
+          let fetch ~directory ~basename =
+            Rc.fetch_config ~request_id client centralized_repo branch listings ~directory ~basename
+          in
+          Abbs_future_combinators.Result.all5
+            (fetch ~directory:"config" ~basename:"defaults")
+            (fetch ~directory:"config" ~basename:"overrides")
+            (fetch ~directory:repo_directory ~basename:"defaults")
+            (fetch ~directory:repo_directory ~basename:"overrides")
+            (fetch ~directory:repo_directory ~basename:"config")
+      | None -> Abbs_future_combinators.return_ok (None, None, None, None, None)
 
     let maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo =
       match centralized_repo with
       | Some remote_repo -> (
           let open Abbs_future_combinators.Infix_result_monad in
-          Api.fetch_branch_sha
+          Api.fetch_branch_sha_cached
             ~request_id
             client
             (Api.Remote_repo.to_repo remote_repo)
@@ -445,71 +428,30 @@ module Provider :
 
     let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
       let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
-        (fun remote_repo centralized_repo -> (remote_repo, centralized_repo))
-        <$> Api.fetch_remote_repo ~request_id client repo
-        <*> Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo))
+      Abbs_future_combinators.Result.all2
+        (Api.fetch_remote_repo ~request_id client repo)
+        (Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo))
       >>= fun (remote_repo, centralized_repo) ->
-      Abbs_future_combinators.Infix_result_app.(
-        (fun default_branch_sha centralized_repo -> (default_branch_sha, centralized_repo))
-        <$> Api.fetch_branch_sha
-              ~request_id
-              client
-              (Api.Remote_repo.to_repo remote_repo)
-              (Api.Remote_repo.default_branch remote_repo)
-        <*> maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo)
+      Abbs_future_combinators.Result.all2
+        (Api.fetch_branch_sha_cached
+           ~request_id
+           client
+           (Api.Remote_repo.to_repo remote_repo)
+           (Api.Remote_repo.default_branch remote_repo))
+        (maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo)
       >>= fun (default_branch_sha, centralized_repo) ->
       let default_branch_ref =
         CCOption.get_or ~default:(Api.Remote_repo.default_branch remote_repo) default_branch_sha
       in
-      Abbs_future_combinators.Infix_result_app.(
-        (fun global_default
-             global_overrides
-             repo_defaults
-             repo_overrides
-             repo_forced_config
-             default_repo_config
-             repo_config
-           ->
-          ( global_default,
-            global_overrides,
-            repo_defaults,
-            repo_overrides,
-            repo_forced_config,
-            default_repo_config,
-            repo_config ))
-        <$> maybe_fetch_centralized_repo_config_file
-              request_id
-              client
-              centralized_repo
-              "config/defaults"
-        <*> maybe_fetch_centralized_repo_config_file
-              request_id
-              client
-              centralized_repo
-              "config/overrides"
-        <*> maybe_fetch_centralized_repo_config_file
-              request_id
-              client
-              centralized_repo
-              ("config/" ^ Api.Repo.name repo ^ "/defaults")
-        <*> maybe_fetch_centralized_repo_config_file
-              request_id
-              client
-              centralized_repo
-              ("config/" ^ Api.Repo.name repo ^ "/overrides")
-        <*> maybe_fetch_centralized_repo_config_file
-              request_id
-              client
-              centralized_repo
-              ("config/" ^ Api.Repo.name repo ^ "/config")
-        <*> fetch_repo_config_file_with_fallback request_id client repo default_branch_ref
-        <*> fetch_repo_config_file_with_fallback request_id client repo ref_)
-      >>= fun ( global_defaults,
-                global_overrides,
-                repo_defaults,
-                repo_overrides,
-                repo_forced_config,
+      Abbs_future_combinators.Result.all3
+        (fetch_centralized_repo_configs request_id client centralized_repo repo)
+        (Rc.fetch ~request_id client repo default_branch_ref)
+        (Rc.fetch ~request_id client repo ref_)
+      >>= fun ( ( global_defaults,
+                  global_overrides,
+                  repo_defaults,
+                  repo_overrides,
+                  repo_forced_config ),
                 default_repo_config,
                 repo_config )
             ->

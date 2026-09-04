@@ -25,6 +25,19 @@ let is_repo_config_change =
       | Move { filename; previous_filename } ->
           repo_config_files_mem filename || repo_config_files_mem previous_filename)
 
+(* GitHub reports at most 3000 files for a pull request, and it does not say
+   that it stopped there.  A diff of that length may therefore be short of the
+   true change. *)
+let max_reported_diff_files = 3000
+
+(* A diff that the VCS cut short can hide a change to the configuration file.
+   Trusting it would let a large pull request change the configuration without
+   the [access_control.terrateam_config_update] policy, so ask for the policy
+   instead: an operator who is refused can see why, whereas a configuration
+   change that slips through is silent. *)
+let may_be_repo_config_change diff =
+  CCList.length diff >= max_reported_diff_files || is_repo_config_change diff
+
 module Policy = struct
   type t = {
     tag_query : Terrat_tag_query.t;
@@ -129,7 +142,7 @@ module Make (S : S) = struct
 
   let eval_repo_config ctx terrateam_config_change diff =
     let open Abbs_future_combinators.Infix_result_monad in
-    if is_repo_config_change diff then
+    if may_be_repo_config_change diff then
       test_queries ctx terrateam_config_change >>| fun res -> CCOption.is_some res
     else Abbs_future_combinators.return_ok true
 
@@ -162,4 +175,6 @@ end
 module Tests = struct
   let repo_config_files = repo_config_files
   let is_repo_config_change = is_repo_config_change
+  let max_reported_diff_files = max_reported_diff_files
+  let may_be_repo_config_change = may_be_repo_config_change
 end
