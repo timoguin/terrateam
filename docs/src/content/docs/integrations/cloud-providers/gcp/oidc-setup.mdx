@@ -269,6 +269,91 @@ workflows:
 For more details, read the [Cloud Credentials documentation](/advanced-workflows/cloud-credentials).
 :::
 
+## Scoping Credentials by Environment
+
+The example above names a service account per workflow. The service account and workload identity provider come from your Terrateam configuration, so Google cannot tell which environment a run belongs to. Any run matching the workflow can request any credentials the configuration names.
+
+Associating a workflow with a [GitHub Environment](/integrations/external-tools/github-environments) closes that gap. GitHub signs the environment into the token it issues, so Google validates the environment instead of trusting your configuration.
+
+This follows Google's guidance to [use attribute conditions when federating with GitHub](https://cloud.google.com/iam/docs/best-practices-for-using-workload-identity-federation) and to grant roles to identities matching specific criteria rather than to every member of a pool. Google recommends a single pool and provider for GitHub, with attributes separating access. See [Configure Workload Identity Federation with deployment pipelines](https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
+
+<Steps>
+
+1. ### Set the environment on the workflow
+
+   ```yml
+   workflows:
+     - tag_query: "dir:terraform/production/**"
+       environment: production
+       plan:
+         - type: oidc
+           provider: gcp
+           service_account: "terrateam-prod@PROJECT_ID.iam.gserviceaccount.com"
+           workload_identity_provider: "projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/terrateam-pool/providers/terrateam-provider"
+         - type: init
+         - type: plan
+   ```
+
+   Terrateam runs each environment as its own job, and that job runs in the GitHub Environment you name. Create the environment in your repository settings before the first run.
+
+2. ### Map the environment claim
+
+   Add `attribute.environment` to the provider you created during setup:
+
+   :::note
+   Replace `PROJECT_ID` and `GITHUB_ORG` with your actual values.
+   :::
+
+   ```sh
+   gcloud iam workload-identity-pools providers update-oidc "terrateam-provider" \
+     --project="PROJECT_ID" \
+     --location="global" \
+     --workload-identity-pool="terrateam-pool" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.environment=assertion.environment" \
+     --attribute-condition="assertion.repository_owner == 'GITHUB_ORG'"
+   ```
+
+   A job running in an environment also changes the subject claim to `repo:GITHUB_ORG/REPO:environment:production`. Review any binding that matches on `google.subject` before you roll this out.
+
+3. ### Bind each service account to its environment
+
+   Replace the `attribute.repository_owner` binding from the setup steps with one binding per environment:
+
+   :::note
+   Replace `PROJECT_ID` and `PROJECT_NUMBER` with your actual values.
+   :::
+
+   ```sh
+   gcloud iam service-accounts add-iam-policy-binding "terrateam-prod@PROJECT_ID.iam.gserviceaccount.com" \
+     --project="PROJECT_ID" \
+     --role="roles/iam.workloadIdentityUser" \
+     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/terrateam-pool/attribute.environment/production"
+   ```
+
+   A run in the `staging` environment receives a token carrying `"environment": "staging"`, which does not satisfy this binding. Google refuses the impersonation.
+
+</Steps>
+
+:::note[Scoping by workspace]
+Terrateam sets `TERRATEAM_DIR`, `TERRATEAM_WORKSPACE`, and `TERRATEAM_STACK` before running each directory and workspace. The `oidc` step expands these in `service_account`, `workload_identity_provider`, and `audience`:
+
+```yml
+workflows:
+  - tag_query: ""
+    plan:
+      - type: oidc
+        provider: gcp
+        service_account: "terrateam-${TERRATEAM_WORKSPACE}@PROJECT_ID.iam.gserviceaccount.com"
+        workload_identity_provider: "projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/terrateam-pool/providers/terrateam-provider"
+      - type: init
+      - type: plan
+```
+
+These variables are set per directory and workspace, so they resolve in `plan` and `apply` steps only. An `oidc` step under `hooks` runs before a workspace is selected and fails if it references them.
+
+The GitHub token carries no workspace claim, so Google cannot verify the workspace. This selects which service account a run requests. Use a GitHub Environment when you need Google to enforce the boundary.
+:::
+
 ## Next Steps
 
 Now that you have GCP authentication configured, you are now able to use Terrateam for plan and apply operations against GCP resources.
