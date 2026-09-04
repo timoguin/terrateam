@@ -82,7 +82,10 @@ module Make (S : S) : sig
     Abb.Future.t
 
   (** Test if there is a repo config change and it passes the configuration. [true] is returned if
-      there is no repo configuration change or there is and it passes the permissions check. *)
+      there is no repo configuration change or there is and it passes the permissions check.
+
+      A diff the VCS cut short counts as a repo config change, because it may hide one. See
+      {!Tests.may_be_repo_config_change}. *)
   val eval_repo_config :
     Ctx.t ->
     Terrat_base_repo_config_v1.Access_control.Match_list.t ->
@@ -112,4 +115,10 @@ module Tests : sig
   (** Does the diff touch a repo config file (either the [.stategraph/config] or [.terrateam/config]
       spelling, [.yml] or [.yaml])? *)
   val is_repo_config_change : Terrat_change.Diff.t list -> bool
+
+  (** The number of files at which a diff is no longer known to be complete. *)
+  val max_reported_diff_files : int
+
+  (** {!is_repo_config_change}, plus every diff long enough that the VCS may have cut it short. *)
+  val may_be_repo_config_change : Terrat_change.Diff.t list -> bool
 end

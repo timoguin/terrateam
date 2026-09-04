@@ -42,6 +42,15 @@ type fetch_file_err =
   ]
 [@@deriving show]
 
+type fetch_directory_err =
+  [ Githubc2_abb.call_err
+  | `Forbidden of Githubc2_components.Basic_error.t
+  | `Found
+  | `Not_directory
+  | `Not_modified
+  ]
+[@@deriving show]
+
 type fetch_pull_request_err =
   [ Githubc2_abb.call_err
   | `Not_modified
@@ -233,6 +242,14 @@ val fetch_file :
   path:string ->
   Githubc2_abb.t ->
   (Githubc2_components.Content_file.t option, [> fetch_file_err ]) result Abb.Future.t
+
+val fetch_directory :
+  owner:string ->
+  repo:string ->
+  ref_:string ->
+  path:string ->
+  Githubc2_abb.t ->
+  (Githubc2_components.Content_directory.t option, [> fetch_directory_err ]) result Abb.Future.t
 
 val fetch_pull_request_files :
   owner:string ->

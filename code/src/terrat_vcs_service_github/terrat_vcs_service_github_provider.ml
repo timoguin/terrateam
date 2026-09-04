@@ -4445,41 +4445,6 @@ module Comment = struct
 end
 
 module Repo_config = struct
-  let fetch_repo_config_file request_id client repo ref_ basename =
-    let open Abbs_future_combinators.Infix_result_monad in
-    Abbs_future_combinators.Infix_result_app.(
-      (fun yml yaml ->
-        match (yml, yaml) with
-        | Some yml, _ ->
-            Some
-              (Api.Repo.to_string repo ^ ":" ^ Api.Ref.to_string ref_ ^ ":" ^ basename ^ ".yml", yml)
-        | _, Some yaml ->
-            Some
-              ( Api.Repo.to_string repo ^ ":" ^ Api.Ref.to_string ref_ ^ ":" ^ basename ^ ".yaml",
-                yaml )
-        | _, _ -> None)
-      <$> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yml")
-      <*> Api.fetch_file ~request_id client repo ref_ (basename ^ ".yaml"))
-    >>= function
-    | None -> Abbs_future_combinators.return_ok None
-    | Some (_, content) when CCString.is_empty (CCString.trim content) ->
-        Abbs_future_combinators.return_ok None
-    | Some (fname, content) ->
-        Abb.Future.return
-        @@ CCResult.map_err
-             (fun (`Yaml_decode_err err) -> `Yaml_decode_err (fname, err))
-             (Jsonu.of_yaml_string content)
-        >>| fun json -> Some (fname, json)
-
-  (* Config parity (#1442): [.stategraph/config] wins when both exist;
-       [.terrateam/config] keeps working so existing repos need no rename. *)
-  let fetch_repo_config_file_with_fallback request_id client repo ref_ =
-    let open Abbs_future_combinators.Infix_result_monad in
-    fetch_repo_config_file request_id client repo ref_ ".stategraph/config"
-    >>= function
-    | Some _ as r -> Abbs_future_combinators.return_ok r
-    | None -> fetch_repo_config_file request_id client repo ref_ ".terrateam/config"
-
   let repo_config_system_defaults system_defaults =
     (* Access control should be disabled for OSS *)
     let module V1 = Terrat_base_repo_config_v1 in
@@ -4496,7 +4461,7 @@ module Repo_config = struct
     let system_defaults = repo_config_system_defaults system_defaults in
     Api.fetch_remote_repo ~request_id client repo
     >>= fun remote_repo ->
-    Api.fetch_branch_sha
+    Api.fetch_branch_sha_cached
       ~request_id
       client
       (Api.Remote_repo.to_repo remote_repo)
@@ -4505,10 +4470,9 @@ module Repo_config = struct
     let default_branch_ref =
       CCOption.get_or ~default:(Api.Remote_repo.default_branch remote_repo) default_branch_sha
     in
-    Abbs_future_combinators.Infix_result_app.(
-      (fun default_repo_config repo_config -> (default_repo_config, repo_config))
-      <$> fetch_repo_config_file_with_fallback request_id client repo default_branch_ref
-      <*> fetch_repo_config_file_with_fallback request_id client repo ref_)
+    Abbs_future_combinators.Result.all2
+      (Terrat_vcs_service_github_repo_config.fetch ~request_id client repo default_branch_ref)
+      (Terrat_vcs_service_github_repo_config.fetch ~request_id client repo ref_)
     >>= fun (default_repo_config, repo_config) ->
     let wrap_err fname =
       Abbs_future_combinators.Result.map_err ~f:(function

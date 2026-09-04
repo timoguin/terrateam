@@ -57,6 +57,24 @@ let test_unrelated_changes_do_not_count =
                Add { filename = ".stategraph/refactor.json" };
              ]))
 
+(* A diff of [n] files, none of which is a config file. *)
+let unrelated_diff n =
+  CCList.init n (fun i -> Terrat_change.Diff.Add { filename = Printf.sprintf "f%d.tf" i })
+
+let test_short_diff_is_trusted =
+  Oth.test ~name:"a diff the VCS reported in full is trusted" (fun _ ->
+      Oth.Assert.not_true
+        "a short diff of unrelated files asked for the config policy"
+        (Terrat_access_control2.Tests.may_be_repo_config_change
+           (unrelated_diff (Terrat_access_control2.Tests.max_reported_diff_files - 1))))
+
+let test_cut_short_diff_asks_for_the_policy =
+  Oth.test ~name:"a diff the VCS may have cut short asks for the config policy" (fun _ ->
+      Oth.Assert.true_
+        "a diff at the reporting limit was trusted"
+        (Terrat_access_control2.Tests.may_be_repo_config_change
+           (unrelated_diff Terrat_access_control2.Tests.max_reported_diff_files)))
+
 let test =
   Oth.parallel
     [
@@ -64,6 +82,8 @@ let test =
       test_move_to_and_from_config_file;
       test_list_covers_both_spellings_and_extensions;
       test_unrelated_changes_do_not_count;
+      test_short_diff_is_trusted;
+      test_cut_short_diff_asks_for_the_policy;
     ]
 
 let () = Oth.run ~file:__FILE__ ~setup:(fun () -> Ok ()) ~teardown:(fun _ -> ()) (fun _ -> test)

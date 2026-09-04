@@ -83,6 +83,15 @@ type fetch_file_err =
   ]
 [@@deriving show]
 
+type fetch_directory_err =
+  [ Githubc2_abb.call_err
+  | `Forbidden of Githubc2_components.Basic_error.t
+  | `Found
+  | `Not_directory
+  | `Not_modified
+  ]
+[@@deriving show]
+
 type fetch_pull_request_err =
   [ Githubc2_abb.call_err
   | `Not_modified
@@ -329,7 +338,21 @@ let fetch_file ~owner ~repo ~ref_ ~path client =
   let module C = Githubc2_repos.Get_content.Responses.OK in
   match Openapi.Response.value resp with
   | `OK (C.Content_file file) -> Ok (Some file)
-  | `OK _ -> Error `Not_file
+  | `OK (C.Content_directory _ | C.Content_symlink _ | C.Content_submodule _) -> Error `Not_file
+  | `Not_found _ -> Ok None
+  | (`Forbidden _ | `Found | `Not_modified) as err -> Error err
+
+let fetch_directory ~owner ~repo ~ref_ ~path client =
+  Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_directory");
+  let open Abbs_future_combinators.Infix_result_monad in
+  call
+    client
+    Githubc2_repos.Get_content.(make (Parameters.make ~owner ~repo ~ref_:(Some ref_) ~path ()))
+  >>? fun resp ->
+  let module C = Githubc2_repos.Get_content.Responses.OK in
+  match Openapi.Response.value resp with
+  | `OK (C.Content_directory directory) -> Ok (Some directory)
+  | `OK (C.Content_file _ | C.Content_symlink _ | C.Content_submodule _) -> Error `Not_directory
   | `Not_found _ -> Ok None
   | (`Forbidden _ | `Found | `Not_modified) as err -> Error err
 

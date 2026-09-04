@@ -148,6 +148,28 @@ module Ref = struct
   let of_string = CCFun.id
 end
 
+module Directory_entry = struct
+  type kind =
+    [ `Dir
+    | `File
+    | `Submodule
+    | `Symlink
+    ]
+  [@@deriving show, eq]
+
+  type t = {
+    kind : kind;
+    name : string;
+    size : int;
+  }
+  [@@deriving show, eq]
+
+  let make ~kind ~name ~size () = { kind; name; size }
+  let kind t = t.kind
+  let name t = t.name
+  let size t = t.size
+end
+
 module Pull_request = struct
   module Id = struct
     type t = int [@@deriving yojson, show, eq]
@@ -175,6 +197,30 @@ module Client = struct
     let fetch f = f ()
     let weight _ = 1
   end)
+
+  module Fetch_directory_cache = struct
+    module M = struct
+      type k = Account.t * Repo.t * Ref.t * string [@@deriving eq]
+      type v = Directory_entry.t list option
+      type err = Terrat_github.fetch_directory_err
+      type args = unit -> (v, err) result Abb.Future.t
+
+      let fetch f = f ()
+
+      let weight v =
+        CCOption.map_or
+          ~default:1
+          (fun entries ->
+            kb_of_bytes
+              (CCList.fold_left
+                 (fun weight entry -> weight + CCString.length (Directory_entry.name entry) + 16)
+                 0
+                 entries))
+          v
+    end
+
+    module By_rev = Abbs_cache.Expiring.Make (M)
+  end
 
   module Fetch_file_cache = struct
     module M = struct
@@ -211,6 +257,51 @@ module Client = struct
       kb_of_bytes (CCString.length (Yojson.Safe.to_string (Remote_repo.to_yojson remote_repo)))
   end)
 
+  (* Layered on top of [Fetch_repo_cache] on purpose.  [Abbs_cache.Expiring]
+     deletes [Error] entries, so the 404 for an account with no centralized
+     repository is never kept there and the request goes out on every
+     repository config load.  This cache makes the absence an [Ok None], which
+     is keepable.
+
+     It is a second cache, and not a longer-lived value in the first one,
+     because the two answers want different lifetimes.  A repository that
+     exists stays in [Fetch_repo_cache] as long as any other repository
+     metadata.  "There is no centralized repository" must expire quickly, so
+     that a repository somebody creates becomes visible soon.  When an entry
+     here expires and the repository does exist, the inner cache answers
+     without a request. *)
+  module Fetch_centralized_repo_cache = Abbs_cache.Expiring.Make (struct
+    type k = Account.t * string [@@deriving eq]
+    type v = Remote_repo.t option
+    type err = Terrat_github.fetch_repo_err
+    type args = unit -> (v, err) result Abb.Future.t
+
+    let fetch f = f ()
+
+    let weight v =
+      CCOption.map_or
+        ~default:1
+        CCFun.(Remote_repo.to_yojson %> Yojson.Safe.to_string %> CCString.length %> kb_of_bytes)
+        v
+  end)
+
+  (* Only [fetch_branch_sha_cached] reads this, and only the repository
+     configuration load uses that function.  The plain [fetch_branch_sha] stays
+     uncached, because the evaluator also uses it to find the ref that a run
+     executes against, and that answer must be current. *)
+  module Fetch_branch_sha_cache = Abbs_cache.Expiring.Make (struct
+    type k = Account.t * Repo.t * Ref.t [@@deriving eq]
+    type v = Ref.t option
+    type err = Terrat_github.fetch_branch_err
+    type args = unit -> (v, err) result Abb.Future.t
+
+    let fetch f = f ()
+
+    (* A commit SHA is 40 bytes, thus each entry counts as one and [capacity] is
+       a count of branches. *)
+    let weight _ = 1
+  end)
+
   module Fetch_tree_cache = struct
     module M = struct
       type k = Account.t * Repo.t * Ref.t [@@deriving eq]
@@ -236,6 +327,16 @@ module Client = struct
           capacity = 500;
         }
 
+    let fetch_directory_by_rev_cache =
+      Fetch_directory_cache.By_rev.create
+        {
+          Abbs_cache.Expiring.on_hit = on_hit "fetch_directory_by_rev";
+          on_miss = on_miss "fetch_directory_by_rev";
+          on_evict = on_evict "fetch_directory_by_rev";
+          duration = Duration.of_min 1;
+          capacity = cache_capacity_mb_in_kb 100;
+        }
+
     let fetch_file_by_rev_cache =
       Fetch_file_cache.By_rev.create
         {
@@ -256,6 +357,26 @@ module Client = struct
           capacity = cache_capacity_mb_in_kb 20;
         }
 
+    let fetch_branch_sha_cache =
+      Fetch_branch_sha_cache.create
+        {
+          Abbs_cache.Expiring.on_hit = on_hit "fetch_branch_sha";
+          on_miss = on_miss "fetch_branch_sha";
+          on_evict = on_evict "fetch_branch_sha";
+          duration = Duration.of_sec 10;
+          capacity = 5000;
+        }
+
+    let fetch_centralized_repo_cache =
+      Fetch_centralized_repo_cache.create
+        {
+          Abbs_cache.Expiring.on_hit = on_hit "fetch_centralized_repo";
+          on_miss = on_miss "fetch_centralized_repo";
+          on_evict = on_evict "fetch_centralized_repo";
+          duration = Duration.of_sec 10;
+          capacity = cache_capacity_mb_in_kb 20;
+        }
+
     let fetch_tree_by_rev_cache =
       Fetch_tree_cache.By_rev.create
         {
@@ -272,6 +393,9 @@ module Client = struct
   type t = {
     account : Account.t;
     client : Githubc2_abb.t;
+    fetch_branch_sha_cache : Fetch_branch_sha_cache.t;
+    fetch_centralized_repo_cache : Fetch_centralized_repo_cache.t;
+    fetch_directory_by_rev_cache : Fetch_directory_cache.By_rev.t;
     fetch_file_by_rev_cache : Fetch_file_cache.By_rev.t;
     fetch_repo_cache : Fetch_repo_cache.t;
     fetch_tree_by_rev_cache : Fetch_tree_cache.By_rev.t;
@@ -281,6 +405,9 @@ module Client = struct
     {
       account;
       client;
+      fetch_branch_sha_cache = Globals.fetch_branch_sha_cache;
+      fetch_centralized_repo_cache = Globals.fetch_centralized_repo_cache;
+      fetch_directory_by_rev_cache = Globals.fetch_directory_by_rev_cache;
       fetch_file_by_rev_cache = Globals.fetch_file_by_rev_cache;
       fetch_repo_cache = Globals.fetch_repo_cache;
       fetch_tree_by_rev_cache = Globals.fetch_tree_by_rev_cache;
@@ -298,28 +425,90 @@ let vcs_api_timeout_err ~request_id operation =
   Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
   Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
 
-let fetch_branch_sha ~request_id client repo ref_ =
-  let ret =
-    let open Abbs_future_combinators.Infix_result_monad in
-    let module B = Githubc2_components.Branch_with_protection in
-    let module C = Githubc2_components.Commit in
-    Terrat_github.fetch_branch
-      ~owner:repo.Repo.owner
-      ~repo:repo.Repo.name
-      ~branch:ref_
-      client.Client.client
-    >>| fun { B.primary = { B.Primary.commit = { C.primary = { C.Primary.sha; _ }; _ }; _ }; _ } ->
-    sha
-  in
+(* The branch does not exist is [Ok None], not an error, so that it is a value a
+   cache can keep. *)
+let fetch_branch_sha' client repo ref_ =
   let open Abb.Future.Infix_monad in
-  ret
-  >>= function
-  | Ok sha -> Abbs_future_combinators.return_ok (Some sha)
-  | Error (`Not_found _) -> Abbs_future_combinators.return_ok None
+  let module B = Githubc2_components.Branch_with_protection in
+  let module C = Githubc2_components.Commit in
+  Terrat_github.fetch_branch
+    ~owner:repo.Repo.owner
+    ~repo:repo.Repo.name
+    ~branch:ref_
+    client.Client.client
+  >>| function
+  | Ok { B.primary = { B.Primary.commit = { C.primary = { C.Primary.sha; _ }; _ }; _ }; _ } ->
+      Ok (Some sha)
+  | Error (`Not_found _) -> Ok None
+  | Error (#Terrat_github.fetch_branch_err as err) -> Error err
+
+let fetch_branch_sha_res ~request_id = function
+  | Ok sha -> Abbs_future_combinators.return_ok sha
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Terrat_github.fetch_branch_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_BRANCH_SHA : %a" request_id Terrat_github.pp_fetch_branch_err err);
+      Abbs_future_combinators.return_err `Error
+
+let fetch_branch_sha ~request_id client repo ref_ =
+  let open Abb.Future.Infix_monad in
+  fetch_branch_sha' client repo ref_ >>= fetch_branch_sha_res ~request_id
+
+let fetch_branch_sha_cached ~request_id client repo ref_ =
+  let open Abb.Future.Infix_monad in
+  Client.Fetch_branch_sha_cache.fetch
+    client.Client.fetch_branch_sha_cache
+    (client.Client.account, repo, ref_)
+    (fun () -> fetch_branch_sha' client repo ref_)
+  >>= fetch_branch_sha_res ~request_id
+
+let fetch_directory ~request_id client repo ref_ path =
+  let module D = Githubc2_components.Content_directory.Items in
+  let open Abb.Future.Infix_monad in
+  let fetch () =
+    Terrat_github.fetch_directory
+      ~owner:repo.Repo.owner
+      ~repo:repo.Repo.name
+      ~ref_
+      ~path
+      client.Client.client
+    >>| CCResult.map
+          (CCOption.map
+             (CCList.map (fun entry ->
+                  let primary = entry.D.primary in
+                  {
+                    Directory_entry.kind = primary.D.Primary.type_;
+                    name = primary.D.Primary.name;
+                    size = primary.D.Primary.size;
+                  })))
+  in
+  (if CCString.length ref_ = fetch_file_length_of_git_hash && probably_is_git_hash ref_ then
+     Client.Fetch_directory_cache.By_rev.fetch
+       client.Client.fetch_directory_by_rev_cache
+       (client.Client.account, repo, ref_, path)
+       fetch
+   else fetch ())
+  >>= function
+  | Ok _ as r -> Abb.Future.return r
+  (* A path that holds a file, a symlink or a submodule holds no entries, which
+     is what the 404 means as well, and [Terrat_github.fetch_directory] already
+     answers [None] for that.  A repository that names a file [.terrateam] must
+     not fail every configuration load. *)
+  | Error `Not_directory -> Abbs_future_combinators.return_ok None
+  (* The contents endpoint refuses to list a directory that holds too many
+     entries.  The caller must read the names it wants directly. *)
+  | Error (`Forbidden _ as err) ->
+      Logs.info (fun m ->
+          m
+            "%s : FETCH_DIRECTORY : LISTING_UNAVAILABLE : %a"
+            request_id
+            Terrat_github.pp_fetch_directory_err
+            err);
+      Abbs_future_combinators.return_err `Listing_unavailable
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIRECTORY"
+  | Error (#Terrat_github.fetch_directory_err as err) ->
+      Logs.info (fun m ->
+          m "%s : FETCH_DIRECTORY : %a" request_id Terrat_github.pp_fetch_directory_err err);
       Abbs_future_combinators.return_err `Error
 
 let fetch_file ~request_id client repo ref_ path =
@@ -374,14 +563,25 @@ let fetch_remote_repo ~request_id client repo =
 let fetch_centralized_repo ~request_id client owner =
   let centralized_repo_name = "terrateam" in
   let open Abb.Future.Infix_monad in
-  let fetch () = Terrat_github.fetch_repo ~owner ~repo:centralized_repo_name client.Client.client in
-  Client.Fetch_repo_cache.fetch
-    client.Client.fetch_repo_cache
-    (client.Client.account, (owner, centralized_repo_name))
+  (* Read through [Fetch_repo_cache] so that a repository that exists keeps the
+     lifetime of any other repository metadata.  Only the 404, which that cache
+     discards, is turned into [Ok None] and kept here. *)
+  let fetch () =
+    Client.Fetch_repo_cache.fetch
+      client.Client.fetch_repo_cache
+      (client.Client.account, (owner, centralized_repo_name))
+      (fun () -> Terrat_github.fetch_repo ~owner ~repo:centralized_repo_name client.Client.client)
+    >>| function
+    | Ok remote_repo -> Ok (Some remote_repo)
+    | Error (`Not_found _) -> Ok None
+    | Error (#Terrat_github.fetch_repo_err as err) -> Error err
+  in
+  Client.Fetch_centralized_repo_cache.fetch
+    client.Client.fetch_centralized_repo_cache
+    (client.Client.account, owner)
     fetch
   >>= function
-  | Ok r -> Abbs_future_combinators.return_ok (Some r)
-  | Error (`Not_found _) -> Abbs_future_combinators.return_ok None
+  | Ok _ as r -> Abb.Future.return r
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_CENTRALIZED_REPO"
   | Error (#Terrat_github.fetch_repo_err as err) ->
       Logs.info (fun m ->
