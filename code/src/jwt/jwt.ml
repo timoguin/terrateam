@@ -28,7 +28,8 @@ module Verifier = struct
     | RS256 of Pub_key.t
 
   let rs256_verify key hp signature =
-    Mirage_crypto_pk.Rsa.PKCS1.verify ~hashp:(( = ) `SHA256) ~key ~signature (`Message hp)
+    try Mirage_crypto_pk.Rsa.PKCS1.verify ~hashp:(( = ) `SHA256) ~key ~signature (`Message hp)
+    with Invalid_argument _ | Failure _ -> false
 
   (* Constant-time comparison to prevent timing attacks *)
   let mac_verify algo hp signature = Eqaf.equal (algo hp) signature
@@ -82,7 +83,7 @@ module Header = struct
   type t = (string * string) list
 
   let create ?(rest = []) ?(typ = "JWT") alg = ("typ", typ) :: ("alg", alg) :: rest
-  let algorithm = CCList.Assoc.get_exn ~eq:String.equal "alg"
+  let algorithm = CCList.Assoc.get ~eq:String.equal "alg"
   let typ = CCList.Assoc.get_exn ~eq:String.equal "typ"
   let get = CCList.Assoc.get ~eq:String.equal
 
@@ -228,7 +229,8 @@ let of_token token =
   | _ -> None
 
 let verify verifier t =
-  let alg = Header.algorithm t.header in
-  if alg = Verifier.to_string verifier && Verifier.verify verifier t.hp t.signature then
-    Some { header = t.header; payload = t.payload; signature = t.signature; hp = () }
-  else None
+  match Header.algorithm t.header with
+  | Some alg
+    when String.equal alg (Verifier.to_string verifier) && Verifier.verify verifier t.hp t.signature
+    -> Some { header = t.header; payload = t.payload; signature = t.signature; hp = () }
+  | Some _ | None -> None

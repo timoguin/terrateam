@@ -43,7 +43,10 @@ module Header : sig
   (** Create a header with the algorithm and type *)
   val create : ?rest:(string * string) list -> ?typ:string -> string -> t
 
-  val algorithm : t -> string
+  (** [algorithm t] is the ["alg"] value, or [None] when the header carries none. A header arrives
+      on an unauthenticated path, so the lookup has to be total. *)
+  val algorithm : t -> string option
+
   val typ : t -> string
   val get : string -> t -> string option
   val to_string : t -> string

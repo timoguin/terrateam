@@ -60,8 +60,8 @@ let test_algo =
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token jwt) in
       let header = Jwt.header t in
       Oth.Assert.true_
-        "\"RS256\" = Jwt.Header.algorithm header"
-        ("RS256" = Jwt.Header.algorithm header))
+        "Some \"RS256\" = Jwt.Header.algorithm header"
+        (Some "RS256" = Jwt.Header.algorithm header))
 
 let test_kid =
   Oth.test ~desc:"kid matches expected kid" ~name:"kid match" (fun _ ->
@@ -154,9 +154,73 @@ let test_sign_rs256 =
       let verified = Jwt.verify verifier t in
       Oth.Assert.true_ "None <> verified" (None <> verified))
 
+(* A verifier sits on an unauthenticated path, so it has to answer for any
+   string an attacker can put in the signature slot. Mirage_crypto raises
+   Invalid_argument on a degenerate RSA signature -- an all-zero block, or one
+   wider than the modulus -- and an uncaught raise here closes the connection
+   with no response instead of rejecting the token. *)
+let test_rs256_degenerate_signature =
+  Oth.test ~name:"RS256 verify answers rather than raises on a degenerate signature" (fun _ ->
+      let private_key =
+        match CCResult.get_exn (X509.Private_key.decode_pem private_key) with
+        | `RSA priv_key -> priv_key
+        | _ -> Oth.Assert.false_ "unexpected key type"
+      in
+      let public_key =
+        match CCResult.get_exn (X509.Public_key.decode_pem public_key) with
+        | `RSA pub_key -> pub_key
+        | _ -> Oth.Assert.false_ "unexpected key type"
+      in
+      let header = Jwt.Header.create ~typ:"JWT" "RS256" in
+      let payload = Jwt.Payload.(empty |> add_claim Jwt.Claim.sub (`String "1234567890")) in
+      let signer = Jwt.Signer.(RS256 (Priv_key.of_priv_key private_key)) in
+      let signed = Jwt.token (Jwt.of_header_and_payload signer header payload) in
+      let hp =
+        match CCString.split_on_char '.' signed with
+        | header :: payload :: _ -> header ^ "." ^ payload
+        | _ -> Oth.Assert.false_ "signed token is not three parts"
+      in
+      let verifier = Jwt.Verifier.(RS256 (Pub_key.of_pub_key public_key)) in
+      let b64 s = Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet s in
+      CCList.iter
+        (fun (name, signature) ->
+          let t = CCOption.get_exn_or name (Jwt.of_token (hp ^ "." ^ b64 signature)) in
+          Oth.Assert.true_ name (CCOption.is_none (Jwt.verify verifier t)))
+        [
+          ("all-zero signature", CCString.make 256 '\000');
+          ("empty signature", "");
+          ("signature wider than the modulus", CCString.make 512 '\255');
+        ])
+
+(* A header carrying no "alg" at all, or the "none" algorithm, arrives on the same
+   unauthenticated path as a degenerate signature: the session cookie. Verification has to
+   answer for it rather than raise. *)
+let test_header_without_algorithm =
+  Oth.test ~name:"verify answers rather than raises on a header with no alg" (fun _ ->
+      let public_key =
+        match CCResult.get_exn (X509.Public_key.decode_pem public_key) with
+        | `RSA pub_key -> pub_key
+        | _ -> Oth.Assert.false_ "unexpected key type"
+      in
+      let verifier = Jwt.Verifier.(RS256 (Pub_key.of_pub_key public_key)) in
+      let b64 s = Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet s in
+      CCList.iter
+        (fun (name, header_json) ->
+          let token = b64 header_json ^ "." ^ b64 "{}" ^ "." in
+          let t = CCOption.get_exn_or name (Jwt.of_token token) in
+          Oth.Assert.true_ name (CCOption.is_none (Jwt.verify verifier t)))
+        [
+          ("header with no alg", "{}");
+          ("alg none", {|{"alg":"none"}|});
+          ("alg HS256", {|{"alg":"HS256"}|});
+        ];
+      ())
+
 let test =
   Oth.parallel
     [
+      test_rs256_degenerate_signature;
+      test_header_without_algorithm;
       test_decode;
       test_algo;
       test_kid;
