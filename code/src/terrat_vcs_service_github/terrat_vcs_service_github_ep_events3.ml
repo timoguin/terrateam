@@ -123,6 +123,9 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | `User -> "User"
     | `Bot -> "Bot"
 
+  (* Reports whether a row had to be created.  [with_installation_recovery]
+     needs that answer, not just success: an installation that was there all
+     along is not the failure the retry exists for. *)
   let insert_installation_if_missing config storage ~installation_id ~login ~target_type ~sender =
     let open Abbs_future_combinators.Infix_result_monad in
     Pgsql_pool.with_conn storage ~f:(fun db ->
@@ -145,20 +148,31 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                   target_type
                   (Terrat_config.default_tier @@ P.Api.Config.config config)
                   sender
+                >>= fun () -> Abbs_future_combinators.return_ok `Inserted
             | [] -> assert false)
-        | _ :: _ -> Abbs_future_combinators.return_ok ())
+        | _ :: _ -> Abbs_future_combinators.return_ok `Present)
 
+  (* An event that names an installation this system never recorded fails on the
+     missing row, so the row is written and the event evaluated again.  That
+     retry is right for that one failure and for no other: [f] is not
+     idempotent.  It creates a job, dispatches work manifests and comments on
+     the pull request, so an evaluation that fails after it has already spoken
+     says the same thing a second time when it is run again -- which is how one
+     [terrateam apply] becomes two identical "Missing Plans" comments.  Retry
+     only when a row was in fact missing, and give the caller the original
+     error otherwise. *)
   let with_installation_recovery config storage ~installation_id ~login ~target_type ~sender f =
     let open Abb.Future.Infix_monad in
     f ()
     >>= function
     | Ok _ as ok -> Abb.Future.return ok
-    | Error _ -> (
+    | Error _ as event_err -> (
         Logs.info (fun m ->
             m "MISSING_INSTALLATION : CHECKING : installation_id=%d" installation_id);
         insert_installation_if_missing config storage ~installation_id ~login ~target_type ~sender
         >>= function
-        | Ok () -> f ()
+        | Ok `Inserted -> f ()
+        | Ok `Present -> Abb.Future.return event_err
         | Error _ as err -> Abb.Future.return err)
 
   let process_installation _request_id config storage = function

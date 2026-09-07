@@ -2671,6 +2671,57 @@ struct
             fetch Keys.publish_comment
             >>= fun publish_comment -> publish_comment' publish_comment msg
           in
+          (* An iteration that ends in [`Noop] has finished the job: there is
+             nothing to run, and whatever stopped it -- an apply with no valid
+             plan, a dirspace another pull request owns, a disabled repository
+             -- has just been published.  Complete the job here, because a job
+             left [running] is iterated again by every later work manifest
+             event it owns, and each of those iterations reaches this same point
+             and publishes that same reason over again: one [terrateam apply]
+             answered by the same comment many times.
+             [maybe_complete_job] was the only place that completed such a job,
+             and the pull request event is its only caller, so a verdict
+             reached on a work manifest event never completed anything.
+             [iter_job] already completes the job for the operations it
+             finishes inline, above. *)
+          (* Every constructor is listed rather than falling back on a [#Builder.err]
+             catch-all, so that adding a member to [Keys.err] fails the build until someone
+             decides whether it finishes the job -- the same reason [msg_of_err] in
+             [terrat_vcs_event_evaluator2_tasks_base.ml] spells its own out.
+             [`Suspend_eval]/[`Rerun] are not failures but must not complete: completing
+             aborts the job's live work manifests. [`Silent_failure] must not complete
+             either -- the verdict was reached and the comment did not land, so a later
+             event has to publish it. *)
+          let complete_when_nothing_to_do (err : Builder.err) =
+            match err with
+            | `Noop ->
+                let open Irm in
+                fetch Keys.job
+                >>= fun job ->
+                Builder.run_db s ~f:(fun db -> update_job_state_completed s job.Tjc.Job.id db)
+            | `Suspend_eval _ | `Rerun _ | `Silent_failure -> Abbs_future_combinators.return_ok ()
+            | #Terrat_base_repo_config_v1.of_version_1_err
+            | #Terrat_change_match3.synthesize_config_err
+            | #Str_template.err
+            | `Json_decode_err _
+            | `Yaml_decode_err _
+            | `Repo_config_schema_err _
+            | `Premium_feature_err _
+            | `Config_merge_err _
+            | `Branch_not_found_err _
+            | `Compute_aborted_err _
+            | `Vcs_api_err _
+            | `Vcs_api_timeout_err _
+            | `Closed
+            | #Pgsql_io.err
+            | #Pgsql_pool.err
+            | `Missing_dep_err _
+            | `Msg_err _
+            | `Unexpected_err _
+            | `No_matching_token_err _
+            | `Work_manifest_err _
+            | `Error -> Abbs_future_combinators.return_ok ()
+          in
           let run =
             let open Irm in
             fetch Keys.repo_config_raw'
@@ -2715,7 +2766,8 @@ struct
                 ~default:(Abbs_future_combinators.return_ok ())
                 maybe_publish_msg
                 (Tasks_base.msg_of_err err)
-              >>= fun _ -> Abbs_future_combinators.return_err err)
+              >>= fun _ ->
+              complete_when_nothing_to_do err >>= fun _ -> Abbs_future_combinators.return_err err)
 
     let eval_work_manifest_failure =
       let module Wm = Terrat_work_manifest3 in
