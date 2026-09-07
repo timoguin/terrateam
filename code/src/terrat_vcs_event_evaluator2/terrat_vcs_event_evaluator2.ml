@@ -207,7 +207,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     S.Api.create_client ~request_id config wm.Wm.account db
                     >>= fun client ->
                     let open Abb.Future.Infix_monad in
-                    S.Work_manifest.run ~request_id config client wm
+                    Abbs_time_it.run
+                      (fun time ->
+                        Logs.info (fun m ->
+                            m
+                              "%s : RUN_WORK_MANIFEST : id=%a : time=%f"
+                              request_id
+                              Uuidm.pp
+                              wm.Wm.id
+                              time))
+                      (fun () -> S.Work_manifest.run ~request_id config client wm)
                     >>= function
                     | Ok () ->
                         let open Fc.Infix_result_monad in

@@ -143,7 +143,8 @@
   src/terrat_ee/terrat_ee.exe
   src/terrat_code_indexer/terrat_code_indexer.exe
   src/ttm/ttm.exe
-  (alias src/iris/all)))
+  (alias src/iris/all)
+  (alias src/terrat/check-migrations)))
 
 ; Codegen registry. Every dune-generated library declares its (input schema,
 ; destination dir) pair as a `<lib>.generate-api-types-pairs` rule next to its `(library)`

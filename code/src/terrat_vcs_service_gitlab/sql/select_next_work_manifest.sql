@@ -1,51 +1,51 @@
 with
-latest_unlocks as (
-    select
-        repository,
-        pull_number,
-        max(unlocked_at) as unlocked_at
-    from gitlab_pull_request_unlocks
-    group by repository, pull_number
-),
-latest_drift_unlocks as (
-    select
-        repository,
-        max(unlocked_at) as unlocked_at
-    from gitlab_drift_unlocks
-    group by repository
-),
 wms as (
     select
-        gwm.id as id,
-        gwm.created_at as created_at,
-        gwm.repository as repository,
-        gwm.state as state,
-        (case gwm.run_type
+        wm.id as id,
+        wm.created_at as created_at,
+        grm.repository_id as repository,
+        wm.state as state,
+        (case wm.run_type
          when 'autoapply' then 'apply'
          when 'apply' then 'apply'
          when 'unsafe-apply' then 'apply'
          when 'autoplan' then 'plan'
          when 'plan' then 'plan'
          end) as unified_run_type,
-        (case gwm.run_type
+        (case wm.run_type
          when 'autoapply' then 0
          when 'apply' then 0
          when 'unsafe-apply' then 0
          when 'autoplan' then 1
          when 'plan' then 1
          end) as priority
-    from gitlab_work_manifests as gwm
-    left join drift_work_manifests as gdwm
-        on gdwm.work_manifest = gwm.id
-    left join latest_unlocks as unlocks
-        on unlocks.repository = gwm.repository and unlocks.pull_number = gwm.pull_number
-    left join latest_drift_unlocks as drift_unlocks
-        on drift_unlocks.repository = gwm.repository
-    where (gwm.run_kind = 'pr'
-           and (unlocks.unlocked_at is null or unlocks.unlocked_at < gwm.created_at))
-          or (gwm.run_kind = 'drift'
-              and (drift_unlocks.unlocked_at is null or drift_unlocks.unlocked_at < gwm.created_at))
-          or gwm.run_kind = 'index'
+    from work_manifests as wm
+    inner join gitlab_repositories_map as grm
+        on grm.core_id = wm.repo
+    inner join gitlab_installation_repositories as gir
+        on gir.id = grm.repository_id
+    left join lateral (
+        select pru.unlocked_at
+        from pull_request_unlocks as pru
+        where pru.pull_request = wm.pull_request
+        order by pru.unlocked_at desc
+        limit 1
+    ) as unlocks on true
+    left join lateral (
+        select du.unlocked_at
+        from drift_unlocks as du
+        where du.repo = (select core_id
+                         from gitlab_repositories_map
+                         where repository_id = grm.repository_id)
+        order by du.unlocked_at desc
+        limit 1
+    ) as drift_unlocks on true
+    where wm.state in ('queued', 'running')
+          and ((wm.run_kind = 'pr'
+                and (unlocks.unlocked_at is null or unlocks.unlocked_at < wm.created_at))
+               or (wm.run_kind = 'drift'
+                   and (drift_unlocks.unlocked_at is null or drift_unlocks.unlocked_at < wm.created_at))
+               or wm.run_kind = 'index')
 ),
 dirspaces_for_work_manifests as (
     select

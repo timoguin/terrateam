@@ -81,3 +81,24 @@
    ppx_deriving.ord
    ppx_deriving.show
    ppx_deriving_yojson)))
+
+; Guard: every migration file in migrations/ must be registered in the
+; `migrations` list of terrat_migrations.ml. A file without a matching
+; ("name", run_sql [%blob ...]) entry never runs in production, and nothing
+; else fails when it is missing. The missing-file direction (a registered
+; entry whose file is gone) already fails the ppx_blob build; the script
+; reports it with a clearer message. The script is exported to the public
+; repo by an exact path in copy.bara.sky.template (MONOREPO_FILES).
+
+(rule
+ (alias check-migrations)
+ (deps
+  terrat_migrations.ml
+  %{workspace_root}/scripts/check_migrations_registered.sh
+  (glob_files migrations/*.sql))
+ (action
+  (run
+   bash
+   %{workspace_root}/scripts/check_migrations_registered.sh
+   terrat_migrations.ml
+   migrations)))

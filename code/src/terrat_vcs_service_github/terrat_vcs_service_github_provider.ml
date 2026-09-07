@@ -1732,7 +1732,12 @@ module Db = struct
     let run =
       let open Abbs_future_combinators.Infix_result_monad in
       Metrics.Psql_query_time.time (Metrics.psql_query_time "select_next_work_manifest") (fun () ->
-          Pgsql_io.Prepared_stmt.fetch db ~f:CCFun.id Sql.select_next_work_manifest new_age)
+          Abbs_time_it.run
+            (fun time ->
+              Logs.info (fun m ->
+                  m "%s : QUERY_NEXT_PENDING_WORK_MANIFEST : time=%f" request_id time))
+            (fun () ->
+              Pgsql_io.Prepared_stmt.fetch db ~f:CCFun.id Sql.select_next_work_manifest new_age))
       >>= function
       | [] -> Abbs_future_combinators.return_ok None
       | [ id ] ->
