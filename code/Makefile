@@ -2,6 +2,7 @@
 .PHONY: terrat_oss terrat_ee terrat_code_indexer ttm iris
 .PHONY: test-terrat
 .PHONY: generate-api-types check-api-types
+.PHONY: check-migrations
 .PHONY: clean
 
 # Dune lives at the repo root so packages can reach ../../../api_schemas/
@@ -85,6 +86,14 @@ check-api-types: generate-api-types
 	  echo 'Run `make -C code check-api-types` and commit the updated api_schemas/ + generated dirs.'; \
 	  exit 1; \
 	}
+
+# Fails when a migration file exists in a migrations/ directory without a
+# matching registration in the package's migration module (terrat_migrations.ml,
+# sgs_migrations.ml) -- a drift that otherwise only shows up in production as a
+# schema change that never happened. Also wired into the @code/terrat and
+# @code/stategraph aggregate aliases, so a normal build fails on it too.
+check-migrations:
+	cd $(ROOT) && $(DUNE) build @check-migrations
 
 clean:
 	cd $(ROOT) && $(DUNE) clean

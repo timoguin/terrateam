@@ -284,6 +284,8 @@ let migrations =
     ("add-repo-tree-builds", run_sql [%blob "migrations/2026-07-21-add-repo-tree-builds.sql"]);
     ( "add-pull-request-sha-indices",
       run_sql ~mode:`Async [%blob "migrations/2026-08-21-add-pull-request-sha-indices.sql"] );
+    ( "add-work-manifests-pending-index",
+      run_sql ~mode:`Async [%blob "migrations/2026-09-03-add-work-manifests-pending-index.sql"] );
   ]
 
 let run config storage = Mig.run { Migrate.config; storage; tx = () } migrations
