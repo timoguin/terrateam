@@ -27,7 +27,7 @@
 ARG BASE_IMAGE
 
 # Optional base setup stage if BASE_IMAGE is not provided
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS build-base
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS build-base
 
 # [[[cog emit("apk-base") ]]]
 RUN apk add --no-cache \
@@ -91,14 +91,14 @@ WORKDIR /tmp
 # When this layer is reused cached, new packages may seem missing.
 # When you hit that (package published on more recent opam snapshot), bump the date here to re-run this layer.
 # Note that the date has no impact on `opam`. It's just a mean to trigger rebuilding of this layer.
-ARG OPAM_INDEX_DATE=2026-08-26
+ARG OPAM_INDEX_DATE=2026-09-08
 RUN echo "opam-repository index refreshed ${OPAM_INDEX_DATE}" && \
     opam init -ay --disable-sandboxing --bare
 # [[[end]]]
 COPY ./ /tmp/mono
 # [[[cog emit("opam-switch") ]]]
 RUN eval $(opam env) && \
-    opam switch create -y 5.5.0 && \
+    opam switch create -y 5.5.1 && \
     eval $(opam env) && \
     opam repository add opam-acsl mono/opam && \
     opam pin add -n ISO8601 mono/vendor/ISO8601 --no-depexts && \
@@ -145,7 +145,7 @@ RUN if [ -n "$GIT_SHA" ]; then \
 
 # [[[cog emit("terrat-images") ]]]
 # Final code-indexer image
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS code-indexer
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS code-indexer
 # The minirootfs lags its own package branch, so upgrade what it pre-installed.
 RUN apk upgrade --no-cache
 RUN addgroup -S terrat && adduser -S -G terrat terrat
@@ -155,7 +155,7 @@ WORKDIR /mnt
 ENTRYPOINT ["/usr/local/bin/terrat_code_indexer"]
 
 # Final ttm image
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS ttm
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS ttm
 # The minirootfs lags its own package branch, so upgrade what it pre-installed.
 RUN apk upgrade --no-cache
 COPY --from=terrat-build /tmp/mono/_build/default/code/src/ttm/ttm.exe /usr/local/bin/ttm
@@ -163,7 +163,7 @@ WORKDIR /mnt
 ENTRYPOINT ["/usr/local/bin/ttm"]
 
 # Shared runtime base for the terrat-ee / terrat-oss server images
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS terrat-final-base
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS terrat-final-base
 # The minirootfs lags its own package branch, so upgrade what it pre-installed.
 RUN apk upgrade --no-cache
 # These are the Terrateam-branded images, so comment templates render with the
