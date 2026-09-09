@@ -33,3 +33,7 @@ exception Malformed_utf8 of int
     - [split ~max_bytes:4 "ééé"] = [["éé"; "é"]] (6 bytes; the cut falls before the third ["é"]
       rather than through it, so the first fragment is 4 bytes and not 5) *)
 val split : max_bytes:int -> string -> string list
+
+(** The floor {!split} applies to [max_bytes]: the widest UTF-8 codepoint, so that every fragment
+    can hold at least one. *)
+val min_max_bytes : int
