@@ -294,6 +294,9 @@ let migrations =
         [%blob "migrations/2026-07-22-add-unified-comment-workflow-step-output-index.sql"] );
     ( "add-unified-comment-output-details",
       run_sql [%blob "migrations/2026-07-23-add-unified-comment-output-details.sql"] );
+    ( "pin-gitlab-installations-map-trigger-search-path",
+      run_sql [%blob "migrations/2026-09-09-pin-gitlab-installations-map-trigger-search-path.sql"]
+    );
   ]
 
 let run config storage = Mig.run { Migrate.config; storage; tx = () } migrations

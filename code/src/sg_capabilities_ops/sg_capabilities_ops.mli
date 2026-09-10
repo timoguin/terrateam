@@ -1,9 +1,18 @@
 (** Pure operations on the capability lattice ({!Sgs_session_caps_capabilities.t}), extracted from
     [Sgs_session.Caps] so they can be reused and unit-tested without depending on [sgs]. *)
 
-(** [state_resources v] interprets a [states] map entry value: a [null] resource list ([None]) means
-    "all resources" in that state, i.e. ["*"]. Shared by {!mask} and [Sgs_session.Caps.satisfies];
-    it lives here rather than on the (generated) {!Sgs_session_caps_states} module. *)
+(** [state_resources v] reads one [states] map entry value as the resource allow-list it stands for.
+    The entry is optional because the schema lets it be [null], which means "all resources in that
+    state" — spelled [["*"]] everywhere else, so that is what [null] becomes.
+
+    {v
+      state_resources None            =  ["*"]
+      state_resources (Some ["a.*"])  =  ["a.*"]
+      state_resources (Some [])       =  []
+    v}
+
+    Note the last one: [null] and [[]] are not the same entry. [null] allows everything, [[]] allows
+    nothing, and only [null] is rewritten. {!state_allow_list} lifts this to a whole map. *)
 val state_resources : string list option -> string list
 
 (** [mask ~mask input] restricts [input] by [mask]: a capability is granted in the result only if
@@ -152,6 +161,171 @@ val set_instance_admin :
     all, otherwise the coverage of that grant's [tenants] list. *)
 val tenant_coverage :
   Sgs_session_caps_capabilities.t -> tenant_grant -> string -> Tenant_scope.coverage
+
+(** [tenants_permit tenants tenant] is [true] when a [tenants] allow-list reaches [tenant]: [None]
+    is "every tenant", otherwise the list decides, negations included.
+
+    Exposed separately from {!grants_tenant} because [commit] and [preview] carry a [tenants] key
+    with the same meaning but are not {!tenant_grant}s, so they cannot ask through [grants_tenant].
+*)
+val tenants_permit : string list option -> string -> bool
+
+(** [grants_tenant caps g tenant] is [true] when [caps]'s [g] grant reaches [tenant]. *)
+val grants_tenant : Sgs_session_caps_capabilities.t -> tenant_grant -> string -> bool
+
+(** [state_allow_list states key] is the resource allow-list [states] puts on [key], or [None] when
+    nothing in [states] governs [key] at all.
+
+    Which entry applies is most-specific-wins: the one keyed by [key] if there is one, else the one
+    keyed by ["*"].
+
+    {v
+      state_allow_list {"s1": ["a.*"]}            "s1"  =  Some ["a.*"]
+      state_allow_list {"*": ["b"]}               "s9"  =  Some ["b"]
+      state_allow_list {"*": ["b"], "s1": ["a"]}  "s1"  =  Some ["a"]
+      state_allow_list {"s1": ["a"]}              "s9"  =  None
+      state_allow_list {}                         "s1"  =  None
+    v}
+
+    The entry's value is then read through {!state_resources}, which is where [null] ("all
+    resources") becomes [["*"]]. An explicit list comes back untouched, the empty one included — so
+    [Some []] means "governed, and allows nothing", which is not the same answer as [None].
+
+    {v
+      state_allow_list {"s1": null}  "s1"  =  Some ["*"]
+      state_allow_list {"s1": []}    "s1"  =  Some []
+    v}
+
+    Answering one key means flattening the whole map, so this is written to be partially applied:
+    [state_allow_list states] does that flattening once and returns the lookup. Bind it outside a
+    loop over keys rather than calling it fully applied inside one.
+
+    In other words this lifts {!state_resources} from a single entry to the whole map: callers are
+    left with just "governed by this list" or "not governed", and don't have to interpret [null]
+    themselves. Beware the two ways of allowing nothing: [None] is out of scope, [Some []] is in
+    scope with an empty allow-list. {!states_denial} reports them as different denials. *)
+val state_allow_list : Sgs_session_caps_states.t -> string -> string list option
+
+(** Why a [states]-shaped restriction refuses a concrete resource.
+
+    - [State_not_granted]: no entry of the map governs that state, so the state is out of scope.
+    - [Resource_not_granted]: an entry governs the state, but its allow-list rejects the address. *)
+type states_denial =
+  | State_not_granted
+  | Resource_not_granted
+[@@deriving show, eq]
+
+(** [states_denial states ~state_id ~fq_address] is why [states] refuses that (state, resource)
+    pair, or [None] when it does not refuse it. [states] is a [states]-shaped map — the [states] or
+    the [subgraph] key of a [commit]/[preview] grant, which share this shape.
+
+    A [None] map is no restriction on that axis and refuses nothing. That is not the same as an
+    allow-list that permits nothing: the first says the capability does not narrow this axis, the
+    second says it narrows it to the empty set.
+
+    This asks whether a capability admits one {e concrete} value. [Sgs_session.Caps.satisfies] asks
+    the capability-against-capability question — whether one [states] map grants at least as much as
+    another — where a [None] map on the {e required} side means "asks for every state" and is
+    therefore denied. The two [None]s mean opposite things, so the two judgements are deliberately
+    kept apart; they share {!state_allow_list} and nothing else. *)
+val states_denial :
+  Sgs_session_caps_states.t option -> state_id:string -> fq_address:string -> states_denial option
+
+(** Flattening a [states] map into something a database query can evaluate, so the judgement can run
+    where the rows are instead of every candidate row being shipped here to be judged.
+
+    The query is then a reimplementation {!states_denial}. A test pins that the two implementations
+    agree. *)
+module Db_checks : sig
+  (** One rule of a flattened [states] map: [state] is the map key it came from (a literal state id,
+      or ["*"]), [neg] whether it excludes rather than admits, and [pat]/[prefix] the literal to
+      compare against — a prefix when [prefix], otherwise the whole address.
+
+      [pat] is opaque: neither ["*"] nor ["!"] survives encoding, so a consumer never parses it. *)
+  type rule = {
+    state : string;
+    neg : bool;
+    prefix : bool;
+    pat : string;
+  }
+  [@@deriving show, eq]
+
+  (** A whole [states] map, flattened. [governed] lists the keys the map carries an entry for, which
+      is {e not} derivable from [rules]: an entry of [[]] governs its state while contributing no
+      rule, and that is what separates a refused resource from an out-of-scope state. *)
+  type caps = {
+    governed : string list;
+    rules : rule list;
+  }
+  [@@deriving show, eq]
+
+  (** [encode states] flattens [states] into rules a database query can evaluate with string
+      comparison alone, so that the judgement can run where the rows are instead of shipping every
+      candidate row to be judged here.
+
+      Every shape the map is allowed to take collapses into the same rule form. A [null] entry
+      becomes an all-resources rule, an empty list becomes a governed key with no rules, and the
+      implicit ["*"] that an all-negation list carries is materialized:
+
+      {v
+        states                    governed             rules
+
+        {}                        []                   []
+        {"S1": null}              ["S1"]               [(S1, pos, prefix, "")]
+        {"S1": []}                ["S1"]               []
+        {"S1": ["*"]}             ["S1"]               [(S1, pos, prefix, "")]
+        {"S1": ["a.b"]}           ["S1"]               [(S1, pos, exact, "a.b")]
+        {"S1": ["a.*"]}           ["S1"]               [(S1, pos, prefix, "a.")]
+        {"S1": ["!x"]}            ["S1"]               [(S1, pos, prefix, ""); (S1, neg, exact, "x")]
+        {"S1": ["!*"]}            ["S1"]               [(S1, pos, prefix, ""); (S1, neg, prefix, "")]
+      v}
+
+      A list of any length flattens the same way, one rule per pattern, all sharing the key:
+
+      {v
+        states    {"S1": ["aws_instance.*", "aws_db.main", "!aws_instance.secret",
+                          "!aws_instance.tmp*"]}
+        governed  ["S1"]
+        rules     [(S1, pos, prefix,   "aws_instance.");
+                   (S1, pos, exact, "aws_db.main");
+                   (S1, neg, exact, "aws_instance.secret");
+                   (S1, neg, prefix,   "aws_instance.tmp")]
+      v}
+
+      The rules are a {e set}: the consumer asks whether some positive matches and no negative does,
+      so their order never matters and duplicates are harmless. The key ["*"] is a literal map key,
+      never a glob — state ids are resolved by equality, with ["*"] as the fallback entry, exactly
+      as {!state_allow_list} resolves them. *)
+  val encode : Sgs_session_caps_states.t -> (caps, [> `Invalid_pattern_err of string ]) result
+end
+
+(** Which of the two action capabilities a question is about. Unlike {!tenant_grant} these name a
+    grant that is not tenant-scoped-only: [preview] and [commit] each carry [states], [subgraph] and
+    [tenants]. *)
+type action =
+  [ `Preview
+  | `Commit
+  ]
+
+(** What a [preview] or [commit] grant restricts. [preview] and [commit] are two generated record
+    types of identical shape, and this is that shape named once. *)
+type action_grant = {
+  states : Sgs_session_caps_states.t option;
+  subgraph : Sgs_session_caps_states.t option;
+  tenants : Sgs_session_caps_tenants.t option;
+}
+
+(** [action_grant caps action] is what [caps] lets [action] reach, or [None] when [caps] does not
+    carry that capability at all.
+
+    Reaching either capability means matching on [action] to pick the generated module, and both
+    arms then read the same three field names.
+
+    The [None] answers the presence question too, so a caller needing both "is the capability there"
+    and "what does it restrict" asks once. Note that a capability that is present but restricts
+    nothing is [Some] with all three fields [None], which is not the same as absent: the first
+    authorizes everything on that axis, the second authorizes nothing at all. *)
+val action_grant : Sgs_session_caps_capabilities.t -> action -> action_grant option
 
 (** [grant_tenant ~grants ~tenant caps] adds [tenant] to each capability in [grants], creating the
     capability object scoped to [tenant] alone when it is absent. Fails with the first capability

@@ -41,6 +41,20 @@ val matches : string list -> string -> bool
       prefix-globs are reduced; any other pattern is left untouched. *)
 val canonicalize_list : string list -> string list
 
+(** A well-formed prefix-glob, split into the two things that decide what it matches: a literal
+    [prefix], and whether a trailing ['*'] followed it. ["a.b"] is
+    [{ prefix = "a.b"; wild = false }] and ["a.*"] is [{ prefix = "a."; wild = true }]. *)
+type glob = {
+  prefix : string;
+  wild : bool;
+}
+
+(** [parse_glob s] splits [s] into its literal prefix and whether it ended in ['*'], or [None] when
+    [s] is not a well-formed prefix-glob (a ['*'] anywhere but the end, or more than one).
+
+    [None] is an error case, because observing one means [is_valid_pattern] returned [false]. *)
+val parse_glob : string -> glob option
+
 (** [is_valid_pattern s] is [true] when [s] is an acceptable capability pattern: at most
     {!max_pattern_length} characters and, after any leading ['!'], a literal prefix with an optional
     single {e trailing} ['*']. A mid-string ['*'] (e.g. ["a*b"], ["foo.*.bar"]) or a repeated ['*']
