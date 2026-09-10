@@ -560,6 +560,7 @@ module Engine : sig
       init : string list option;
       outputs : string list option;
       plan : string list option;
+      resource_summary : string list option;
       unsafe_apply : string list option;
     }
     [@@deriving make, show, yojson, eq]
@@ -698,20 +699,90 @@ module Notifications : sig
 
     type t = {
       tag_query : Tag_query.t;
-      comment_strategy : Strategy.t; [@default Strategy.Append]
+      comment_strategy : Strategy.t; [@default Strategy.Minimize]
+    }
+    [@@deriving make, show, yojson, eq]
+  end
+
+  module Visible_on : sig
+    type t =
+      | Always
+      | Failure
+      | Success
+      | Never
+    [@@deriving show, yojson, eq]
+  end
+
+  (** Whether the per-dirspace commit check of a run is created:
+      ["terrateam plan: <dir> <workspace>"] and its apply counterpart. On by default. The
+      ["terrateam apply"] check that branch protection uses to hold a pull request until it is
+      applied is not affected. *)
+  module Status_checks : sig
+    type t = { enabled : bool [@default true] } [@@deriving make, show, yojson, eq]
+  end
+
+  module Plan : sig
+    type t = {
+      visible_on : Visible_on.t; [@default Visible_on.Always]
+      status_checks : Status_checks.t; [@default Status_checks.make ()]
+    }
+    [@@deriving make, show, yojson, eq]
+  end
+
+  module Apply : sig
+    type t = {
+      visible_on : Visible_on.t; [@default Visible_on.Always]
+      status_checks : Status_checks.t; [@default Status_checks.make ()]
     }
     [@@deriving make, show, yojson, eq]
   end
 
   module Summary : sig
-    type t = { enabled : bool [@default false] } [@@deriving make, show, yojson, eq]
+    module Mode : sig
+      type t =
+        | Header
+        | Pull_request
+      [@@deriving show, yojson, eq]
+    end
+
+    module Output_details : sig
+      type t = { enabled : bool [@default false] } [@@deriving make, show, yojson, eq]
+    end
+
+    type t = {
+      enabled : bool option; [@default None]
+      mode : Mode.t; [@default Mode.Pull_request]
+      output_details : Output_details.t; [@default Output_details.make ()]
+    }
+    [@@deriving make, show, yojson, eq]
+
+    (** Whether the summary comment is on. The [enabled] field has no default in the schema, so a
+        repository that never names the summary reads as [None], and [None] is on. That is the
+        default of the Enterprise Edition. The Open Source Edition forces [Some false] into the
+        configuration it hands back, after its premium-feature gate has seen the [Some true] that
+        only a repository can write, so [None] does not reach this function in that edition. *)
+    val enabled : t -> bool
   end
 
   type t = {
     policies : Policy.t list; [@default [ Policy.make ~tag_query:Tag_query.any () ]]
     summary : Summary.t; [@default Summary.make ()]
+    plan : Plan.t; [@default Plan.make ()]
+    apply : Apply.t; [@default Apply.make ()]
   }
   [@@deriving make, show, yojson, eq]
+
+  (** Whether the per-dirspace commit check of a [run] is created. An unsafe apply is an apply;
+      [`Other] is a run with no setting of its own (index, build-config) and keeps its checks. *)
+  val dirspace_status_checks_enabled : t -> run:[ `Apply | `Other | `Plan ] -> bool
+
+  (** Whether the normal plan or apply comment posts. Gate results and access-control denials always
+      post, because they have no other surface; otherwise the run's [visible_on] setting decides.
+      The summary is not consulted: [plan] and [apply] are configured on their own, so a repository
+      that never turned the summary on can still hide a comment, and one that turned it on still
+      gets both comments unless it says otherwise. *)
+  val classic_comment_visible :
+    t -> run:[ `Apply | `Plan ] -> success:bool -> gates_or_denials:bool -> bool
 end
 
 module Stacks : sig

@@ -83,6 +83,7 @@ All custom engine steps are optional and will simply be skipped if they are not 
 | init | Array | The command to run during the init step. |
 | plan | Array | The command to run during the plan step. The `TERRATEAM_PLAN_FILE` environment variable is available to write a plan file that will be accessible in the apply step.  This plan file is up to the engine to define and use as it needs. |
 | diff | Array | The command to produce a human-readable diff of the plan output. |
+| resource_summary | Array | The command to print the plan's resource counts as a JSON object with the integer keys `created`, `updated`, `replaced` and `deleted`.  Run after a plan that reports changes; its counts appear in the status check description and the summary comment.  Skipped when the command fails or does not print a JSON object. |
 | apply | Array | The command to run during the apply step. |
 | unsafe_apply | Array | The command to run for [`terrateam apply-autoapprove`](/reference/commands/apply-autoapprove), which applies without a previously stored plan file. |
 | outputs | Array | The command to return output values as a JSON string. |

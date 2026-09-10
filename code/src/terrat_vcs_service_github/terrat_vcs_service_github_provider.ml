@@ -2479,6 +2479,10 @@ module Apply_requirements = struct
       | Some m -> Metrics.Time_histogram.observe m t
       | None -> ()
     in
+    (* Terrateam's own checks are not what the status_checks apply requirement waits on -- it would
+       wait on itself.  The two hook checks are no longer created, but a pull request opened before
+       they went away can still carry one, and it would sit queued for ever, so they stay in the
+       list. *)
     let filter_relevant_commit_checks ignore_matching_pats ignore_matching commit_checks =
       CCList.filter
         (fun Terrat_commit_check.{ title; _ } ->
@@ -4368,22 +4372,83 @@ module Comment = struct
           work_manifest;
         } -> (
         let open Abb.Future.Infix_monad in
-        Result.Publisher3.post_comment
-          request_id
-          account_status
-          config
-          client
-          db
-          is_layered_run
-          remaining_layers
-          repo_config
-          result
-          pull_request
-          synthesized_config
-          work_manifest
-        >>= function
-        | Ok cid -> Abbs_future_combinators.return_ok cid
-        | Error _ -> Abbs_future_combinators.return_err `Error)
+        let module V1 = Terrat_base_repo_config_v1 in
+        let module N = V1.Notifications in
+        let module R2 = Terrat_api_components.Work_manifest_tf_operation_result2 in
+        let module Wm = Terrat_work_manifest3 in
+        let post_classic () =
+          Result.Publisher3.post_comment
+            request_id
+            account_status
+            config
+            client
+            db
+            is_layered_run
+            remaining_layers
+            repo_config
+            result
+            pull_request
+            synthesized_config
+            work_manifest
+          >>= function
+          | Ok cid -> Abbs_future_combinators.return_ok cid
+          | Error _ -> Abbs_future_combinators.return_err `Error
+        in
+        let notifications = V1.notifications repo_config in
+        let { N.summary; policies = _; plan = _; apply = _ } = notifications in
+        let { N.Summary.enabled = _; mode; output_details } = summary in
+        let unified =
+          N.Summary.enabled summary
+          &&
+          match mode with
+          | N.Summary.Mode.Pull_request -> true
+          | N.Summary.Mode.Header -> false
+        in
+        (* The run's [visible_on] setting decides whether the classic comment
+           posts, whatever the summary is set to: the two are configured
+           independently, so a repository with no summary at all can hide a
+           comment.  Gates and access control denials have no other surface, so
+           results carrying them always post the classic comment. *)
+        let run =
+          match CCList.last_opt work_manifest.Wm.steps with
+          | Some (Wm.Step.Apply | Wm.Step.Unsafe_apply) -> `Apply
+          | None | Some (Wm.Step.Build_config | Wm.Step.Build_tree | Wm.Step.Index | Wm.Step.Plan)
+            -> `Plan
+        in
+        (* Overall success of the result's steps, the same rule the comment
+           renderers use: a step succeeds unless it failed and was not marked
+           ignore_errors. *)
+        let module O = Terrat_api_components.Workflow_step_output in
+        let success =
+          CCList.for_all
+            (fun { O.success; ignore_errors; payload = _; scope = _; step = _ } ->
+              success || ignore_errors)
+            result.R2.steps
+        in
+        let gates_or_denials =
+          (match result.R2.gates with
+            | Some (_ :: _) -> true
+            | None | Some [] -> false)
+          || not (CCList.is_empty work_manifest.Wm.denied_dirspaces)
+        in
+        let post_classic_if_visible () =
+          if N.classic_comment_visible notifications ~run ~success ~gates_or_denials then
+            post_classic ()
+          else Abbs_future_combinators.return_ok ()
+        in
+        if not unified then post_classic_if_visible ()
+        else
+          Terrat_vcs_github_comment_unified.mark_dirty
+            ~request_id
+            ~output_details:output_details.N.Summary.Output_details.enabled
+            db
+            work_manifest.Wm.id
+          >>= function
+          | Ok () -> post_classic_if_visible ()
+          | Error `Error ->
+              (* If the refresh cannot be tracked, fall back to the classic
+                 comment rather than losing the output entirely. *)
+              post_classic ())
     | Msg.Tier_check checks ->
         let module C = Terrat_tier.Check in
         let { C.tier_name; users_per_month; runs_per_month } = checks in
@@ -4447,6 +4512,39 @@ module Comment = struct
              "WORK_MANIFEST_RUN_FAILED"
              Tmpl.work_manifest_run_failed
              kv
+
+  let drain_unified_comment ~request_id config storage work_manifest_id =
+    Terrat_vcs_github_comment_unified.drain ~request_id config storage work_manifest_id
+
+  let mark_unified_comment_dirty ~request_id db work_manifest_id =
+    Terrat_vcs_github_comment_unified.mark_dirty_if_tracked ~request_id db work_manifest_id
+
+  let publish_unified_comment_at_start ~request_id ~repo_config config db work_manifest_id =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let module N = V1.Notifications in
+    let { N.summary; policies = _; plan = _; apply = _ } = V1.notifications repo_config in
+    let unified =
+      match summary.N.Summary.mode with
+      | N.Summary.Mode.Pull_request -> N.Summary.enabled summary
+      | N.Summary.Mode.Header -> false
+    in
+    if not unified then Abbs_future_combinators.return_ok ()
+    else
+      let open Abb.Future.Infix_monad in
+      let output_details = summary.N.Summary.output_details.N.Summary.Output_details.enabled in
+      Terrat_vcs_github_comment_unified.publish_at_start
+        ~request_id
+        ~config
+        ~output_details
+        db
+        work_manifest_id
+      >>= function
+      | Ok () -> Abbs_future_combinators.return_ok ()
+      | Error `Error ->
+          (* Best effort: the result drain still creates or refreshes the
+             comment. *)
+          Logs.err (fun m -> m "%s : PUBLISH_UNIFIED_COMMENT_AT_START : ERROR" request_id);
+          Abbs_future_combinators.return_ok ()
 end
 
 module Repo_config = struct
@@ -4458,6 +4556,27 @@ module Repo_config = struct
       {
         (V1.to_view system_defaults) with
         V1.View.access_control = V1.Access_control.make ~enabled:false ();
+      }
+
+  (* The summary comment is an Enterprise feature, so the Open Source Edition turns it off in the
+     configuration it hands back.  [enabled] has no default of its own, so this is the only place
+     that decides the answer for this edition, and it runs after the premium-feature gate below:
+     the gate still sees the [Some true] that only a repository can write, and stays quiet for a
+     repository that never named the summary.  The system defaults are not the place for this,
+     because a whole notifications section there would join the policy list of every repository. *)
+  let disable_summary repo_config =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let module N = V1.Notifications in
+    let view = V1.to_view repo_config in
+    let notifications = view.V1.View.notifications in
+    V1.of_view
+      {
+        view with
+        V1.View.notifications =
+          {
+            notifications with
+            N.summary = { notifications.N.summary with N.Summary.enabled = Some false };
+          };
       }
 
   let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
@@ -4571,10 +4690,14 @@ module Repo_config = struct
              checks -> Error (`Premium_feature_err `Require_completed_reviews)
     | {
      V1.View.notifications =
-       { V1.Notifications.summary = { V1.Notifications.Summary.enabled = true }; _ };
+       {
+         V1.Notifications.summary =
+           { V1.Notifications.Summary.enabled = Some true; mode = _; output_details = _ };
+         _;
+       };
      _;
     } -> Error (`Premium_feature_err `Notifications_summary)
-    | _ -> Ok (provenance, final_repo_config)
+    | _ -> Ok (provenance, disable_summary final_repo_config)
 end
 
 module Access_control = struct
@@ -4622,6 +4745,7 @@ module Commit_check = struct
 
   let make_dirspace
       ?work_manifest
+      ?resource_summary
       ~config
       ~description
       ~run_type
@@ -4633,7 +4757,8 @@ module Commit_check = struct
     make_str
       ?work_manifest
       ~config
-      ~description
+      ~description:
+        (Terrat_vcs_provider2.Resource_summary.describe ?resource_summary ~description ())
       ~status
       ~repo
       ~account
@@ -5290,6 +5415,8 @@ module Work_manifest = struct
       pre_hooks_success = pre_hooks_status;
       post_hooks_success = post_hooks_status;
       dirspaces_success;
+      (* Legacy runner results do not carry per-step resource summaries. *)
+      dirspaces_resource_summary = [];
     }
 
   let result2 result =
@@ -5315,6 +5442,13 @@ module Work_manifest = struct
     in
     let pre_hooks_success = steps_success (CCOption.get_or ~default:[] hooks_pre) in
     let post_hooks_success = steps_success (CCOption.get_or ~default:[] hooks_post) in
+    let dirspaces_resource_summary =
+      CCList.filter_map
+        (fun (dirspace, steps) ->
+          CCOption.map (fun resource_summary -> (dirspace, resource_summary))
+          @@ Terrat_vcs_provider2.Resource_summary.of_steps steps)
+        dirspaces
+    in
     let dirspaces_success =
       CCList.map (fun (dirspace, steps) -> (dirspace, steps_success steps)) dirspaces
     in
@@ -5324,6 +5458,7 @@ module Work_manifest = struct
       pre_hooks_success;
       post_hooks_success;
       dirspaces_success;
+      dirspaces_resource_summary;
     }
 end
 

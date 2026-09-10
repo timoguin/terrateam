@@ -590,6 +590,12 @@
           },
           "type": "array"
         },
+        "resource_summary": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "unsafe_apply": {
           "items": {
             "type": "string"
@@ -1217,6 +1223,46 @@
     "notifications": {
       "additionalProperties": false,
       "properties": {
+        "apply": {
+          "additionalProperties": false,
+          "description": "Control how an apply is reported: its per-dirspace status checks and when its comment is visible.",
+          "properties": {
+            "status_checks": {
+              "additionalProperties": false,
+              "description": "Control if the per-dirspace status checks of an apply are created.  Default is true.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "visible_on": {
+              "$ref": "#/definitions/summary-visible-on"
+            }
+          }
+        },
+        "plan": {
+          "additionalProperties": false,
+          "description": "Control how a plan is reported: its per-dirspace status checks and when its comment is visible.",
+          "properties": {
+            "status_checks": {
+              "additionalProperties": false,
+              "description": "Control if the per-dirspace status checks of a plan are created.  Default is true.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "visible_on": {
+              "$ref": "#/definitions/summary-visible-on"
+            }
+          }
+        },
         "policies": {
           "items": {
             "$ref": "#/definitions/notification-policy"
@@ -1233,8 +1279,28 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {
-          "default": false,
+          "description": "Enable the summary comment.  This property has no default: a repository that does not set it is not the same as a repository that sets it.  The Enterprise Edition treats an unset property as enabled.  The Open Source Edition disables the summary in its system defaults, and refuses a repository that sets this property to true, because the summary is an Enterprise feature.",
           "type": "boolean"
+        },
+        "mode": {
+          "default": "pull_request",
+          "description": "Define where the summary goes: 'pull_request' posts one summary comment for the pull request, 'header' puts the summary in the header of each plan or apply comment.",
+          "enum": [
+            "header",
+            "pull_request"
+          ],
+          "type": "string"
+        },
+        "output_details": {
+          "additionalProperties": false,
+          "description": "Control if the summary comment shows the output details of each dirspace.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Define if the output details section of the summary comment is visible.",
+              "type": "boolean"
+            }
+          }
         }
       },
       "type": "object"
@@ -1497,6 +1563,16 @@
         "method"
       ],
       "type": "object"
+    },
+    "summary-visible-on": {
+      "description": "Define when the normal plan or apply comment is visible, in addition to the summary comment.  Default is 'always'",
+      "enum": [
+        "always",
+        "failure",
+        "success",
+        "never"
+      ],
+      "type": "string"
     },
     "tags": {
       "items": {

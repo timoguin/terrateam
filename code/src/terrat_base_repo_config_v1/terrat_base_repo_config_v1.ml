@@ -955,6 +955,7 @@ module Engine = struct
       init : string list option;
       outputs : string list option;
       plan : string list option;
+      resource_summary : string list option;
       unsafe_apply : string list option;
     }
     [@@deriving make, show, yojson, eq]
@@ -1108,18 +1109,115 @@ module Notifications = struct
     [@@deriving make, show, yojson, eq]
   end
 
+  module Visible_on = struct
+    type t =
+      | Always
+      | Failure
+      | Success
+      | Never
+    [@@deriving show, yojson, eq]
+  end
+
+  (* Whether the per-dirspace commit check of a run is created: "terrateam plan: <dir> <workspace>"
+     and its apply counterpart.  A repository with many dirspaces gets one check per dirspace per
+     run, which is the noise this turns off.  On by default, which is the behaviour of a repository
+     that configures neither.  The "terrateam apply" check that branch protection uses to hold a
+     pull request until it is applied is not affected. *)
+  module Status_checks = struct
+    type t = { enabled : bool [@default true] } [@@deriving make, show, yojson, eq]
+  end
+
+  (* When the normal plan or apply comment posts, and whether the run's per-dirspace checks are
+     created.  Configured on their own, not under the summary: a repository that never turned the
+     summary on can still hide a comment it does not want, and one that did turn it on keeps both
+     comments unless it says otherwise.  [Always] is the default for both, which is the behaviour
+     of every repository that configures neither. *)
+  module Plan = struct
+    type t = {
+      visible_on : Visible_on.t; [@default Visible_on.Always]
+      status_checks : Status_checks.t; [@default Status_checks.make ()]
+    }
+    [@@deriving make, show, yojson, eq]
+  end
+
+  module Apply = struct
+    type t = {
+      visible_on : Visible_on.t; [@default Visible_on.Always]
+      status_checks : Status_checks.t; [@default Status_checks.make ()]
+    }
+    [@@deriving make, show, yojson, eq]
+  end
+
   module Summary = struct
-    (* Enterprise feature: the comment summary header only renders in the
-       Enterprise Edition.  Defaults to disabled so Open Source users are not
-       blocked by the premium-feature gate on the default configuration. *)
-    type t = { enabled : bool [@default false] } [@@deriving make, show, yojson, eq]
+    module Mode = struct
+      type t =
+        | Header
+        | Pull_request
+      [@@deriving show, yojson, eq]
+    end
+
+    module Output_details = struct
+      type t = { enabled : bool [@default false] } [@@deriving make, show, yojson, eq]
+    end
+
+    (* Enterprise feature: the comment summary only renders in the Enterprise
+       Edition.  [enabled] has no default in the schema, so [None] says the
+       repository never named the summary and [Some _] says it made a choice.
+       [None] reads as enabled, which is the default of the Enterprise Edition:
+       a repository gets the unified summary comment unless it opts out or into
+       the header.  The Open Source Edition forces [Some false] into the
+       configuration it hands back, so the summary is off there, and its
+       premium-feature gate rejects the [Some true] that only a repository can
+       write.
+
+       [Header] renders the summary as a header inside each plan/apply comment,
+       so a comment the [visible_on] setting hides takes the header with it.
+       [Pull_request] maintains a single unified summary comment for the whole
+       pull request, beside whatever plan and apply comments post.
+       [Pull_request] is the default mode. *)
+    type t = {
+      enabled : bool option; [@default None]
+      mode : Mode.t; [@default Mode.Pull_request]
+      output_details : Output_details.t; [@default Output_details.make ()]
+    }
+    [@@deriving make, show, yojson, eq]
+
+    let enabled t = CCOption.get_or ~default:true t.enabled
   end
 
   type t = {
     policies : Policy.t list; [@default [ Policy.make ~tag_query:Tag_query.any () ]]
     summary : Summary.t; [@default Summary.make ()]
+    plan : Plan.t; [@default Plan.make ()]
+    apply : Apply.t; [@default Apply.make ()]
   }
   [@@deriving make, show, yojson, eq]
+
+  (* Whether the per-dirspace commit check of a [run] is created.  An unsafe apply is an apply;
+     [`Other] is a run with no setting of its own (index, build-config) and keeps its checks. *)
+  let dirspace_status_checks_enabled t ~run =
+    match run with
+    | `Plan -> t.plan.Plan.status_checks.Status_checks.enabled
+    | `Apply -> t.apply.Apply.status_checks.Status_checks.enabled
+    | `Other -> true
+
+  (* Whether the normal plan or apply comment posts.  Gate results and
+     access-control denials always post -- they have no other surface.
+     Otherwise the run's [visible_on] setting decides, whatever the summary is
+     set to: the two are configured independently. *)
+  let classic_comment_visible t ~run ~success ~gates_or_denials =
+    if gates_or_denials then true
+    else
+      let visible_on =
+        match run with
+        | `Plan -> t.plan.Plan.visible_on
+        | `Apply -> t.apply.Apply.visible_on
+      in
+      match visible_on with
+      | Visible_on.Always -> true
+      | Visible_on.Success -> success
+      | Visible_on.Failure -> not success
+      | Visible_on.Never -> false
 end
 
 module Stacks = struct
@@ -2029,8 +2127,22 @@ let of_version_1_workflow_engine cdktf terraform_version terragrunt default_engi
       | E.Engine_other _ as other -> Ok (Some (Engine.Other (E.to_yojson other)))
       | E.Engine_custom custom ->
           let module E = Terrat_repo_config_engine_custom in
-          let { E.apply; init; plan; diff; unsafe_apply; outputs; name = _ } = custom in
-          Ok (Some Engine.(Custom (Custom.make ?apply ?init ?plan ?diff ?unsafe_apply ?outputs ())))
+          let { E.apply; init; plan; diff; resource_summary; unsafe_apply; outputs; name = _ } =
+            custom
+          in
+          Ok
+            (Some
+               Engine.(
+                 Custom
+                   (Custom.make
+                      ?apply
+                      ?init
+                      ?plan
+                      ?diff
+                      ?resource_summary
+                      ?unsafe_apply
+                      ?outputs
+                      ())))
       | E.Engine_fly fly ->
           let module E = Terrat_repo_config_engine_fly in
           let { E.config_file; name = _ } = fly in
@@ -2401,8 +2513,22 @@ let of_version_1_engine default_tf_version engine =
       | E.Engine_other _ as other -> Ok (Some (Engine.Other (E.to_yojson other)))
       | E.Engine_custom custom ->
           let module E = Terrat_repo_config_engine_custom in
-          let { E.apply; init; plan; diff; unsafe_apply; outputs; name = _ } = custom in
-          Ok (Some Engine.(Custom (Custom.make ?apply ?init ?plan ?diff ?unsafe_apply ?outputs ())))
+          let { E.apply; init; plan; diff; resource_summary; unsafe_apply; outputs; name = _ } =
+            custom
+          in
+          Ok
+            (Some
+               Engine.(
+                 Custom
+                   (Custom.make
+                      ?apply
+                      ?init
+                      ?plan
+                      ?diff
+                      ?resource_summary
+                      ?unsafe_apply
+                      ?outputs
+                      ())))
       | E.Engine_fly fly ->
           let module E = Terrat_repo_config_engine_fly in
           let { E.config_file; name = _ } = fly in
@@ -2568,15 +2694,54 @@ let of_version_1_notifications notifications =
   let open CCResult.Infix in
   let module N = Terrat_repo_config_notifications in
   let module Sn = Terrat_repo_config_notifications_summary in
-  let { N.policies; summary } = notifications in
+  let { N.policies; summary; plan = plan_; apply = apply_ } = notifications in
   let policies = CCOption.get_or ~default:[] policies in
+  let visible_on = function
+    | None | Some `Always -> Notifications.Visible_on.Always
+    | Some `Failure -> Notifications.Visible_on.Failure
+    | Some `Success -> Notifications.Visible_on.Success
+    | Some `Never -> Notifications.Visible_on.Never
+  in
+  let status_checks = function
+    | None -> Notifications.Status_checks.make ()
+    | Some enabled -> Notifications.Status_checks.make ~enabled ()
+  in
+  let plan = function
+    | None -> Notifications.Plan.make ()
+    | Some { N.Plan.visible_on = v; status_checks = sc } ->
+        Notifications.Plan.make
+          ~visible_on:(visible_on v)
+          ~status_checks:
+            (status_checks (CCOption.map (fun { N.Plan.Status_checks.enabled } -> enabled) sc))
+          ()
+  in
+  let apply = function
+    | None -> Notifications.Apply.make ()
+    | Some { N.Apply.visible_on = v; status_checks = sc } ->
+        Notifications.Apply.make
+          ~visible_on:(visible_on v)
+          ~status_checks:
+            (status_checks (CCOption.map (fun { N.Apply.Status_checks.enabled } -> enabled) sc))
+          ()
+  in
+  let output_details = function
+    | None -> Notifications.Summary.Output_details.make ()
+    | Some { Sn.Output_details.enabled } -> Notifications.Summary.Output_details.make ~enabled ()
+  in
   let summary =
     match summary with
-    | Some { Sn.enabled } -> { Notifications.Summary.enabled }
+    | Some { Sn.enabled; mode; output_details = od } ->
+        let mode =
+          match mode with
+          | `Header -> Notifications.Summary.Mode.Header
+          | `Pull_request -> Notifications.Summary.Mode.Pull_request
+        in
+        { Notifications.Summary.enabled; mode; output_details = output_details od }
     | None -> Notifications.Summary.make ()
   in
   CCResult.map_l of_version_1_notification_policy policies
-  >>= fun policies -> Ok { Notifications.policies; summary }
+  >>= fun policies ->
+  Ok { Notifications.policies; summary; plan = plan plan_; apply = apply apply_ }
 
 let of_version_1_storage_plan_cmd v =
   let module Cmd = Terrat_repo_config_storage_plan_cmd in
@@ -3142,8 +3307,11 @@ let to_version_1_engine engine =
   | Engine.Other other -> E.Engine_other (CCResult.get_exn @@ O.of_yojson other)
   | Engine.Custom custom ->
       let module Custom = Terrat_repo_config.Engine_custom in
-      let { Engine.Custom.apply; init; plan; diff; unsafe_apply; outputs } = custom in
-      E.Engine_custom { Custom.name = `Custom; apply; init; plan; diff; unsafe_apply; outputs }
+      let { Engine.Custom.apply; init; plan; diff; resource_summary; unsafe_apply; outputs } =
+        custom
+      in
+      E.Engine_custom
+        { Custom.name = `Custom; apply; init; plan; diff; resource_summary; unsafe_apply; outputs }
   | Engine.Fly fly ->
       let module Fly = Terrat_repo_config.Engine_fly in
       let { Engine.Fly.config_file } = fly in
@@ -3445,10 +3613,55 @@ let to_version_1_notification_policy policy =
 let to_version_1_notifications notifications =
   let module N = Terrat_repo_config.Notifications in
   let module Sn = Terrat_repo_config.Notifications_summary in
-  let { Notifications.policies; summary = { Notifications.Summary.enabled } } = notifications in
+  let {
+    Notifications.policies;
+    summary = { Notifications.Summary.enabled; mode; output_details };
+    plan;
+    apply;
+  } =
+    notifications
+  in
+  let mode =
+    match mode with
+    | Notifications.Summary.Mode.Header -> `Header
+    | Notifications.Summary.Mode.Pull_request -> `Pull_request
+  in
+  let visible_on_of = function
+    | Notifications.Visible_on.Always -> `Always
+    | Notifications.Visible_on.Failure -> `Failure
+    | Notifications.Visible_on.Success -> `Success
+    | Notifications.Visible_on.Never -> `Never
+  in
+  let plan =
+    let { Notifications.Plan.visible_on; status_checks = { Notifications.Status_checks.enabled } } =
+      plan
+    in
+    Some
+      {
+        N.Plan.visible_on = Some (visible_on_of visible_on);
+        status_checks = Some { N.Plan.Status_checks.enabled };
+      }
+  in
+  let apply =
+    let { Notifications.Apply.visible_on; status_checks = { Notifications.Status_checks.enabled } }
+        =
+      apply
+    in
+    Some
+      {
+        N.Apply.visible_on = Some (visible_on_of visible_on);
+        status_checks = Some { N.Apply.Status_checks.enabled };
+      }
+  in
+  let output_details =
+    let { Notifications.Summary.Output_details.enabled } = output_details in
+    Some { Sn.Output_details.enabled }
+  in
   {
     N.policies = Some (CCList.map to_version_1_notification_policy policies);
-    summary = Some { Sn.enabled };
+    summary = Some { Sn.enabled; mode; output_details };
+    plan;
+    apply;
   }
 
 let to_version_1_storage_plans plans =

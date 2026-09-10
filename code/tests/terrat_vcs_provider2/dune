@@ -1,0 +1,5 @@
+(test
+ (name test)
+ (libraries containers oth oth_abb terrat_api terrat_vcs_provider2)
+ (preprocess
+  (pps ppx_deriving.show)))

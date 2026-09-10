@@ -4,14 +4,24 @@
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set changed = dirspaces | selectattr("success") | selectattr("has_changes") | list %}
 {%- set nochange = dirspaces | selectattr("success") | rejectattr("has_changes") | list %}
+{%- set counts = (dirspaces | length | string) ~ " dirspace" ~ ("s" if dirspaces | length != 1 else "") ~ " · " ~ (changed | length | string) ~ " with changes · " ~ (nochange | length | string) ~ " no changes · " ~ (failed | length | string) ~ " failed" %}
+{%- if summary_unified %}
+<details>
+  <summary>{{ counts }}</summary>
+{% else %}
 
-**{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ changed | length }} with changes · {{ nochange | length }} no changes · {{ failed | length }} failed
-
-| Directory | Workspace | Result | Changes |
-| --- | --- | :---: | :---: |
+**{{ counts }}**
+{% endif %}
+| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
-| `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {% if d.applied is defined and d.applied %}—{% elif not d.success %}—{% elif d.has_changes %}Changes{% else %}No changes{% endif %} |
+| `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |
     {%- endfor %}
+| **Total** | | | **{{ resource_totals.created }}** | **{{ resource_totals.updated }}** | **{{ resource_totals.replaced }}** | **{{ resource_totals.deleted }}** |
+{%- if summary_unified %}
+
+</details>
+{%- endif %}
 
   {%- endif %}
   {%- if account_status == 'trial_ending' %}
@@ -123,14 +133,24 @@ A gate is satisfied only when all conditions are met. See [documentation](https:
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set changed = dirspaces | selectattr("success") | selectattr("has_changes") | list %}
 {%- set nochange = dirspaces | selectattr("success") | rejectattr("has_changes") | list %}
+{%- set counts = (dirspaces | length | string) ~ " dirspace" ~ ("s" if dirspaces | length != 1 else "") ~ " · " ~ (changed | length | string) ~ " with changes · " ~ (nochange | length | string) ~ " no changes · " ~ (failed | length | string) ~ " failed" %}
+{%- if summary_unified %}
+<details>
+  <summary>{{ counts }}</summary>
+{% else %}
 
-**{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ changed | length }} with changes · {{ nochange | length }} no changes · {{ failed | length }} failed
-
-| Directory | Workspace | Result | Changes |
-| --- | --- | :---: | :---: |
+**{{ counts }}**
+{% endif %}
+| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
-| `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {% if d.applied is defined and d.applied %}—{% elif not d.success %}—{% elif d.has_changes %}Changes{% else %}No changes{% endif %} |
+| `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |
     {%- endfor %}
+| **Total** | | | **{{ resource_totals.created }}** | **{{ resource_totals.updated }}** | **{{ resource_totals.replaced }}** | **{{ resource_totals.deleted }}** |
+{%- if summary_unified %}
+
+</details>
+{%- endif %}
 
   {%- endif %}
   {%- if work_manifest_url is defined %}

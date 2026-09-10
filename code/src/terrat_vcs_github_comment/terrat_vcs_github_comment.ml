@@ -245,10 +245,22 @@ module S = struct
 
   let summary_enabled t =
     let module N = Terrat_base_repo_config_v1.Notifications in
-    let { N.summary = { N.Summary.enabled; _ }; _ } =
+    N.Summary.enabled (Terrat_base_repo_config_v1.notifications t.repo_config).N.summary
+
+  (* Whether the summary runs in pull_request mode: the unified comment carries the per-dirspace
+     rollup, so the classic comment collapses its changes table into a details block whose summary
+     line shows the totals. *)
+  let summary_unified_enabled t =
+    let module N = Terrat_base_repo_config_v1.Notifications in
+    let { N.summary; policies = _; plan = _; apply = _ } =
       Terrat_base_repo_config_v1.notifications t.repo_config
     in
-    enabled
+    let { N.Summary.enabled = _; mode; output_details = _ } = summary in
+    N.Summary.enabled summary
+    &&
+    match mode with
+    | N.Summary.Mode.Pull_request -> true
+    | N.Summary.Mode.Header -> false
 
   (* Link to the PR-level runs page so the comment (which aggregates every work
      manifest for the pull request) points at all of them, not just the last one
@@ -279,6 +291,7 @@ module S = struct
     (* TODO: Stop using the result, move gates to to t *)
     let gates = t.result.R2.gates in
     let summary = summary_enabled t in
+    let summary_unified = summary_unified_enabled t in
     let pull_number = pull_number t in
     let dirspace_run_urls = dirspace_run_urls t els in
     let dirspace_applied = dirspace_applied els in
@@ -298,6 +311,7 @@ module S = struct
         ~view:(if compact then `Compact else `Full)
         ~compacted_dirspaces
         ~summary
+        ~summary_unified
         ~pull_number
         ~dirspace_run_urls
         ~dirspace_applied
@@ -327,6 +341,7 @@ module S = struct
             ~view:`Compact
             ~compacted_dirspaces:(CCList.map (fun { dirspace; _ } -> dirspace) els)
             ~summary
+            ~summary_unified
             ~pull_number
             ~dirspace_run_urls
             ~dirspace_applied
@@ -354,6 +369,7 @@ module S = struct
                 ~view:`Compact
                 ~compacted_dirspaces:(CCList.map (fun { dirspace; _ } -> dirspace) els)
                 ~summary
+                ~summary_unified
                 ~pull_number
                 ~dirspace_run_urls
                 ~dirspace_applied
@@ -377,6 +393,7 @@ module S = struct
     let module R2 = Terrat_api_components.Work_manifest_tf_operation_result2 in
     let gates = t.result.R2.gates in
     let summary = summary_enabled t in
+    let summary_unified = summary_unified_enabled t in
     let pull_number = pull_number t in
     let dirspace_run_urls = dirspace_run_urls t els in
     let dirspace_applied = dirspace_applied els in
@@ -396,6 +413,7 @@ module S = struct
         ~view:(if compact then `Compact else `Full)
         ~compacted_dirspaces
         ~summary
+        ~summary_unified
         ~pull_number
         ~dirspace_run_urls
         ~dirspace_applied

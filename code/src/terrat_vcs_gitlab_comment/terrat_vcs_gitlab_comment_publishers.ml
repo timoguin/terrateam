@@ -111,6 +111,11 @@ let steps_has_changes steps =
   | Some has_changes -> has_changes
   | None -> false
 
+(* Resource counts reported by the runner in the plan step's [resource_summary] payload,
+   computed from `terraform show -json`.  When the runner or engine does not emit them the
+   fields are None (rendered as "-") rather than guessed (#1929). *)
+module Rs = Terrat_vcs_provider2.Resource_summary
+
 let steps_success steps =
   let module O = Terrat_api_components.Workflow_step_output in
   CCList.for_all (fun { O.success; ignore_errors; _ } -> success || ignore_errors) steps
@@ -334,9 +339,12 @@ let dirspace_compare (dirspace1, steps1) (dirspace2, steps2) =
   let success1 = steps_success steps1 in
   let has_changes2 = steps_has_changes steps2 in
   let success2 = steps_success steps2 in
-  (* Negate has_changes because the order of [bool] is [false]
-             before [true]. *)
-  Cmp.compare (not has_changes1, success1, dirspace1) (not has_changes2, success2, dirspace2)
+  (* The same order the unified summary comment renders its table in: failed
+     first, then successes with changes before successes without, then
+     dirspace.  [success] is [false] before [true] and [not has_changes] puts
+     changes first, so the key is exactly that order -- the two tables must
+     not disagree about it. *)
+  Cmp.compare (success1, not has_changes1, dirspace1) (success2, not has_changes2, dirspace2)
 
 module Comment_api = struct
   (* The comment is how a failure reaches the user, so a call the VCS never
@@ -411,6 +419,20 @@ module Publisher_tools = struct
         by_scope
     in
     let num_remaining_layers = CCList.length remaining_dirspace_configs in
+    (* Resource counts per dirspace, plus totals over the dirspaces that reported them.  All
+       "-" when no dirspace's runner emitted a summary (#1929). *)
+    let resource_totals =
+      let { Rs.created; deleted; replaced; updated } =
+        Rs.total (CCList.map (fun (_, steps) -> Rs.of_steps_or_none steps) dirspaces)
+      in
+      `Assoc
+        [
+          ("created", `String (Rs.count_str created));
+          ("updated", `String (Rs.count_str updated));
+          ("replaced", `String (Rs.count_str replaced));
+          ("deleted", `String (Rs.count_str deleted));
+        ]
+    in
     let denied_dirspaces =
       match work_manifest.Wm.denied_dirspaces with
       | [] -> [ ("denied_dirspaces", `List []) ]
@@ -510,12 +532,14 @@ module Publisher_tools = struct
                ("compact_view", `Bool (view = `Compact));
                ("compact_dirspaces", `Bool (CCList.length dirspaces > 5));
                ("summary", `Bool summary);
+               ("resource_totals", resource_totals);
                ( "dirspaces",
                  `List
                    (CCList.map
                       (fun (({ Terrat_dirspace.dir; workspace } as dirspace), steps) ->
                         let has_changes = steps_has_changes steps in
                         let success = steps_success steps in
+                        let rs = Rs.of_steps_or_none steps in
                         let run_url =
                           match
                             CCList.assoc_opt
@@ -540,6 +564,10 @@ module Publisher_tools = struct
                                  );
                                  ("has_changes", `Bool has_changes);
                                  ("run_url", run_url);
+                                 ("created", `String (Rs.count_str rs.Rs.created));
+                                 ("updated", `String (Rs.count_str rs.Rs.updated));
+                                 ("replaced", `String (Rs.count_str rs.Rs.replaced));
+                                 ("deleted", `String (Rs.count_str rs.Rs.deleted));
                                ];
                              ]))
                       dirspaces) );

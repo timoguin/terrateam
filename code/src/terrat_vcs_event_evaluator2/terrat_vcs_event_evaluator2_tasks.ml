@@ -3394,20 +3394,29 @@ struct
           >>= fun account ->
           fetch Keys.repo
           >>= fun repo ->
+          fetch Keys.repo_config
+          >>= fun repo_config ->
+          let run_type = Wm.Step.to_string Wm.Step.Apply in
           let checks =
-            CCList.map
-              (fun (work_manifest, dirspace) ->
-                S.Commit_check.make_dirspace
-                  ~config:(Builder.State.config s)
-                  ~description:"Completed"
-                  ~run_type:(Wm.Step.to_string Wm.Step.Apply)
-                  ~dirspace
-                  ~status:Terrat_commit_check.Status.Completed
-                  ~work_manifest
-                  ~repo
-                  ~account
-                  ())
-              applied_changes
+            if
+              Terrat_base_repo_config_v1.Notifications.dirspace_status_checks_enabled
+                (Terrat_base_repo_config_v1.notifications repo_config)
+                ~run:`Apply
+            then
+              CCList.map
+                (fun (work_manifest, dirspace) ->
+                  S.Commit_check.make_dirspace
+                    ~config:(Builder.State.config s)
+                    ~description:"Completed"
+                    ~run_type
+                    ~dirspace
+                    ~status:Terrat_commit_check.Status.Completed
+                    ~work_manifest
+                    ~repo
+                    ~account
+                    ())
+                applied_changes
+            else []
           in
           fetch Keys.branch_ref
           >>= fun branch_ref ->

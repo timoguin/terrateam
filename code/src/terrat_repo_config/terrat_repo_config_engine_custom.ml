@@ -30,6 +30,10 @@ module Plan = struct
   type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
 
+module Resource_summary = struct
+  type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
+end
+
 module Unsafe_apply = struct
   type t = string list [@@deriving yojson { strict = false; meta = true }, show, eq]
 end
@@ -41,6 +45,7 @@ type t = {
   name : Name.t;
   outputs : Outputs.t option; [@default None]
   plan : Plan.t option; [@default None]
+  resource_summary : Resource_summary.t option; [@default None]
   unsafe_apply : Unsafe_apply.t option; [@default None]
 }
 [@@deriving yojson { strict = true; meta = true }, make, show, eq]

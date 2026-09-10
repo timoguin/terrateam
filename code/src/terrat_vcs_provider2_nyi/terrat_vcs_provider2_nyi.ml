@@ -108,6 +108,11 @@ end
 
 module Comment = struct
   let publish_comment ~request_id client user pull_request msg = raise (Failure "nyi")
+  let drain_unified_comment ~request_id config storage work_manifest_id = raise (Failure "nyi")
+  let mark_unified_comment_dirty ~request_id db work_manifest_id = raise (Failure "nyi")
+
+  let publish_unified_comment_at_start ~request_id ~repo_config config db work_manifest_id =
+    raise (Failure "nyi")
 end
 
 module Repo_config = struct
@@ -125,6 +130,7 @@ module Commit_check = struct
 
   let make_dirspace
       ?work_manifest
+      ?resource_summary
       ~config
       ~description
       ~run_type

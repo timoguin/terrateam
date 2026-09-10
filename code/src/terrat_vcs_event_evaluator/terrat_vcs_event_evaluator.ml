@@ -3482,6 +3482,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 ~run_type
                 ~dirspace
                 ~status:(status success)
+                ?resource_summary:
+                  (CCList.assoc_opt
+                     ~eq:Terrat_change.Dirspace.equal
+                     dirspace
+                     result.Wmr.dirspaces_resource_summary)
                 ~work_manifest
                 ~repo
                 ~account

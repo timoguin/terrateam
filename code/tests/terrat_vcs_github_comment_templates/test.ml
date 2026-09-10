@@ -459,11 +459,12 @@ let details_balance body =
   in
   go 0 0 0
 
-let apply_complete2_kv ~compact_view ~applied ~num_dirspaces =
+let apply_complete2_kv ?(summary_unified = false) ~compact_view ~applied ~num_dirspaces () =
   `Assoc
     [
       ("overall_success", `Bool true);
       ("summary", `Bool true);
+      ("summary_unified", `Bool summary_unified);
       ("account_status", `String "active");
       ("trial_end_days", `Int 0);
       ("is_layered_run", `Bool false);
@@ -507,7 +508,7 @@ let apply_complete2_kv ~compact_view ~applied ~num_dirspaces =
 let test_apply_complete2_details ~name ~compact_view ~applied ~num_dirspaces =
   Oth.test ~tags:[ "comment_details" ] ~name (fun _ ->
       let body =
-        render Tmpl.apply_complete2 (apply_complete2_kv ~compact_view ~applied ~num_dirspaces)
+        render Tmpl.apply_complete2 (apply_complete2_kv ~compact_view ~applied ~num_dirspaces ())
       in
       let depth, min_depth = details_balance body in
       Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
@@ -564,11 +565,45 @@ let test_terrateam_brand_rewrite =
 (* #2038: a plan whose dirspaces all came back with no changes must not tell the
    reader to apply, and a layered run must say the next layer follows on its
    own. *)
-let plan_complete2_kv ~changes ~is_layered_run ~num_more_layers =
+(* Resource counts from the plan step's [resource_summary] payload. *)
+type counts = {
+  created : int;
+  updated : int;
+  replaced : int;
+  deleted : int;
+}
+
+let plan_complete2_kv
+    ?counts
+    ?(summary_unified = false)
+    ~changes
+    ~is_layered_run
+    ~num_more_layers
+    () =
+  let created, updated, replaced, deleted =
+    CCOption.map
+      (fun { created; updated; replaced; deleted } ->
+        ( CCInt.to_string created,
+          CCInt.to_string updated,
+          CCInt.to_string replaced,
+          CCInt.to_string deleted ))
+      counts
+    |> CCOption.get_or ~default:("-", "-", "-", "-")
+  in
+  let resource_totals =
+    `Assoc
+      [
+        ("created", `String created);
+        ("updated", `String updated);
+        ("replaced", `String replaced);
+        ("deleted", `String deleted);
+      ]
+  in
   `Assoc
     [
       ("overall_success", `Bool true);
       ("summary", `Bool true);
+      ("summary_unified", `Bool summary_unified);
       ("account_status", `String "active");
       ("trial_end_days", `Int 0);
       ("is_layered_run", `Bool is_layered_run);
@@ -604,8 +639,13 @@ let plan_complete2_kv ~changes ~is_layered_run ~num_more_layers =
                    ("has_changes", `Bool has_changes);
                    ("run_url", `Null);
                    ("applied", `Bool false);
+                   ("created", `String created);
+                   ("updated", `String updated);
+                   ("replaced", `String replaced);
+                   ("deleted", `String deleted);
                  ])
              changes) );
+      ("resource_totals", resource_totals);
     ]
 
 let apply_footer = "To apply all these changes, comment:"
@@ -617,7 +657,7 @@ let test_plan_complete2_no_changes_more_layers =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains_all ~haystack:body ~needles:[ no_changes_layer; next_layer ];
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
@@ -629,7 +669,7 @@ let test_plan_complete2_no_changes_last_layer =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:1)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:1 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:no_changes_layer;
       Oth.Assert.str_contains ~haystack:body ~needle:"with 1 layer remaining to apply";
@@ -641,18 +681,139 @@ let test_plan_complete2_no_changes_not_layered =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:false ~num_more_layers:0)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:false ~num_more_layers:0 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"There are no changes.";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"in this layer";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
+
+(* The summary header carries the per-dirspace resource counts from the plan step's
+   [resource_summary] payload, plus a totals row (#1929). *)
+let test_plan_complete2_resource_summary =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: resource summary counts" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv
+             ~counts:{ created = 2; updated = 1; replaced = 0; deleted = 3 }
+             ~changes:[ true ]
+             ~is_layered_run:false
+             ~num_more_layers:0
+             ())
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Created | Updated | Replaced | Deleted";
+      Oth.Assert.str_contains ~haystack:body ~needle:"| 2 | 1 | 0 | 3 |";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**Total**";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**2** | **1** | **0** | **3**")
+
+let test_plan_complete2_resource_summary_missing =
+  Oth.test
+    ~tags:[ "plan_complete" ]
+    ~name:"Plan complete: missing resource summary renders dashes"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:false ~num_more_layers:0 ())
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"| - | - | - | - |";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**-** | **-** | **-** | **-** |")
+
+(* In pull_request summary mode the classic comment collapses its changes table into a
+   [<details>] whose summary line carries the totals of the table (#1929). *)
+let test_plan_complete2_unified_details =
+  Oth.test
+    ~tags:[ "plan_complete" ]
+    ~name:"Plan complete: unified mode wraps the changes table in details"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv
+             ~summary_unified:true
+             ~counts:{ created = 2; updated = 1; replaced = 0; deleted = 3 }
+             ~changes:[ true ]
+             ~is_layered_run:false
+             ~num_more_layers:0
+             ())
+      in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"<summary>1 dirspace · 1 with changes · 0 no changes · 0 failed</summary>";
+      (* A blank line must follow the </summary>: without it GitHub renders the
+         table as literal text. *)
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"</summary>\n\n| Directory | Workspace | Result |";
+      (* The counts live in the summary line, not repeated bold above it. *)
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"**1 dirspace";
+      let depth, min_depth = details_balance body in
+      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
+      Oth.Assert.true_
+        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
+        (min_depth >= 0))
+
+(* Header mode, or the summary disabled: the table stays unwrapped and always present. *)
+let test_plan_complete2_header_keeps_table_open =
+  Oth.test
+    ~tags:[ "plan_complete" ]
+    ~name:"Plan complete: header mode keeps the changes table unwrapped"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv
+             ~counts:{ created = 2; updated = 1; replaced = 0; deleted = 3 }
+             ~changes:[ true ]
+             ~is_layered_run:false
+             ~num_more_layers:0
+             ())
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Created | Updated | Replaced | Deleted";
+      (* Header mode keeps the bold counts line and the table unwrapped: no
+         summary wrapping the table. *)
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"**1 dirspace · 1 with changes · 0 no changes · 0 failed**\n\n| Directory |";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"<summary>1 dirspace")
+
+let test_apply_complete2_unified_details =
+  Oth.test
+    ~tags:[ "comment_details" ]
+    ~name:"Apply complete: unified mode wraps the dirspace table in details"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.apply_complete2
+          (apply_complete2_kv
+             ~summary_unified:true
+             ~compact_view:false
+             ~applied:false
+             ~num_dirspaces:3
+             ())
+      in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"<summary>3 dirspaces · 3 applied · 0 failed</summary>";
+      (* A blank line must follow the </summary>: without it GitHub renders the
+         table as literal text. *)
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"</summary>\n\n| Directory | Workspace | Result |";
+      (* The counts live in the summary line, not repeated bold above it. *)
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"**3 dirspaces";
+      let depth, min_depth = details_balance body in
+      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
+      Oth.Assert.true_
+        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
+        (min_depth >= 0))
 
 let test_plan_complete2_changes_keep_apply =
   Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: changes keep the apply footer" (fun _ ->
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"There are no changes")
@@ -666,7 +827,7 @@ let test_plan_complete2_mixed_keeps_apply =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ true; false ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ true; false ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:no_changes_layer)
@@ -677,6 +838,11 @@ let test =
       test_plan_complete2_no_changes_more_layers;
       test_plan_complete2_no_changes_last_layer;
       test_plan_complete2_no_changes_not_layered;
+      test_plan_complete2_resource_summary;
+      test_plan_complete2_resource_summary_missing;
+      test_plan_complete2_unified_details;
+      test_plan_complete2_header_keeps_table_open;
+      test_apply_complete2_unified_details;
       test_plan_complete2_changes_keep_apply;
       test_plan_complete2_mixed_keeps_apply;
       test_published_bodies_carry_the_self_marker;
