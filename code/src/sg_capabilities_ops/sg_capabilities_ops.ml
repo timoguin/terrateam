@@ -1,6 +1,3 @@
-(* A [states] map entry whose resource list is [null] ([None]) means "all resources" in that state,
-   i.e. ["*"].  Shared by [mask] here and by [Sgs_session.Caps.satisfies].  It lives here rather than
-   on [Sgs_session_caps_states] because that module is generated from session-capabilities.json. *)
 let state_resources = CCOption.get_or ~default:[ "*" ]
 
 let granted = function
@@ -482,6 +479,110 @@ let tenant_coverage caps g tenant =
   | None -> Tenant_scope.Not_covered (* the capability itself is absent *)
   | Some tenants -> Tenant_scope.coverage ~list:tenants ~value:tenant
 
+let tenants_permit tenants tenant =
+  CCOption.map_or ~default:true (fun l -> Sg_caps_match.matches l tenant) tenants
+
+let grants_tenant caps g tenant =
+  match tenant_coverage caps g tenant with
+  | Tenant_scope.Not_covered -> false
+  | Tenant_scope.Exact | Tenant_scope.Wider -> true
+
+let state_allow_list states =
+  let additional_list = Sln_map.String.to_list (Sgs_session_caps_states.additional states) in
+  fun key -> Sg_caps_match.lookup additional_list key |> CCOption.map state_resources
+
+type states_denial =
+  | State_not_granted
+  | Resource_not_granted
+[@@deriving show, eq]
+
+(* Why a [states]-shaped restriction -- the [states] or the [subgraph] key of a [commit]/[preview]
+   grant, which share this shape -- refuses one concrete (state, resource), or [None] when it does
+   not refuse it.
+
+   An absent map is no restriction at all and refuses nothing: that is "the capability does not
+   narrow this axis", which is not the same as an allow-list that happens to permit nothing.  When a
+   map is present, no key governing the state puts the state itself out of reach
+   ([State_not_granted]); callers report that separately from a state that is in reach but whose
+   pattern list rejects the address ([Resource_not_granted]). *)
+let states_denial states ~state_id ~fq_address =
+  match states with
+  | None -> None (* no restriction on this axis: every state, every resource *)
+  | Some states -> (
+      match state_allow_list states state_id with
+      | None -> Some State_not_granted
+      | Some resources ->
+          if Sg_caps_match.matches resources fq_address then None else Some Resource_not_granted)
+
+module Db_checks = struct
+  type rule = {
+    state : string;
+    neg : bool;
+    prefix : bool;
+    pat : string;
+  }
+  [@@deriving show, eq]
+
+  type caps = {
+    governed : string list;
+    rules : rule list;
+  }
+  [@@deriving show, eq]
+
+  let encode states =
+    let entries = Sln_map.String.to_list (Sgs_session_caps_states.additional states) in
+    let rule_of_pattern state pattern =
+      let neg = Sg_caps_match.is_negation pattern in
+      let body = if neg then CCString.drop 1 pattern else pattern in
+      match Sg_caps_match.parse_glob body with
+      | Some g -> Ok { state; neg; prefix = g.Sg_caps_match.wild; pat = g.Sg_caps_match.prefix }
+      | None -> Error (`Invalid_pattern_err pattern)
+    in
+    let rules_of_entry (state, value) =
+      CCList.map (rule_of_pattern state) (Sg_caps_match.normalize_list (state_resources value))
+    in
+    CCResult.map
+      (fun rules -> { governed = CCList.map fst entries; rules })
+      (CCResult.flatten_l (CCList.flat_map rules_of_entry entries))
+end
+
+type action =
+  [ `Preview
+  | `Commit
+  ]
+
+type action_grant = {
+  states : Sgs_session_caps_states.t option;
+  subgraph : Sgs_session_caps_states.t option;
+  tenants : Sgs_session_caps_tenants.t option;
+}
+
+(* [preview] and [commit] are two generated records of identical shape, so anything that asks "what
+   does this action restrict" has to write the same two-armed match to reach either one.  This is
+   that match, written once: the generated module names stop here, and callers select fields on a
+   single record instead of restating the duality.  [None] is the capability being absent, which is
+   the same answer both arms would have given -- so a caller that needs the presence check and the
+   fields gets both from one match. *)
+let action_grant caps = function
+  | `Preview ->
+      CCOption.map
+        (fun p ->
+          {
+            states = p.Sgs_session_caps_preview.states;
+            subgraph = p.Sgs_session_caps_preview.subgraph;
+            tenants = p.Sgs_session_caps_preview.tenants;
+          })
+        caps.Sgs_session_caps_capabilities.preview
+  | `Commit ->
+      CCOption.map
+        (fun c ->
+          {
+            states = c.Sgs_session_caps_commit.states;
+            subgraph = c.Sgs_session_caps_commit.subgraph;
+            tenants = c.Sgs_session_caps_commit.tenants;
+          })
+        caps.Sgs_session_caps_capabilities.commit
+
 let grant_tenant ~grants ~tenant caps =
   let apply acc g =
     match acc with
@@ -592,23 +693,12 @@ let scoped_to_tenant ~tenant caps =
     "users-manage"
     (CCOption.map (fun u -> u.Sgs_session_caps_users_manage.tenants) caps.Caps.users_manage)
   >>= fun () ->
-  (match caps.Caps.commit with
+  let check_action name action =
+    match action_grant caps action with
     | None -> Ok []
-    | Some c ->
-        state_ids_to_check
-          ~tenant
-          ~name:"commit"
-          ~states:c.Sgs_session_caps_commit.states
-          ~subgraph:c.Sgs_session_caps_commit.subgraph
-          ~tenants:c.Sgs_session_caps_commit.tenants)
+    | Some g ->
+        state_ids_to_check ~tenant ~name ~states:g.states ~subgraph:g.subgraph ~tenants:g.tenants
+  in
+  check_action "commit" `Commit
   >>= fun commit_ids ->
-  (match caps.Caps.preview with
-    | None -> Ok []
-    | Some p ->
-        state_ids_to_check
-          ~tenant
-          ~name:"preview"
-          ~states:p.Sgs_session_caps_preview.states
-          ~subgraph:p.Sgs_session_caps_preview.subgraph
-          ~tenants:p.Sgs_session_caps_preview.tenants)
-  >>= fun preview_ids -> Ok (commit_ids @ preview_ids)
+  check_action "preview" `Preview >>= fun preview_ids -> Ok (commit_ids @ preview_ids)
