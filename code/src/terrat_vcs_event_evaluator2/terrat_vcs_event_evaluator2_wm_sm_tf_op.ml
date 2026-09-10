@@ -27,6 +27,14 @@ struct
   (* If the number of dirspaces are over this arbitrary threshold, do not create
    dirspace checks. *)
   let dirspace_check_threshold = 50
+
+  (* Which notifications setting governs the per-dirspace checks of a step: an unsafe apply is an
+     apply, and a step with no setting of its own is [`Other]. *)
+  let notifications_run = function
+    | Wm.Step.Apply | Wm.Step.Unsafe_apply -> `Apply
+    | Wm.Step.Plan -> `Plan
+    | Wm.Step.Build_config | Wm.Step.Build_tree | Wm.Step.Index -> `Other
+
   let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
   let create_commit_checks' f branch_ref checks =
@@ -104,38 +112,29 @@ struct
   let partition_by_run_params = Terrat_vcs_event_evaluator2_batch.partition_by_run_params
 
   (* The commit checks for an operation on a work manifest.  Separate from creating them so that
-     callers operating on many work manifests can collect the checks and create them in one call. *)
-  let op_commit_checks config account repo work_manifest description status =
+     callers operating on many work manifests can collect the checks and create them in one call.
+
+     Only the per-dirspace checks, and only when [notifications] asks for them.  A run reported two
+     checks of its own as well, "terrateam <op> pre-hooks" and "terrateam <op> post-hooks"; they
+     said nothing the run's comment does not say, and every repository paid for them on every pull
+     request, so they are not created any more.  The check that holds a pull request until it is
+     applied, "terrateam apply", is made elsewhere and is unaffected. *)
+  let op_commit_checks notifications config account repo work_manifest description status =
     let module Wm = Terrat_work_manifest3 in
     match work_manifest.Wm.changes with
     | [] -> []
     | dirspaces ->
-        let run_type =
+        let step =
           match CCList.rev work_manifest.Wm.steps with
           | [] -> assert false
-          | step :: _ -> Wm.Step.to_string step
+          | step :: _ -> step
         in
-        let aggregate =
-          [
-            S.Commit_check.make_str
-              ~config
-              ~description
-              ~status
-              ~work_manifest
-              ~repo
-              ~account
-              (Printf.sprintf "terrateam %s pre-hooks" run_type);
-            S.Commit_check.make_str
-              ~config
-              ~description
-              ~status
-              ~work_manifest
-              ~repo
-              ~account
-              (Printf.sprintf "terrateam %s post-hooks" run_type);
-          ]
-        in
-        let dirspace_checks =
+        let run_type = Wm.Step.to_string step in
+        if
+          Terrat_base_repo_config_v1.Notifications.dirspace_status_checks_enabled
+            notifications
+            ~run:(notifications_run step)
+        then
           let module Dsf = Terrat_change.Dirspaceflow in
           CCList.map
             (fun { Dsf.dirspace; _ } ->
@@ -150,11 +149,11 @@ struct
                 ~account
                 ())
             dirspaces
-        in
-        aggregate @ dirspace_checks
+        else []
 
   let create_op_commit_checks
       create_commit_checks
+      notifications
       config
       account
       repo
@@ -165,10 +164,11 @@ struct
     create_commit_checks'
       create_commit_checks
       ref_
-      (op_commit_checks config account repo work_manifest description status)
+      (op_commit_checks notifications config account repo work_manifest description status)
 
   let create_op_commit_checks_of_result
       create_commit_checks
+      notifications
       config
       account
       repo
@@ -185,33 +185,19 @@ struct
       | true -> "Completed"
       | false -> "Failed"
     in
-    let run_type =
+    let step =
       match CCList.rev work_manifest.Wm.steps with
       | [] -> assert false
-      | step :: _ -> Wm.Step.to_string step
+      | step :: _ -> step
     in
-    let aggregate =
-      [
-        S.Commit_check.make_str
-          ~config
-          ~description:(description result.Wmr.pre_hooks_success)
-          ~status:(status result.Wmr.pre_hooks_success)
-          ~work_manifest
-          ~repo
-          ~account
-          (Printf.sprintf "terrateam %s pre-hooks" run_type);
-        S.Commit_check.make_str
-          ~config
-          ~description:(description result.Wmr.post_hooks_success)
-          ~status:(status result.Wmr.post_hooks_success)
-          ~work_manifest
-          ~repo
-          ~account
-          (Printf.sprintf "terrateam %s post-hooks" run_type);
-      ]
-    in
+    let run_type = Wm.Step.to_string step in
     let dirspace_checks =
-      if CCList.length result.Wmr.dirspaces_success <= dirspace_check_threshold then
+      if
+        Terrat_base_repo_config_v1.Notifications.dirspace_status_checks_enabled
+          notifications
+          ~run:(notifications_run step)
+        && CCList.length result.Wmr.dirspaces_success <= dirspace_check_threshold
+      then
         CCList.map
           (fun (dirspace, success) ->
             S.Commit_check.make_dirspace
@@ -220,6 +206,11 @@ struct
               ~run_type
               ~dirspace
               ~status:(status success)
+              ?resource_summary:
+                (CCList.assoc_opt
+                   ~eq:Terrat_change.Dirspace.equal
+                   dirspace
+                   result.Wmr.dirspaces_resource_summary)
               ~work_manifest
               ~repo
               ~account
@@ -227,11 +218,11 @@ struct
           result.Wmr.dirspaces_success
       else []
     in
-    let checks = aggregate @ dirspace_checks in
-    create_commit_checks' create_commit_checks ref_ checks
+    create_commit_checks' create_commit_checks ref_ dirspace_checks
 
   let maybe_create_pending_apply_commit_checks
       create_commit_checks
+      notifications
       config
       account
       repo
@@ -247,28 +238,35 @@ struct
         |> Sln_set.String.of_list
       in
       let missing_commit_checks =
-        all_matches
-        |> CCList.filter_map
-             (fun
-               {
-                 Terrat_change_match3.Dirspace_config.dirspace;
-                 when_modified = { Terrat_base_repo_config_v1.When_modified.autoapply; _ };
-                 _;
-               }
-             ->
-               let name = S.Commit_check.make_dirspace_title ~run_type:"apply" dirspace in
-               if (not autoapply) && not (Sln_set.String.mem name commit_check_titles) then
-                 Some
-                   (S.Commit_check.make_dirspace
-                      ~config
-                      ~description:"Waiting"
-                      ~run_type:"apply"
-                      ~dirspace
-                      ~status:Terrat_commit_check.Status.Queued
-                      ~repo
-                      ~account
-                      ())
-               else None)
+        if
+          not
+            (Terrat_base_repo_config_v1.Notifications.dirspace_status_checks_enabled
+               notifications
+               ~run:`Apply)
+        then []
+        else
+          all_matches
+          |> CCList.filter_map
+               (fun
+                 {
+                   Terrat_change_match3.Dirspace_config.dirspace;
+                   when_modified = { Terrat_base_repo_config_v1.When_modified.autoapply; _ };
+                   _;
+                 }
+               ->
+                 let name = S.Commit_check.make_dirspace_title ~run_type:"apply" dirspace in
+                 if (not autoapply) && not (Sln_set.String.mem name commit_check_titles) then
+                   Some
+                     (S.Commit_check.make_dirspace
+                        ~config
+                        ~description:"Waiting"
+                        ~run_type:"apply"
+                        ~dirspace
+                        ~status:Terrat_commit_check.Status.Queued
+                        ~repo
+                        ~account
+                        ())
+                 else None)
       in
       let missing_apply_check =
         if not (Sln_set.String.mem "terrateam apply" commit_check_titles) then
@@ -445,6 +443,7 @@ struct
         >>| fun work_manifest ->
         ( work_manifest,
           op_commit_checks
+            (Terrat_base_repo_config_v1.notifications repo_config)
             (Builder.State.config s)
             account
             repo
@@ -472,6 +471,7 @@ struct
     >>= fun commit_checks ->
     maybe_create_pending_apply_commit_checks
       create_commit_checks
+      (Terrat_base_repo_config_v1.notifications repo_config)
       (Builder.State.config s)
       account
       repo
@@ -504,9 +504,12 @@ struct
       >>= fun branch_ref ->
       fetch Keys.create_commit_checks
       >>= fun create_commit_checks ->
+      fetch Keys.repo_config
+      >>= fun repo_config ->
       let module Status = Terrat_commit_check.Status in
       create_op_commit_checks
         create_commit_checks
+        (Terrat_base_repo_config_v1.notifications repo_config)
         (Builder.State.config s)
         account
         repo
@@ -540,6 +543,17 @@ struct
       in
       fetch Keys.derived_repo_config
       >>= fun (_, repo_config) ->
+      (* Publish the unified summary comment now, before the run can produce
+         any result comment, so the summary is always the first comment of the
+         run.  Best effort: the implementation swallows and logs its errors. *)
+      Builder.run_db s ~f:(fun db ->
+          S.Comment.publish_unified_comment_at_start
+            ~request_id:(Builder.log_id s)
+            ~repo_config
+            (Builder.State.config s)
+            db
+            id)
+      >>= fun () ->
       fetch Keys.synthesized_config
       >>= fun synthesized_config ->
       fetch Keys.dest_branch_name
@@ -593,9 +607,12 @@ struct
       >>= fun branch_ref ->
       fetch Keys.create_commit_checks
       >>= fun create_commit_checks ->
+      fetch Keys.repo_config
+      >>= fun repo_config ->
       let module Status = Terrat_commit_check.Status in
       create_op_commit_checks
         create_commit_checks
+        (Terrat_base_repo_config_v1.notifications repo_config)
         (Builder.State.config s)
         account
         repo
@@ -639,8 +656,11 @@ struct
             >>= fun repo ->
             fetch Keys.create_commit_checks
             >>= fun create_commit_checks ->
+            fetch Keys.repo_config
+            >>= fun repo_config ->
             create_op_commit_checks_of_result
               create_commit_checks
+              (Terrat_base_repo_config_v1.notifications repo_config)
               (Builder.State.config s)
               work_manifest.Wm.account
               repo
@@ -737,8 +757,11 @@ struct
             >>= fun branch_ref ->
             fetch Keys.create_commit_checks
             >>= fun create_commit_checks ->
+            fetch Keys.repo_config
+            >>= fun repo_config ->
             create_op_commit_checks_of_result
               create_commit_checks
+              (Terrat_base_repo_config_v1.notifications repo_config)
               (Builder.State.config s)
               work_manifest.Wm.account
               repo
@@ -861,9 +884,12 @@ struct
       >>= fun branch_ref ->
       fetch Keys.create_commit_checks
       >>= fun create_commit_checks ->
+      fetch Keys.repo_config
+      >>= fun repo_config ->
       let module Status = Terrat_commit_check.Status in
       create_op_commit_checks
         create_commit_checks
+        (Terrat_base_repo_config_v1.notifications repo_config)
         (Builder.State.config s)
         account
         repo
@@ -895,6 +921,17 @@ struct
       in
       fetch Keys.derived_repo_config
       >>= fun (_, repo_config) ->
+      (* Publish the unified summary comment now, before the run can produce
+         any result comment, so the summary is always the first comment of the
+         run.  Best effort: the implementation swallows and logs its errors. *)
+      Builder.run_db s ~f:(fun db ->
+          S.Comment.publish_unified_comment_at_start
+            ~request_id:(Builder.log_id s)
+            ~repo_config
+            (Builder.State.config s)
+            db
+            id)
+      >>= fun () ->
       fetch Keys.synthesized_config
       >>= fun synthesized_config ->
       fetch Keys.dest_branch_name
@@ -939,9 +976,12 @@ struct
       >>= fun branch_ref ->
       fetch Keys.create_commit_checks
       >>= fun create_commit_checks ->
+      fetch Keys.repo_config
+      >>= fun repo_config ->
       let module Status = Terrat_commit_check.Status in
       create_op_commit_checks
         create_commit_checks
+        (Terrat_base_repo_config_v1.notifications repo_config)
         (Builder.State.config s)
         account
         repo

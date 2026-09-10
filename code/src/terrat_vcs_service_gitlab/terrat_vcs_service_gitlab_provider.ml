@@ -4299,6 +4299,15 @@ module Comment = struct
              "WORK_MANIFEST_RUN_FAILED"
              Tmpl.work_manifest_run_failed
              kv
+
+  (* The unified summary comment is not implemented for GitLab yet. *)
+  let drain_unified_comment ~request_id:_ _config _storage _work_manifest_id = Abb.Future.return ()
+
+  let mark_unified_comment_dirty ~request_id:_ _db _work_manifest_id =
+    Abbs_future_combinators.return_ok ()
+
+  let publish_unified_comment_at_start ~request_id:_ ~repo_config:_ _config _db _work_manifest_id =
+    Abbs_future_combinators.return_ok ()
 end
 
 module Repo_config = struct
@@ -4345,6 +4354,27 @@ module Repo_config = struct
       {
         (V1.to_view system_defaults) with
         V1.View.access_control = V1.Access_control.make ~enabled:false ();
+      }
+
+  (* The summary comment is an Enterprise feature, so the Open Source Edition turns it off in the
+     configuration it hands back.  [enabled] has no default of its own, so this is the only place
+     that decides the answer for this edition, and it runs after the premium-feature gate below:
+     the gate still sees the [Some true] that only a repository can write, and stays quiet for a
+     repository that never named the summary.  The system defaults are not the place for this,
+     because a whole notifications section there would join the policy list of every repository. *)
+  let disable_summary repo_config =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let module N = V1.Notifications in
+    let view = V1.to_view repo_config in
+    let notifications = view.V1.View.notifications in
+    V1.of_view
+      {
+        view with
+        V1.View.notifications =
+          {
+            notifications with
+            N.summary = { notifications.N.summary with N.Summary.enabled = Some false };
+          };
       }
 
   let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
@@ -4459,10 +4489,14 @@ module Repo_config = struct
              checks -> Error (`Premium_feature_err `Require_completed_reviews)
     | {
      V1.View.notifications =
-       { V1.Notifications.summary = { V1.Notifications.Summary.enabled = true }; _ };
+       {
+         V1.Notifications.summary =
+           { V1.Notifications.Summary.enabled = Some true; mode = _; output_details = _ };
+         _;
+       };
      _;
     } -> Error (`Premium_feature_err `Notifications_summary)
-    | _ -> Ok (provenance, final_repo_config)
+    | _ -> Ok (provenance, disable_summary final_repo_config)
 end
 
 module Access_control = struct
@@ -4485,6 +4519,7 @@ module Commit_check = struct
 
   let make_dirspace
       ?work_manifest
+      ?resource_summary
       ~config
       ~description
       ~run_type
@@ -4496,7 +4531,8 @@ module Commit_check = struct
     make_str
       ?work_manifest
       ~config
-      ~description
+      ~description:
+        (Terrat_vcs_provider2.Resource_summary.describe ?resource_summary ~description ())
       ~status
       ~repo
       ~account
@@ -5004,6 +5040,13 @@ module Work_manifest = struct
     in
     let pre_hooks_success = steps_success (CCOption.get_or ~default:[] hooks_pre) in
     let post_hooks_success = steps_success (CCOption.get_or ~default:[] hooks_post) in
+    let dirspaces_resource_summary =
+      CCList.filter_map
+        (fun (dirspace, steps) ->
+          CCOption.map (fun resource_summary -> (dirspace, resource_summary))
+          @@ Terrat_vcs_provider2.Resource_summary.of_steps steps)
+        dirspaces
+    in
     let dirspaces_success =
       CCList.map (fun (dirspace, steps) -> (dirspace, steps_success steps)) dirspaces
     in
@@ -5013,6 +5056,7 @@ module Work_manifest = struct
       pre_hooks_success;
       post_hooks_success;
       dirspaces_success;
+      dirspaces_resource_summary;
     }
 end
 

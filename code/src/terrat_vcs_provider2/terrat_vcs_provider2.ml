@@ -55,9 +55,133 @@ module Account_status = struct
   [@@deriving show]
 end
 
+(* Resource counts reported by the runner in the plan step's [resource_summary]
+   payload, computed from `terraform show -json`.  When the runner or engine
+   does not emit them the fields are None (rendered as "-") rather than
+   guessed. *)
+module Resource_summary = struct
+  type t = {
+    created : int option;
+    deleted : int option;
+    replaced : int option;
+    updated : int option;
+  }
+  [@@deriving eq, show]
+
+  (* Nothing reported, which every count renders as "-". *)
+  let none = { created = None; deleted = None; replaced = None; updated = None }
+
+  (* The plan steps whose payload may carry a [resource_summary]. *)
+  let plan_steps = [ "tf/plan"; "pulumi/plan"; "custom/plan"; "fly/plan"; "stategraph/plan" ]
+
+  (* The first plan step in [steps] whose payload carries a resource summary
+      with at least one reported count.  [None] when the runner or engine did
+      not report one, so callers can fall back to a summary-less rendering
+      rather than a table of dashes. *)
+  let of_steps steps =
+    let module Rs = struct
+      type t = {
+        created : int option; [@default None]
+        deleted : int option; [@default None]
+        replaced : int option; [@default None]
+        updated : int option; [@default None]
+      }
+      [@@deriving of_yojson { strict = false }]
+    end in
+    let module P = struct
+      type t = { resource_summary : Rs.t option [@default None] }
+      [@@deriving of_yojson { strict = false }]
+    end in
+    let module O = Terrat_api_components.Workflow_step_output in
+    CCList.find_map
+      (function
+        | { O.step; payload; success = _; ignore_errors = _; scope = _ }
+          when CCList.mem ~eq:CCString.equal step plan_steps -> (
+            match P.of_yojson (O.Payload.to_yojson payload) with
+            | Ok { P.resource_summary = Some { Rs.created; deleted; replaced; updated } }
+              when CCList.exists CCOption.is_some [ created; deleted; replaced; updated ] ->
+                Some { created; deleted; replaced; updated }
+            | _ -> None)
+        | _ -> None)
+      steps
+
+  (* [of_steps] with the summary-less runs folded into {!none}, for renderers that show "-"
+      rather than nothing at all. *)
+  let of_steps_or_none steps = CCOption.get_or ~default:none (of_steps steps)
+
+  (* The totals of [summaries].  Every count is [None] when no summary reported anything, so a
+      run whose engine emits no counts renders a row of "-" rather than a row of zeroes. *)
+  let total summaries =
+    let module Acc = struct
+      type t = {
+        created : int;
+        deleted : int;
+        replaced : int;
+        updated : int;
+        reported : bool;
+      }
+    end in
+    let add acc n = acc + CCOption.get_or ~default:0 n in
+    let { Acc.created; deleted; replaced; updated; reported } =
+      CCList.fold_left
+        (fun { Acc.created; deleted; replaced; updated; reported } s ->
+          {
+            Acc.created = add created s.created;
+            deleted = add deleted s.deleted;
+            replaced = add replaced s.replaced;
+            updated = add updated s.updated;
+            reported =
+              reported
+              || CCList.exists CCOption.is_some [ s.created; s.deleted; s.replaced; s.updated ];
+          })
+        { Acc.created = 0; deleted = 0; replaced = 0; updated = 0; reported = false }
+        summaries
+    in
+    if reported then
+      {
+        created = Some created;
+        deleted = Some deleted;
+        replaced = Some replaced;
+        updated = Some updated;
+      }
+    else none
+
+  (* The GitHub commit status description is truncated in the UI at 140
+      characters. *)
+  let description_limit = 140
+
+  let count_str = function
+    | Some n -> CCInt.to_string n
+    | None -> "-"
+
+  (* [description] suffixed with the counts, e.g.
+      "Completed · 2 created, 1 updated, 0 replaced, 0 deleted".  Without a
+      summary the description is returned unchanged; clipped defensively at
+      {!description_limit}. *)
+  let describe ?resource_summary ~description () =
+    match resource_summary with
+    | None -> description
+    | Some { created; deleted; replaced; updated } ->
+        let text =
+          Printf.sprintf
+            "%s · %s created, %s updated, %s replaced, %s deleted"
+            description
+            (count_str created)
+            (count_str updated)
+            (count_str replaced)
+            (count_str deleted)
+        in
+        if CCString.length text > description_limit then CCString.sub text 0 description_limit
+        else text
+end
+
 module Work_manifest_result = struct
   type t = {
     dirspaces_success : (Terrat_change.Dirspace.t * bool) list;
+    (* Per-dirspace resource counts from the run's plan step.  Legacy results
+       and results without a plan step carry an empty list; the commit check
+       description then falls back to the bare status word. *)
+    dirspaces_resource_summary : (Terrat_change.Dirspace.t * Resource_summary.t) list;
     overall_success : bool;
     post_hooks_success : bool;
     pre_hooks_success : bool;
@@ -597,6 +721,30 @@ module type S = sig
         Api.Config.t )
       Msg.t ->
       (unit, [> `Error ]) result Abb.Future.t
+
+    (** Refresh the unified summary comment of the pull request the given work manifest belongs to,
+        if it has been marked dirty. Runs on its own connections after the result transaction
+        commits and is best effort: it must log and swallow its errors. *)
+    val drain_unified_comment :
+      request_id:string -> Api.Config.t -> Pgsql_pool.t -> Uuidm.t -> unit Abb.Future.t
+
+    (** Mark the unified summary comment of the work manifest's pull request as needing a refresh,
+        but only if the pull request already tracks one. Used by failure paths so aborted runs show
+        up in the comment. *)
+    val mark_unified_comment_dirty :
+      request_id:string -> Db.t -> Uuidm.t -> (unit, [> `Error ]) result Abb.Future.t
+
+    (** Publish the unified summary comment as the given work manifest starts, so it is the first
+        comment of the run. Must run in the caller's open transaction and only for repositories
+        whose summary is enabled in pull_request mode; any other work manifest is ignored. Best
+        effort: errors are logged and swallowed. *)
+    val publish_unified_comment_at_start :
+      request_id:string ->
+      repo_config:Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t ->
+      Api.Config.t ->
+      Db.t ->
+      Uuidm.t ->
+      (unit, [> `Error ]) result Abb.Future.t
   end
 
   module Repo_config : sig
@@ -635,6 +783,7 @@ module type S = sig
 
     val make_dirspace :
       ?work_manifest:('a, 'b) Terrat_work_manifest3.Existing.t ->
+      ?resource_summary:Resource_summary.t ->
       config:Api.Config.t ->
       description:string ->
       run_type:string ->

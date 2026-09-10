@@ -492,6 +492,405 @@ let test_workflow_missing_step_reports_index =
                "Expected Workflows_missing_plan_step_err (1, \"dir:bar\"), got %s"
                (V1.show_of_version_1_json_err err)))
 
+let test_notifications_summary_mode_pull_request =
+  Oth.test ~name:"of_version_1_json: notifications summary mode pull_request" (fun _ ->
+      let module Sum = V1.Notifications.Summary in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("summary", `Assoc [ ("enabled", `Bool true); ("mode", `String "pull_request") ]);
+                ] );
+          ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      let { V1.Notifications.summary; policies = _; plan = _; apply = _ } = V1.notifications cfg in
+      match summary with
+      | { Sum.enabled = Some true; mode = Sum.Mode.Pull_request; output_details = _ } -> ()
+      | _ -> failwith "Expected summary enabled=true with mode=Pull_request")
+
+let test_notifications_summary_mode_default =
+  Oth.test ~name:"of_version_1_json: notifications summary mode defaults to pull_request" (fun _ ->
+      let module Sum = V1.Notifications.Summary in
+      let json =
+        `Assoc [ ("notifications", `Assoc [ ("summary", `Assoc [ ("enabled", `Bool true) ]) ]) ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      let { V1.Notifications.summary; policies = _; plan = _; apply = _ } = V1.notifications cfg in
+      match summary with
+      | { Sum.enabled = Some true; mode = Sum.Mode.Pull_request; output_details = _ } -> ()
+      | _ -> failwith "Expected summary enabled=true with default mode=Pull_request")
+
+(* [enabled] has no default in the schema, so a configuration that never names the summary keeps
+   [None].  [Summary.enabled] reads [None] as on, which is the default of the Enterprise Edition.
+   The Open Source Edition forces [Some false] into the configuration it hands back, after its
+   premium-feature gate has seen the [Some true] that only a repository can write. *)
+let test_notifications_summary_enabled_unset =
+  Oth.test ~name:"of_version_1_json: notifications summary enabled unset" (fun _ ->
+      let module Sum = V1.Notifications.Summary in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json (`Assoc []))
+      in
+      let summary = (V1.notifications cfg).V1.Notifications.summary in
+      (match summary.Sum.enabled with
+      | None -> ()
+      | Some _ -> failwith "Expected an unset summary enabled");
+      Oth.Assert.true_ "An unset enabled reads as on" (Sum.enabled summary))
+
+(* Every configuration layer of a merge passes through [to_version_1].  A repository that sets the
+   mode and not [enabled] must come back with [enabled] still unset, or a layer would say something
+   about the summary that its author never wrote. *)
+let test_notifications_summary_enabled_unset_round_trip =
+  Oth.test ~name:"to_version_1: an unset summary enabled stays unset" (fun _ ->
+      let module Nn = Repo.Notifications in
+      let module Sn = Repo.Notifications_summary in
+      let round_trip summary expected =
+        let json = `Assoc [ ("notifications", `Assoc [ ("summary", summary) ]) ] in
+        let cfg =
+          Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+        in
+        let v1 = V1.to_version_1 cfg in
+        match
+          CCOption.flat_map
+            (fun notifications -> notifications.Nn.summary)
+            v1.Repo.Version_1.notifications
+        with
+        | Some summary ->
+            Oth.Assert.eq
+              ~eq:(CCOption.equal CCBool.equal)
+              ~pp:(fun f v ->
+                Format.pp_print_string
+                  f
+                  (match v with
+                  | Some b -> CCBool.to_string b
+                  | None -> "unset"))
+              expected
+              summary.Sn.enabled
+        | None -> failwith "Round-trip to Version_1 did not produce a summary"
+      in
+      round_trip (`Assoc [ ("mode", `String "header") ]) None;
+      round_trip (`Assoc [ ("enabled", `Bool false) ]) (Some false))
+
+(* [plan] and [apply] are read from the notifications section itself, beside the summary rather
+   than inside it, so a configuration that never mentions the summary still sets them. *)
+let test_notifications_orthogonal_settings =
+  Oth.test
+    ~name:"of_version_1_json: notifications plan/apply visible_on and output_details"
+    (fun _ ->
+      let module N = V1.Notifications in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("plan", `Assoc [ ("visible_on", `String "never") ]);
+                  ("apply", `Assoc [ ("visible_on", `String "failure") ]);
+                  ( "summary",
+                    `Assoc
+                      [
+                        ("enabled", `Bool true);
+                        ("mode", `String "pull_request");
+                        ("output_details", `Assoc [ ("enabled", `Bool true) ]);
+                      ] );
+                ] );
+          ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      match V1.notifications cfg with
+      | {
+       N.policies = _;
+       summary =
+         {
+           N.Summary.enabled = _;
+           mode = N.Summary.Mode.Pull_request;
+           output_details = { N.Summary.Output_details.enabled = true };
+         };
+       plan = { N.Plan.visible_on = N.Visible_on.Never; _ };
+       apply = { N.Apply.visible_on = N.Visible_on.Failure; _ };
+      } -> ()
+      | n -> failwith ("unexpected notifications: " ^ N.show n))
+
+(* No summary at all, so the summary is not what carries these: the plan and apply settings are
+   read on their own. *)
+let test_notifications_orthogonal_settings_without_summary =
+  Oth.test ~name:"of_version_1_json: plan/apply visible_on without a summary" (fun _ ->
+      let module N = V1.Notifications in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("plan", `Assoc [ ("visible_on", `String "never") ]);
+                  ("apply", `Assoc [ ("visible_on", `String "success") ]);
+                ] );
+          ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      match V1.notifications cfg with
+      | {
+       N.policies = _;
+       summary = _;
+       plan = { N.Plan.visible_on = N.Visible_on.Never; _ };
+       apply = { N.Apply.visible_on = N.Visible_on.Success; _ };
+      } -> ()
+      | n -> failwith ("unexpected notifications: " ^ N.show n))
+
+let test_notifications_orthogonal_defaults =
+  Oth.test ~name:"of_version_1_json: notifications orthogonal settings default" (fun _ ->
+      let module N = V1.Notifications in
+      let json =
+        `Assoc [ ("notifications", `Assoc [ ("summary", `Assoc [ ("enabled", `Bool true) ]) ]) ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      match V1.notifications cfg with
+      | {
+       N.policies = _;
+       summary =
+         {
+           N.Summary.enabled = _;
+           mode = _;
+           output_details = { N.Summary.Output_details.enabled = false };
+         };
+       plan = { N.Plan.visible_on = N.Visible_on.Always; _ };
+       apply = { N.Apply.visible_on = N.Visible_on.Always; _ };
+      } -> ()
+      | n -> failwith ("unexpected notifications: " ^ N.show n))
+
+let test_notifications_orthogonal_round_trip =
+  Oth.test ~name:"to_version_1: notifications orthogonal settings round-trip" (fun _ ->
+      let module Nn = Repo.Notifications in
+      let module Sn = Terrat_repo_config.Notifications_summary in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("plan", `Assoc [ ("visible_on", `String "never") ]);
+                  ("apply", `Assoc [ ("visible_on", `String "success") ]);
+                  ( "summary",
+                    `Assoc
+                      [
+                        ("enabled", `Bool true);
+                        ("mode", `String "pull_request");
+                        ("output_details", `Assoc [ ("enabled", `Bool true) ]);
+                      ] );
+                ] );
+          ]
+      in
+      match V1.of_version_1_json json with
+      | Ok cfg -> (
+          let v1 = V1.to_version_1 cfg in
+          match v1.Repo.Version_1.notifications with
+          | Some
+              {
+                Nn.plan = Some { Nn.Plan.visible_on = Some `Never; status_checks = _ };
+                apply = Some { Nn.Apply.visible_on = Some `Success; status_checks = _ };
+                summary =
+                  Some
+                    {
+                      Sn.enabled = Some true;
+                      mode = `Pull_request;
+                      output_details = Some { Sn.Output_details.enabled = true };
+                    };
+                policies = _;
+              } -> ()
+          | _ -> failwith "Round-trip to Version_1 did not produce the notifications settings")
+      | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
+
+(* The per-dirspace commit checks: on unless the configuration turns them off, which is what a
+   repository got before the setting existed.  [dirspace_status_checks_enabled] is what every
+   check-creating site asks, so the table pins each run it maps. *)
+let test_notifications_status_checks_defaults =
+  Oth.test ~name:"of_version_1_json: status_checks defaults" (fun _ ->
+      let module N = V1.Notifications in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json (`Assoc []))
+      in
+      let notifications = V1.notifications cfg in
+      Oth.Assert.Eq.bool
+        ~expected:true
+        ~actual:notifications.N.plan.N.Plan.status_checks.N.Status_checks.enabled;
+      Oth.Assert.Eq.bool
+        ~expected:true
+        ~actual:notifications.N.apply.N.Apply.status_checks.N.Status_checks.enabled;
+      CCList.iter
+        (fun run ->
+          Oth.Assert.Eq.bool
+            ~expected:true
+            ~actual:(N.dirspace_status_checks_enabled notifications ~run))
+        [ `Plan; `Apply; `Other ];
+      ())
+
+let test_notifications_status_checks_configured =
+  Oth.test ~name:"of_version_1_json: status_checks configured" (fun _ ->
+      let module N = V1.Notifications in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("plan", `Assoc [ ("status_checks", `Assoc [ ("enabled", `Bool false) ]) ]);
+                  ("apply", `Assoc [ ("status_checks", `Assoc [ ("enabled", `Bool false) ]) ]);
+                ] );
+          ]
+      in
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+      in
+      let notifications = V1.notifications cfg in
+      Oth.Assert.eq
+        ~eq:N.Plan.equal
+        ~pp:N.Plan.pp
+        notifications.N.plan
+        (* The visible_on stays at its own default, which is what [make] is for. *)
+        (N.Plan.make ~status_checks:(N.Status_checks.make ~enabled:false ()) ());
+      Oth.Assert.eq
+        ~eq:N.Apply.equal
+        ~pp:N.Apply.pp
+        notifications.N.apply
+        (N.Apply.make ~status_checks:(N.Status_checks.make ~enabled:false ()) ());
+      Oth.Assert.Eq.bool
+        ~expected:false
+        ~actual:(N.dirspace_status_checks_enabled notifications ~run:`Plan);
+      Oth.Assert.Eq.bool
+        ~expected:false
+        ~actual:(N.dirspace_status_checks_enabled notifications ~run:`Apply);
+      ())
+
+let test_notifications_status_checks_round_trip =
+  Oth.test ~name:"to_version_1: status_checks round-trip" (fun _ ->
+      let module Nn = Repo.Notifications in
+      let json =
+        `Assoc
+          [
+            ( "notifications",
+              `Assoc
+                [
+                  ("plan", `Assoc [ ("status_checks", `Assoc [ ("enabled", `Bool false) ]) ]);
+                  ("apply", `Assoc [ ("status_checks", `Assoc [ ("enabled", `Bool true) ]) ]);
+                ] );
+          ]
+      in
+      match V1.of_version_1_json json with
+      | Ok cfg -> (
+          let v1 = V1.to_version_1 cfg in
+          match v1.Repo.Version_1.notifications with
+          | Some
+              {
+                Nn.plan =
+                  Some { Nn.Plan.status_checks = Some { Nn.Plan.Status_checks.enabled = false }; _ };
+                apply =
+                  Some
+                    { Nn.Apply.status_checks = Some { Nn.Apply.Status_checks.enabled = true }; _ };
+                _;
+              } -> ()
+          | _ -> failwith "Round-trip to Version_1 did not produce the status_checks settings")
+      | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
+
+(* The classic-comment decision table.  [visible_on] alone decides, apart from the gates and
+   denials that always post: the summary's [enabled] and [mode] are in the table only to pin that
+   they no longer change the answer. *)
+let test_notifications_classic_comment_visible =
+  Oth.test ~name:"classic_comment_visible decision table" (fun _ ->
+      let module N = V1.Notifications in
+      let module Sum = N.Summary in
+      let module Vo = N.Visible_on in
+      let t ~enabled ~mode ~plan_vo ~apply_vo =
+        N.make
+          ~summary:(Sum.make ~enabled:(Some enabled) ~mode ())
+          ~plan:(N.Plan.make ~visible_on:plan_vo ())
+          ~apply:(N.Apply.make ~visible_on:apply_vo ())
+          ()
+      in
+      let pr = Sum.Mode.Pull_request and hd = Sum.Mode.Header in
+      (* (enabled, mode, plan_vo, apply_vo, run, success, gates, expected) *)
+      let cases =
+        [
+          (true, pr, Vo.Never, Vo.Never, `Plan, true, false, false);
+          (true, pr, Vo.Never, Vo.Never, `Apply, true, false, false);
+          (true, pr, Vo.Always, Vo.Always, `Plan, false, false, true);
+          (true, pr, Vo.Success, Vo.Never, `Plan, true, false, true);
+          (true, pr, Vo.Success, Vo.Never, `Plan, false, false, false);
+          (true, pr, Vo.Failure, Vo.Never, `Plan, false, false, true);
+          (true, pr, Vo.Failure, Vo.Never, `Plan, true, false, false);
+          (* visible_on is per run kind *)
+          (true, pr, Vo.Never, Vo.Always, `Apply, true, false, true);
+          (* forced posts: gates and access-control denials *)
+          (true, pr, Vo.Never, Vo.Never, `Plan, true, true, true);
+          (* header mode does not force the comment: the header goes with it *)
+          (true, hd, Vo.Never, Vo.Never, `Plan, true, false, false);
+          (true, hd, Vo.Always, Vo.Always, `Plan, true, false, true);
+          (* summary disabled: the setting still decides *)
+          (false, pr, Vo.Never, Vo.Never, `Plan, true, false, false);
+          (false, pr, Vo.Always, Vo.Always, `Plan, true, false, true);
+        ]
+      in
+      CCList.iter
+        (fun (enabled, mode, plan_vo, apply_vo, run, success, gates, expected) ->
+          let t = t ~enabled ~mode ~plan_vo ~apply_vo in
+          let actual = N.classic_comment_visible t ~run ~success ~gates_or_denials:gates in
+          (* The message names the row: a bare equality assertion on a table of thirteen says
+             which value was wrong and not which case produced it. *)
+          Oth.Assert.true_
+            (Printf.sprintf
+               "classic_comment_visible enabled=%b run=%s success=%b gates=%b: expected %b"
+               enabled
+               (match run with
+               | `Plan -> "plan"
+               | `Apply -> "apply")
+               success
+               gates
+               expected)
+            (actual = expected))
+        cases)
+
+let test_notifications_summary_mode_round_trip =
+  Oth.test ~name:"to_version_1: notifications summary mode round-trips" (fun _ ->
+      let module Sn = Repo.Notifications_summary in
+      let round_trip mode_str expected =
+        let json =
+          `Assoc
+            [
+              ( "notifications",
+                `Assoc
+                  [ ("summary", `Assoc [ ("enabled", `Bool true); ("mode", `String mode_str) ]) ] );
+            ]
+        in
+        let cfg =
+          Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+        in
+        let v1 = V1.to_version_1 cfg in
+        match v1.Repo.Version_1.notifications with
+        | Some
+            {
+              Repo.Notifications.summary = Some { Sn.enabled = Some true; mode; output_details = _ };
+              policies = _;
+              plan = _;
+              apply = _;
+            } ->
+            if mode <> expected then
+              failwith (Printf.sprintf "Round-trip of mode %s produced a different mode" mode_str)
+        | _ -> failwith "Round-trip to Version_1 did not produce a notifications summary"
+      in
+      round_trip "pull_request" `Pull_request;
+      round_trip "header" `Header)
+
 (* A glob in the repository configuration that the glob parser rejects.
 
    The [dirs] section is keyed by directory, and a key containing a '*' is a
@@ -605,6 +1004,40 @@ let test_derive_glob_dir_valid =
       let (_ : V1.derived V1.t) = Oth.Assert.ok_pp ~pp:V1.pp_derive_err (derive_dirs_key "foo/*") in
       ())
 
+(* The custom engine's [resource_summary] program is read from the repository config and written
+   back into the work manifest's engine block, which is where the runner picks it up.  Both
+   directions are pinned here: a key that survives only one of them never reaches the runner. *)
+let test_engine_custom_resource_summary =
+  Oth.test ~name:"engine custom resource_summary round-trip" (fun _ ->
+      let cmd = [ "my-summary"; "--json" ] in
+      let json =
+        `Assoc
+          [
+            ( "engine",
+              `Assoc
+                [
+                  ("name", `String "custom");
+                  ("plan", `List [ `String "my-plan" ]);
+                  ("resource_summary", `List (CCList.map (fun s -> `String s) cmd));
+                ] );
+          ]
+      in
+      match V1.of_version_1_json json with
+      | Ok cfg -> (
+          (match V1.engine cfg with
+          | V1.Engine.Custom { V1.Engine.Custom.resource_summary = Some rs; _ }
+            when CCList.equal CCString.equal rs cmd -> ()
+          | other ->
+              failwith
+                (Printf.sprintf
+                   "of_version_1_json did not read resource_summary, got %s"
+                   (pp_engine other)));
+          match (V1.to_version_1 cfg).Repo.Version_1.engine with
+          | Some (Repo.Engine.Engine_custom { Repo.Engine_custom.resource_summary = Some rs; _ })
+            when CCList.equal CCString.equal rs cmd -> ()
+          | _ -> failwith "to_version_1 did not write resource_summary back")
+      | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
+
 let test =
   Oth.parallel
     [
@@ -640,6 +1073,20 @@ let test =
       test_derive_reports_ambiguous_star_star;
       test_bad_glob_shows_everything_needed_to_diagnose;
       test_derive_glob_dir_valid;
+      test_notifications_summary_mode_pull_request;
+      test_notifications_summary_mode_default;
+      test_notifications_summary_enabled_unset;
+      test_notifications_summary_enabled_unset_round_trip;
+      test_notifications_orthogonal_settings;
+      test_notifications_orthogonal_settings_without_summary;
+      test_notifications_orthogonal_defaults;
+      test_notifications_orthogonal_round_trip;
+      test_notifications_status_checks_defaults;
+      test_notifications_status_checks_configured;
+      test_notifications_status_checks_round_trip;
+      test_notifications_classic_comment_visible;
+      test_notifications_summary_mode_round_trip;
+      test_engine_custom_resource_summary;
     ]
 
 let () =

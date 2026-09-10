@@ -3,14 +3,23 @@
   {%- if summary and dirspaces %}
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set applied = dirspaces | selectattr("success") | list %}
+{%- set counts = (dirspaces | length | string) ~ " dirspace" ~ ("s" if dirspaces | length != 1 else "") ~ " · " ~ (applied | length | string) ~ " applied · " ~ (failed | length | string) ~ " failed" %}
+{%- if summary_unified %}
+<details>
+  <summary>{{ counts }}</summary>
+{% else %}
 
-**{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ applied | length }} applied · {{ failed | length }} failed
-
+**{{ counts }}**
+{% endif %}
 | Directory | Workspace | Result |
 | --- | --- | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.success %}:white_check_mark:{% else %}:x:{% endif %} |
     {%- endfor %}
+{%- if summary_unified %}
+
+</details>
+{%- endif %}
 
   {%- endif %}
   {%- if account_status == 'trial_ending' %}
@@ -59,14 +68,23 @@ Not all [dirspaces](https://docs.terrateam.io/getting-started/concepts/#dirspace
   {%- if summary and dirspaces %}
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set applied = dirspaces | selectattr("success") | list %}
+{%- set counts = (dirspaces | length | string) ~ " dirspace" ~ ("s" if dirspaces | length != 1 else "") ~ " · " ~ (applied | length | string) ~ " applied · " ~ (failed | length | string) ~ " failed" %}
+{%- if summary_unified %}
+<details>
+  <summary>{{ counts }}</summary>
+{% else %}
 
-**{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ applied | length }} applied · {{ failed | length }} failed
-
+**{{ counts }}**
+{% endif %}
 | Directory | Workspace | Result |
 | --- | --- | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.success %}:white_check_mark:{% else %}:x:{% endif %} |
     {%- endfor %}
+{%- if summary_unified %}
+
+</details>
+{%- endif %}
 
   {%- endif %}
   {%- if work_manifest_url is defined %}

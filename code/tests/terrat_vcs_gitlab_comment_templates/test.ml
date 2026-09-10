@@ -112,7 +112,34 @@ let test_operation_failed_vcs_api_timeout_err =
 (* #2038: a plan whose dirspaces all came back with no changes must not tell the
    reader to apply, and a layered run must say the next layer follows on its
    own. *)
-let plan_complete2_kv ~changes ~is_layered_run ~num_more_layers =
+(* Resource counts from the plan step's [resource_summary] payload. *)
+type counts = {
+  created : int;
+  updated : int;
+  replaced : int;
+  deleted : int;
+}
+
+let plan_complete2_kv ?counts ~changes ~is_layered_run ~num_more_layers () =
+  let created, updated, replaced, deleted =
+    CCOption.map
+      (fun { created; updated; replaced; deleted } ->
+        ( CCInt.to_string created,
+          CCInt.to_string updated,
+          CCInt.to_string replaced,
+          CCInt.to_string deleted ))
+      counts
+    |> CCOption.get_or ~default:("-", "-", "-", "-")
+  in
+  let resource_totals =
+    `Assoc
+      [
+        ("created", `String created);
+        ("updated", `String updated);
+        ("replaced", `String replaced);
+        ("deleted", `String deleted);
+      ]
+  in
   `Assoc
     [
       ("overall_success", `Bool true);
@@ -152,8 +179,13 @@ let plan_complete2_kv ~changes ~is_layered_run ~num_more_layers =
                    ("has_changes", `Bool has_changes);
                    ("run_url", `Null);
                    ("applied", `Bool false);
+                   ("created", `String created);
+                   ("updated", `String updated);
+                   ("replaced", `String replaced);
+                   ("deleted", `String deleted);
                  ])
              changes) );
+      ("resource_totals", resource_totals);
     ]
 
 let apply_footer = "To apply all these changes, comment:"
@@ -165,7 +197,7 @@ let test_plan_complete2_no_changes_more_layers =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains_all ~haystack:body ~needles:[ no_changes_layer; next_layer ];
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
@@ -177,7 +209,7 @@ let test_plan_complete2_no_changes_last_layer =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:1)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:true ~num_more_layers:1 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:no_changes_layer;
       Oth.Assert.str_contains ~haystack:body ~needle:"with 1 layer remaining to apply";
@@ -189,18 +221,50 @@ let test_plan_complete2_no_changes_not_layered =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:false ~num_more_layers:0)
+          (plan_complete2_kv ~changes:[ false ] ~is_layered_run:false ~num_more_layers:0 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"There are no changes.";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"in this layer";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:apply_footer)
+
+(* The summary header carries the per-dirspace resource counts from the plan step's
+   [resource_summary] payload, plus a totals row (#1929). *)
+let test_plan_complete2_resource_summary =
+  Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: resource summary counts" (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv
+             ~counts:{ created = 2; updated = 1; replaced = 0; deleted = 3 }
+             ~changes:[ true ]
+             ~is_layered_run:false
+             ~num_more_layers:0
+             ())
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"Created | Updated | Replaced | Deleted";
+      Oth.Assert.str_contains ~haystack:body ~needle:"| 2 | 1 | 0 | 3 |";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**Total**";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**2** | **1** | **0** | **3**")
+
+let test_plan_complete2_resource_summary_missing =
+  Oth.test
+    ~tags:[ "plan_complete" ]
+    ~name:"Plan complete: missing resource summary renders dashes"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:false ~num_more_layers:0 ())
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"| - | - | - | - |";
+      Oth.Assert.str_contains ~haystack:body ~needle:"**-** | **-** | **-** | **-** |")
 
 let test_plan_complete2_changes_keep_apply =
   Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: changes keep the apply footer" (fun _ ->
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ true ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"There are no changes")
@@ -214,7 +278,7 @@ let test_plan_complete2_mixed_keeps_apply =
       let body =
         render
           Tmpl.plan_complete2
-          (plan_complete2_kv ~changes:[ true; false ] ~is_layered_run:true ~num_more_layers:3)
+          (plan_complete2_kv ~changes:[ true; false ] ~is_layered_run:true ~num_more_layers:3 ())
       in
       Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:no_changes_layer)
@@ -225,6 +289,8 @@ let test =
       test_plan_complete2_no_changes_more_layers;
       test_plan_complete2_no_changes_last_layer;
       test_plan_complete2_no_changes_not_layered;
+      test_plan_complete2_resource_summary;
+      test_plan_complete2_resource_summary_missing;
       test_plan_complete2_changes_keep_apply;
       test_plan_complete2_mixed_keeps_apply;
       test_operation_failed_vcs_api_timeout_err;

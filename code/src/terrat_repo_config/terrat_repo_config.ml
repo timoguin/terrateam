@@ -83,6 +83,7 @@ module Storage_plan_cmd = Terrat_repo_config_storage_plan_cmd
 module Storage_plan_none = Terrat_repo_config_storage_plan_none
 module Storage_plan_s3 = Terrat_repo_config_storage_plan_s3
 module Storage_plan_terrateam = Terrat_repo_config_storage_plan_terrateam
+module Summary_visible_on = Terrat_repo_config_summary_visible_on
 module Tags = Terrat_repo_config_tags
 module Terraform_version = Terrat_repo_config_terraform_version
 module Tree_builder = Terrat_repo_config_tree_builder
