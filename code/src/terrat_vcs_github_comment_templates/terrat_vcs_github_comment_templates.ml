@@ -48,6 +48,11 @@ module Tmpl = struct
   let jinja s = Terrat_brand.rewrite_template s
   let terrateam_comment_help = read [%blob "tmpl/terrateam_comment_help.tmpl"]
 
+  (* The same command list as [terrateam_comment_help], posted when the comment
+     names a command we do not have.  It lives here, beside the help text it
+     mirrors, so both go through the brand rewrite from one place. *)
+  let terrateam_comment_unknown_action = jinja [%blob "tmpl/terrateam_comment_unknown_action.tmpl"]
+
   let apply_requirements_config_err_tag_query =
     read [%blob "tmpl/apply_requirements_config_err_tag_query.tmpl"]
 

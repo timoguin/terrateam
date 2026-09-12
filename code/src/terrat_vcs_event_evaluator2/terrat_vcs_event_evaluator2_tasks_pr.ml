@@ -1204,8 +1204,8 @@ struct
           let module T = Tjc.Job.Type_ in
           let command_and_query =
             match job.Tjc.Job.type_ with
-            | T.Apply { tag_query; kind = _; force = _ } -> Some ("terrateam apply", tag_query)
-            | T.Plan { tag_query; kind = _ } -> Some ("terrateam plan", tag_query)
+            | T.Apply { tag_query; kind = _; force = _ } -> Some ("apply", tag_query)
+            | T.Plan { tag_query; kind = _ } -> Some ("plan", tag_query)
             | T.Autoapply
             | T.Autoplan
             | T.Gate_approval _

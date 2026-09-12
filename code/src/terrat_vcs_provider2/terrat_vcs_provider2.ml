@@ -330,6 +330,10 @@ module Msg = struct
         work_manifest : ('account, 'target) Terrat_work_manifest3.Existing.t;
       }
     | Tag_query_dropped_dirspaces of {
+        (* The bare command, ["apply"] or ["plan"], with no trigger word in
+           front of it.  The trigger word is brand-dependent, so it belongs in
+           the template, where the brand rewrite reaches it; a value handed to
+           the renderer is never rewritten. *)
         command : string;
         suggestion : string;
         dirspaces : Terrat_change.Dirspace.t list;

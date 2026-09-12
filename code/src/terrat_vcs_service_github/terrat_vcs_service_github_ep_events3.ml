@@ -113,9 +113,6 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
 
     let terrateam_comment_tag_query_error =
       read [%blob "tmpl/terrateam_comment_tag_query_error.tmpl"]
-
-    let terrateam_comment_unknown_action =
-      Terrat_brand.rewrite_template [%blob "tmpl/terrateam_comment_unknown_action.tmpl"]
   end
 
   let target_of_user_type = function
@@ -721,7 +718,10 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                     ~owner:repository.Gw.Repository.owner.Gw.User.login
                     ~repo:repository.Gw.Repository.name
                     ~pull_number:pull_request_id
-                    ~body:(Terrat_comment.add_self_marker Tmpl.terrateam_comment_unknown_action)))
+                    ~body:
+                      (Terrat_comment.add_self_marker
+                         Terrat_vcs_github_comment_templates.Tmpl.terrateam_comment_unknown_action))
+        )
     | Gw.Issue_comment_event.Issue_comment_created _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_CREATED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
