@@ -20,11 +20,11 @@
     empty list and a list with at least one positive pattern are returned unchanged. *)
 val normalize_list : string list -> string list
 
-(** [matches patterns value] is [true] when [value] is allowed by [patterns]. [patterns] is first
+(** [matches ~patterns value] is [true] when [value] is allowed by [patterns]. [patterns] is first
     run through {!normalize_list}; then [value] must match some positive pattern and no negative
     pattern. An invalid glob never matches. The empty list [[]] denies everything (no positive
     pattern), which is exactly equivalent to [["!*"]] (normalizes to [["*"; "!*"]]). *)
-val matches : string list -> string -> bool
+val matches : patterns:string list -> string -> bool
 
 (** [canonicalize_list l] rewrites [l] into the minimal, evaluation-faithful representation used
     when persisting capabilities (so a stored list reads the way it is evaluated):

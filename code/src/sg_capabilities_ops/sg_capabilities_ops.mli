@@ -381,3 +381,52 @@ val tenant_scope_err_to_string : tenant_scope_err -> string
     the grant otherwise). *)
 val scoped_to_tenant :
   tenant:string -> Sgs_session_caps_capabilities.t -> (string list, tenant_scope_err) result
+
+(** The answer of {!authority_over}. [Tenant_out_of_scope] names one tenant that failed; there may
+    be others. *)
+type authority =
+  | Dominates
+  | Peer_or_greater
+  | Tenant_out_of_scope of string
+[@@deriving show, eq]
+
+(** Whether one session's authority over the {e users} of the installation strictly exceeds another
+    user's.
+
+    Two containments, both required. The actor's [admin] must cover every tenant the target's
+    [admin] reaches, and the actor's [admin] or [users-manage] must cover every tenant the target's
+    [users-manage] reaches — an [admin] grant answers a [users-manage] question at the same scope.
+    Then every tenant the target belongs to must be reached by the actor's [admin] or
+    [users-manage]: without it, acting on a user who belongs elsewhere hands the actor an identity
+    reaching a tenant it holds nothing in.
+
+    Containment is {e strict}, so equal authority is refused, and so is authority neither side
+    contains.
+
+    Writing [A] for an unrestricted grant and [A[t]] for one naming that tenant:
+
+    {v
+      actor             target            target_tenants  result
+      ----------------------------------------------------------------------------
+      admin             users-manage      []              Dominates
+      admin             admin             []              Peer_or_greater
+      users-manage      admin             []              Peer_or_greater
+      users-manage      users-manage      []              Peer_or_greater
+      admin             admin[t1]         []              Dominates
+      admin[t1]         admin[t2]         []              Peer_or_greater
+      admin[t1]         users-manage      []              Peer_or_greater
+      admin[t1]         users-manage[t1]  []              Dominates
+      users-manage[t1]  (none)            [t1]            Dominates
+      users-manage[t1]  (none)            [t1; t2]        Tenant_out_of_scope "t2"
+      users-manage      (none)            [t1; t2]        Dominates
+    v} *)
+val authority_over :
+  actor:Sgs_session_caps_capabilities.t ->
+  target:Sgs_session_caps_capabilities.t ->
+  target_tenants:string list ->
+  authority
+
+(** The first tenant in [target_tenants] that the actor's [admin] or [users-manage] grant does not
+    reach, or [None] when its grant reaches them all. *)
+val unreached_tenant :
+  actor:Sgs_session_caps_capabilities.t -> target_tenants:string list -> string option

@@ -3,44 +3,44 @@ let assert_list expected actual = Oth.Assert.Eq.string_list ~expected ~actual
 
 let matches_positive =
   Oth.test ~name:"matches_positive" (fun _ ->
-      assert_bool true (Sg_caps_match.matches [ "module.foo.*" ] "module.foo.bar");
-      assert_bool false (Sg_caps_match.matches [ "module.foo.*" ] "module.bar.baz");
+      assert_bool true (Sg_caps_match.matches ~patterns:[ "module.foo.*" ] "module.foo.bar");
+      assert_bool false (Sg_caps_match.matches ~patterns:[ "module.foo.*" ] "module.bar.baz");
       ())
 
 let matches_star_all =
   Oth.test ~name:"matches_star_all" (fun _ ->
-      assert_bool true (Sg_caps_match.matches [ "*" ] "anything.at.all");
+      assert_bool true (Sg_caps_match.matches ~patterns:[ "*" ] "anything.at.all");
       ())
 
 let matches_negation =
   Oth.test ~name:"matches_negation" (fun _ ->
       (* allow everything under module.foo except its outputs *)
       let pats = [ "module.foo.*"; "!module.foo.output.*" ] in
-      assert_bool true (Sg_caps_match.matches pats "module.foo.aws_s3_bucket.b");
-      assert_bool false (Sg_caps_match.matches pats "module.foo.output.url");
+      assert_bool true (Sg_caps_match.matches ~patterns:pats "module.foo.aws_s3_bucket.b");
+      assert_bool false (Sg_caps_match.matches ~patterns:pats "module.foo.output.url");
       ())
 
 let matches_implicit_star =
   Oth.test ~name:"matches_implicit_star" (fun _ ->
       (* an all-negation list implies a leading "*" *)
       let pats = [ "!module.foo.*" ] in
-      assert_bool true (Sg_caps_match.matches pats "module.bar.baz");
-      assert_bool false (Sg_caps_match.matches pats "module.foo.bar");
+      assert_bool true (Sg_caps_match.matches ~patterns:pats "module.bar.baz");
+      assert_bool false (Sg_caps_match.matches ~patterns:pats "module.foo.bar");
       ())
 
 let matches_empty_denies =
   Oth.test ~name:"matches_empty_denies" (fun _ ->
-      assert_bool false (Sg_caps_match.matches [] "anything");
+      assert_bool false (Sg_caps_match.matches ~patterns:[] "anything");
       (* [] is equivalent to ["!*"] *)
-      assert_bool false (Sg_caps_match.matches [ "!*" ] "anything");
+      assert_bool false (Sg_caps_match.matches ~patterns:[ "!*" ] "anything");
       ())
 
 let matches_glob_negation =
   Oth.test ~name:"matches_glob_negation" (fun _ ->
       (* negations may themselves be globs *)
       let pats = [ "*"; "!aws_*" ] in
-      assert_bool true (Sg_caps_match.matches pats "google_storage.b");
-      assert_bool false (Sg_caps_match.matches pats "aws_instance.web");
+      assert_bool true (Sg_caps_match.matches ~patterns:pats "google_storage.b");
+      assert_bool false (Sg_caps_match.matches ~patterns:pats "aws_instance.web");
       ())
 
 let normalize_list_cases =
@@ -92,7 +92,10 @@ let canonicalize_preserves_matches =
         (fun pats ->
           let canon = Sg_caps_match.canonicalize_list pats in
           CCList.iter
-            (fun v -> assert_bool (Sg_caps_match.matches pats v) (Sg_caps_match.matches canon v))
+            (fun v ->
+              assert_bool
+                (Sg_caps_match.matches ~patterns:pats v)
+                (Sg_caps_match.matches ~patterns:canon v))
             values)
         inputs;
       ())
@@ -212,8 +215,8 @@ let prop_subsumes_containment =
            (Q.Gen.triple pos_glob_gen pos_glob_gen value_gen)
            (fun (a, b, v) ->
              (not (Sg_caps_match.subsumes a b))
-             || (not (Sg_caps_match.matches [ b ] v))
-             || Sg_caps_match.matches [ a ] v)))
+             || (not (Sg_caps_match.matches ~patterns:[ b ] v))
+             || Sg_caps_match.matches ~patterns:[ a ] v)))
 
 (* If a value matches both globs, [intersects] must report them as overlapping. *)
 let prop_intersects_sound =
@@ -225,7 +228,8 @@ let prop_intersects_sound =
            ~print:(Q.Print.triple pr_s pr_s pr_s)
            (Q.Gen.triple pos_glob_gen pos_glob_gen value_gen)
            (fun (a, b, v) ->
-             (not (Sg_caps_match.matches [ a ] v && Sg_caps_match.matches [ b ] v))
+             (not
+                (Sg_caps_match.matches ~patterns:[ a ] v && Sg_caps_match.matches ~patterns:[ b ] v))
              || Sg_caps_match.intersects a b)))
 
 (* THE security invariant: canonicalization never changes who is allowed. *)
@@ -239,8 +243,8 @@ let prop_canonicalize_preserves =
            (Q.Gen.pair list_gen value_gen)
            (fun (pats, v) ->
              Bool.equal
-               (Sg_caps_match.matches pats v)
-               (Sg_caps_match.matches (Sg_caps_match.canonicalize_list pats) v))))
+               (Sg_caps_match.matches ~patterns:pats v)
+               (Sg_caps_match.matches ~patterns:(Sg_caps_match.canonicalize_list pats) v))))
 
 (* canonicalization is idempotent *)
 let prop_canonicalize_idempotent =
@@ -296,7 +300,7 @@ let shared_fixtures =
         let expected = Yojson.Safe.Util.to_bool (field "matches" case) in
         Oth.test
           ~name:(Printf.sprintf "matches [%s] %S" (CCString.concat "; " patterns) value)
-          (fun _ -> Oth.Assert.Eq.bool ~expected ~actual:(Sg_caps_match.matches patterns value)))
+          (fun _ -> Oth.Assert.Eq.bool ~expected ~actual:(Sg_caps_match.matches ~patterns value)))
       (cases "matches")
   in
   let grants_all_tests =

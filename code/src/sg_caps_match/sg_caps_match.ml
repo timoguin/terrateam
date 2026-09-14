@@ -90,7 +90,7 @@ let glob_matches glob value =
   | Some t -> CCOption.is_some (Lua_pattern.find value t)
   | None -> false
 
-let matches patterns value =
+let matches ~patterns value =
   let patterns = normalize_list patterns in
   let negs, poss = CCList.partition is_negation patterns in
   let any l = CCList.exists (fun g -> glob_matches g value) l in
