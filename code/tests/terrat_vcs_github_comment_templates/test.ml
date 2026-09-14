@@ -99,7 +99,7 @@ let test_tag_query_dropped_dirspaces =
           Tmpl.tag_query_dropped_dirspaces
           (`Assoc
              [
-               ("command", `String "terrateam apply");
+               ("command", `String "apply");
                ("suggestion", `String "dir:a or dir:b or dir:c");
                ( "dirspaces",
                  `List
@@ -116,8 +116,13 @@ let test_tag_query_dropped_dirspaces =
             "Some Directories Were Left Out";
             "| `b` | `default` |";
             "| `c` | `default` |";
-            "terrateam apply dir:a or dir:b or dir:c";
-          ])
+            "stategraph apply dir:a or dir:b or dir:c";
+          ];
+      (* The trigger word comes from the template, so it follows the brand; the
+         command itself is a rendered value and stays as it was handed over. *)
+      Oth.Assert.str_contains
+        ~haystack:(Terrat_brand.to_terrateam body)
+        ~needle:"terrateam apply dir:a or dir:b or dir:c")
 
 let test_matches_in_later_layer =
   Oth.test ~name:"Matches in later layer" (fun _ ->
@@ -329,12 +334,13 @@ let test_missing_plans_mixed_reasons =
       Oth.Assert.str_contains ~haystack:body ~needle:"Plan superseded by #12";
       Oth.Assert.str_contains ~haystack:body ~needle:"The last run for this directory failed")
 
-(* Under TERRAT_BRAND=terrateam these templates open on the word "Terrateam",
-   which is a command trigger word, so the bodies those images publish come back
-   as commands.  The self marker is what keeps this system from answering its own
-   comment.  See [Terrat_comment.is_from_self] and the guard in the event
-   endpoints.  The parse runs on the Terrateam rendering because "stategraph" is
-   not a trigger word yet, see #1593. *)
+(* These templates open on the brand name, and both brand names are command
+   trigger words, so the bodies either image publishes come back as commands.
+   The self marker is what keeps this system from answering its own comment.
+   See [Terrat_comment.is_from_self] and the guard in the event endpoints.
+   Both renderings are checked: "stategraph" joined [Terrat_comment.trigger_words]
+   in #1592, so the shipped bodies parse for the same reason the Terrateam ones
+   always did. *)
 let test_published_bodies_carry_the_self_marker =
   Oth.test ~name:"Published bodies carry the self marker" (fun _ ->
       let templates =
@@ -346,15 +352,20 @@ let test_published_bodies_carry_the_self_marker =
           ("operation_failed_work_manifest_start_err", Tmpl.operation_failed_work_manifest_start_err);
         ]
       in
+      let parses_as_a_command tmpl =
+        match Terrat_comment.parse tmpl with
+        | Ok _ -> true
+        | Error (`Unknown_action _) -> true
+        | Error (`Tag_query_error _) -> true
+        | Error `Not_terrateam -> false
+      in
       Oth.Assert.true_
         "a shipped template still parses as a command"
+        (CCList.exists (fun (_, tmpl) -> parses_as_a_command tmpl) templates);
+      Oth.Assert.true_
+        "a Terrateam-branded template still parses as a command"
         (CCList.exists
-           (fun (_, tmpl) ->
-             match Terrat_comment.parse (Terrat_brand.to_terrateam tmpl) with
-             | Ok _ -> true
-             | Error (`Unknown_action _) -> true
-             | Error (`Tag_query_error _) -> true
-             | Error `Not_terrateam -> false)
+           (fun (_, tmpl) -> parses_as_a_command (Terrat_brand.to_terrateam tmpl))
            templates);
       CCList.iter
         (fun (name, tmpl) ->
@@ -561,6 +572,24 @@ let test_terrateam_brand_rewrite =
       Oth.Assert.str_contains ~haystack:body ~needle:"terrateam apply dir:foo or dir:bar";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"stategraph";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Stategraph")
+
+(* #1651: the unknown-command reply is the one place a reader learns the trigger
+   word, so it is stored in the shipped Stategraph wording and reaches the
+   Terrateam images through the same rewrite as every other template.  The
+   negative needles carry a trailing space: the bare brand name still appears in
+   the docs links, which stay on terrateam.io under both brands. *)
+let test_unknown_action_brand =
+  Oth.test ~tags:[ "brand" ] ~name:"Unknown action lists Stategraph commands" (fun _ ->
+      let body = Tmpl.terrateam_comment_unknown_action in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "List of Stategraph commands:"; "`stategraph plan`"; "`stategraph apply`" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"terrateam ";
+      let body = Terrat_brand.to_terrateam body in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "List of Terrateam commands:"; "`terrateam plan`"; "`terrateam apply`" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"stategraph ")
 
 (* #2038: a plan whose dirspaces all came back with no changes must not tell the
    reader to apply, and a layered run must say the next layer follows on its
@@ -875,6 +904,7 @@ let test =
       test_apply_complete2_details_few_dirspaces_compact_view;
       test_apply_complete2_details_many_dirspaces_applied;
       test_terrateam_brand_rewrite;
+      test_unknown_action_brand;
     ]
 
 let () =
