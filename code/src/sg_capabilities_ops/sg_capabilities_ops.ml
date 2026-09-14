@@ -341,20 +341,20 @@ module Tenant_scope = struct
      so a non-match means [negation] is what denied [value].  Going through [matches] rather than
      stripping the leading ['!'] here keeps the (admittedly obscure) ["!!x"] form -- a negation of the
      literal ["!x"] -- interpreted the same way evaluation interprets it. *)
-  let excludes ~negation ~value = not (Sg_caps_match.matches [ "*"; negation ] value)
+  let excludes ~negation ~value = not (Sg_caps_match.matches ~patterns:[ "*"; negation ] value)
 
   let coverage ~list ~value =
     match list with
     | None -> Wider (* an absent list is the installation-wide grant *)
     | Some list ->
-        if not (Sg_caps_match.matches list value) then Not_covered
+        if not (Sg_caps_match.matches ~patterns:list value) then Not_covered
         else
           let without = CCList.filter (fun pattern -> not (CCString.equal pattern value)) list in
           (* [Exact] means "removing the literal actually stops the match".  Deciding it by mere
              presence of the literal would classify ["T"; "*"] as [Exact], and revoking would then
              remove ["T"] while ["*"] kept granting -- a half-revoke reported as a success. *)
           if CCList.length without = CCList.length list then Wider
-          else if Sg_caps_match.matches without value then Wider
+          else if Sg_caps_match.matches ~patterns:without value then Wider
           else Exact
 
   (* [canonicalize_list] collapses every deny-all shape to exactly ["!*"], so canonicalizing first
@@ -370,7 +370,7 @@ module Tenant_scope = struct
     | None -> Ok None
     (* Already permitted: canonicalize but otherwise leave it alone, so a list that permits [value]
        via an implicit or explicit ["*"] keeps permitting everything else too. *)
-    | Some list when Sg_caps_match.matches list value ->
+    | Some list when Sg_caps_match.matches ~patterns:list value ->
         Ok (Some (Sg_caps_match.canonicalize_list list))
     (* Permits nothing at all, so [value] alone is the whole grant.  Checked before the negation
        analysis below because a deny-all is exactly the shape whose negation (["!*"]) may not be
@@ -480,7 +480,7 @@ let tenant_coverage caps g tenant =
   | Some tenants -> Tenant_scope.coverage ~list:tenants ~value:tenant
 
 let tenants_permit tenants tenant =
-  CCOption.map_or ~default:true (fun l -> Sg_caps_match.matches l tenant) tenants
+  CCOption.map_or ~default:true (fun l -> Sg_caps_match.matches ~patterns:l tenant) tenants
 
 let grants_tenant caps g tenant =
   match tenant_coverage caps g tenant with
@@ -512,7 +512,8 @@ let states_denial states ~state_id ~fq_address =
       match state_allow_list states state_id with
       | None -> Some State_not_granted
       | Some resources ->
-          if Sg_caps_match.matches resources fq_address then None else Some Resource_not_granted)
+          if Sg_caps_match.matches ~patterns:resources fq_address then None
+          else Some Resource_not_granted)
 
 module Db_checks = struct
   type rule = {
@@ -702,3 +703,83 @@ let scoped_to_tenant ~tenant caps =
   check_action "commit" `Commit
   >>= fun commit_ids ->
   check_action "preview" `Preview >>= fun preview_ids -> Ok (commit_ids @ preview_ids)
+
+(* The reach of one tenant-scoped grant, with "every tenant" collapsed into a single case however it
+   is spelled: an absent [tenants] list and a list that grants all (["*"] with no negation) mean the
+   same thing, and comparing them structurally would otherwise make one look narrower than the
+   other. *)
+type reach =
+  | No_grant
+  | Every_tenant
+  | Tenants of string list
+
+let reach caps g =
+  match tenant_scope caps g with
+  | None -> No_grant
+  | Some None -> Every_tenant
+  | Some (Some tenants) when Sg_caps_match.grants_all tenants -> Every_tenant
+  | Some (Some tenants) -> Tenants tenants
+
+let reach_permits r tenant =
+  match r with
+  | No_grant -> false
+  | Every_tenant -> true
+  | Tenants tenants -> Sg_caps_match.matches ~patterns:tenants tenant
+
+(* Whether the reaches in [by] between them cover everything [target] reaches. [by] is a pair
+   because an [admin] grant satisfies a [users-manage] requirement at the same scope, so
+   the question "does the actor cover this users-manage grant" has two possible answers in the
+   actor's capabilities and only needs one of them to say yes. *)
+let covered ~by:(a, b) target =
+  match (target, a, b) with
+  | No_grant, _, _ -> true
+  | Every_tenant, Every_tenant, _ -> true
+  | Every_tenant, _, Every_tenant -> true
+  | Every_tenant, _, _ -> false
+  | Tenants tenants, _, _
+    when CCList.for_all (fun t -> reach_permits a t || reach_permits b t) tenants -> true
+  | Tenants _, _, _ -> false
+
+type authority =
+  | Dominates
+  | Peer_or_greater
+  | Tenant_out_of_scope of string
+[@@deriving show, eq]
+
+(* Whether [actor] holds at least as much authority over users as [target] does. One direction, and
+   not strict: an actor covers its equals too, and [authority_over] is what asks both ways to reject
+   them.
+
+   Writing [A[t]] for a grant naming that tenant:
+
+     admin[t1]         covers          users-manage[t1]
+     users-manage[t1]  does not cover  admin[t1]
+
+   So a tenant administrator outranks a users-manage holder confined to that tenant, while no amount
+   of users-manage reaches an admin grant. *)
+let covers_authority ~actor ~target =
+  let admin_of caps = reach caps `Admin in
+  let users_manage_of caps = reach caps `Users_manage in
+  covered ~by:(admin_of actor, No_grant) (admin_of target)
+  && covered ~by:(admin_of actor, users_manage_of actor) (users_manage_of target)
+
+let unreached_tenant ~actor ~target_tenants =
+  let actor_admin = reach actor `Admin in
+  let actors_users_manage = reach actor `Users_manage in
+  (* A target in no tenant leaves no tenant unreached, so [target_tenants = []] answers [None] for
+     any grant, even one reaching no tenant at all: every [users-manage] holder then reaches that
+     user. One possible fix would be to let only an unrestricted grant ([Every_tenant]) reach a user in no tenant. *)
+  CCList.find_opt
+    (fun t -> not (reach_permits actor_admin t || reach_permits actors_users_manage t))
+    target_tenants
+
+let authority_over ~actor ~target ~target_tenants =
+  match covers_authority ~actor ~target with
+  | false -> (* actor doesn't cover target *) Peer_or_greater
+  | true when covers_authority ~actor:target ~target:actor ->
+      (* actor covers target, but target also covers actor; so they are peers *)
+      Peer_or_greater
+  | true -> (
+      match unreached_tenant ~actor ~target_tenants with
+      | Some tenant -> Tenant_out_of_scope tenant
+      | None -> Dominates)
