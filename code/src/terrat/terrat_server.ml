@@ -92,7 +92,7 @@ let rtng config storage services =
             );
             (* User *)
             (`GET, Rt.whoami () --> Terrat_ep_whoami.get config storage services);
-            (`POST, Rt.logout () --> Terrat_ep_logout.post storage);
+            (`POST, Rt.logout () --> Terrat_ep_logout.post config storage);
             (* Infracost *)
             (`POST, Rt.infracost () --> fun _ -> Terrat_ep_infracost.post config storage);
             (* Server *)
@@ -138,7 +138,7 @@ let run config storage services =
       create (Config.make ~remote_ip_header:"X-Forwarded-For" ~metrics:Metrics.observe ()))
   in
   Logs.info (fun m -> m "Creating storage connection");
-  Terrat_session.create storage
+  Terrat_session.create ~cookie_name:(Terrat_config.session_cookie_name config) storage
   >>= fun mw_session ->
   let mw = Brtl_mw.create [ mw_log; mw_session ] in
   Logs.info (fun m -> m "Starting server");

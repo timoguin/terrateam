@@ -88,6 +88,12 @@ val infracost : t -> Infracost.t option
 val nginx_status_uri : t -> Uri.t option
 val port : t -> int
 val python_exec : t -> string
+
+(** TERRAT_SESSION_COOKIE_NAME (default "session"): the name of the browser session cookie. It must
+    differ from the name of any other auth cookie on the same origin, or each login overwrites the
+    other's session. A value that is not a valid cookie name is a config error. *)
+val session_cookie_name : t -> string
+
 val show_err : err -> string
 val statement_timeout : t -> string
 val telemetry : t -> Telemetry.t

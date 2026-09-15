@@ -115,6 +115,7 @@ type t = {
   nginx_status_uri : Uri.t option;
   port : int;
   python_exec : string;
+  session_cookie_name : string;
   statement_timeout : string;
   telemetry : Telemetry.t;
   terrateam_web_base_url : Uri.t;
@@ -239,6 +240,18 @@ let load_gitlab () =
       Ok
         (Some { Gitlab.access_token; api_base_url; app_id; app_secret; call_timeout; web_base_url })
 
+(* A cookie name is an RFC 7230 token (RFC 6265, section 4.1.1). *)
+let is_cookie_name_char = function
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+  | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^' | '_' | '`' | '|' | '~' -> true
+  | _ -> false
+
+let load_session_cookie_name () =
+  match Sys.getenv_opt "TERRAT_SESSION_COOKIE_NAME" with
+  | None | Some "" -> Ok "session"
+  | Some name when CCString.for_all is_cookie_name_char name -> Ok name
+  | Some _ -> Error (`Key_error "TERRAT_SESSION_COOKIE_NAME: must be a valid cookie name")
+
 let load_gc () =
   let dynamic_gc' () =
     let open CCOption.Infix in
@@ -350,6 +363,8 @@ let create () =
   let statement_timeout =
     CCOption.get_or ~default:"5s" (Sys.getenv_opt "TERRAT_STATEMENT_TIMEOUT")
   in
+  load_session_cookie_name ()
+  >>= fun session_cookie_name ->
   load_github ()
   >>= fun github ->
   load_gitlab ()
@@ -379,6 +394,7 @@ let create () =
       nginx_status_uri;
       port;
       python_exec;
+      session_cookie_name;
       statement_timeout;
       telemetry;
       terrateam_web_base_url;
@@ -404,6 +420,7 @@ let infracost t = t.infracost
 let nginx_status_uri t = t.nginx_status_uri
 let port t = t.port
 let python_exec t = t.python_exec
+let session_cookie_name t = t.session_cookie_name
 let statement_timeout t = t.statement_timeout
 let telemetry t = t.telemetry
 let terrateam_web_base_url t = t.terrateam_web_base_url
