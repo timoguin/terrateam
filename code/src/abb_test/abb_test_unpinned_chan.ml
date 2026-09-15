@@ -312,7 +312,7 @@ module Make (Abb : Abb_intf.S) = struct
             Abb.Task.name ()
             >>| fun name1 ->
             Oth.Assert.Eq.int ~expected:id0 ~actual:id1;
-            Oth.Assert.true_ "task name intact across resume" (name0 = name1))
+            Oth.Assert.true_ (name0 = name1))
         >>= fun task_fut ->
         Abb.Sys.sleep 0.02 >>= fun () -> Abb.Chan.send ch () >>= fun _ -> task_fut)
 

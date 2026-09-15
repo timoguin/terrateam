@@ -38,9 +38,7 @@ let test_simple =
         \    }\n\n\
          Plan: 3 to add, 0 to change, 0 to destroy."
       in
-      Oth.Assert.true_
-        "CCString.equal plan_diff (Terrat_plan_diff.transform plan_text)"
-        (CCString.equal plan_diff (Terrat_plan_diff.transform plan_text)))
+      Oth.Assert.true_ (CCString.equal plan_diff (Terrat_plan_diff.transform plan_text)))
 
 let test = Oth.parallel [ test_simple ]
 

@@ -12,12 +12,7 @@ let filename_oprev = Revops_sys.temp_file ()
 
 let filename =
   Revops.run_in_context filename_oprev (fun filename ->
-      Oth.Assert.true_
-        "is_ok (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ]))"
-        (is_ok (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ])));
+      Oth.Assert.true_ (is_ok (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ])));
       filename)
 
-let () =
-  Oth.Assert.true_
-    "is_error (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ]))"
-    (is_error (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ])))
+let () = Oth.Assert.true_ (is_error (CCResult.guard (fun () -> Unix.access filename [ Unix.F_OK ])))

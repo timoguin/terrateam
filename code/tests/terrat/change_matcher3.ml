@@ -259,7 +259,7 @@ let test_workflow_idx =
                Terrat_change_match3.match_tag_query ~tag_query change)
              workflows)
       in
-      Oth.Assert.true_ "workflow_idx = Some 0" (workflow_idx = Some 0))
+      Oth.Assert.true_ (workflow_idx = Some 0))
 
 let test_workflow_idx_tag_in_dir =
   Oth.test
@@ -307,7 +307,7 @@ let test_workflow_idx_tag_in_dir =
                Terrat_change_match3.match_tag_query ~tag_query change)
              workflows)
       in
-      Oth.Assert.true_ "workflow_idx = Some 0" (workflow_idx = Some 0))
+      Oth.Assert.true_ (workflow_idx = Some 0))
 
 let test_workflow_idx_multiple_dirs =
   Oth.test
@@ -368,7 +368,7 @@ let test_workflow_idx_multiple_dirs =
                Terrat_change_match3.match_tag_query ~tag_query change)
              workflows)
       in
-      Oth.Assert.true_ "workflow_idx = Some 0" (workflow_idx = Some 0))
+      Oth.Assert.true_ (workflow_idx = Some 0))
 
 let test_workflow_override =
   Oth.test ~name:"Test overriding workflow for all" (fun _ ->
@@ -415,7 +415,7 @@ let test_workflow_override =
                    Terrat_change_match3.match_tag_query ~tag_query change)
                  workflows)
           in
-          Oth.Assert.true_ "workflow_idx = Some 0" (workflow_idx = Some 0))
+          Oth.Assert.true_ (workflow_idx = Some 0))
         changes)
 
 let test_dir_match =
@@ -549,11 +549,11 @@ let test_dir_config_iam =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "ec2" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | "iam" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config IAM: unexpected value")
         changes)
 
@@ -585,8 +585,8 @@ let test_dir_config_ebl =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "ebl" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config ebl: unexpected value")
         changes)
 
@@ -618,8 +618,8 @@ let test_dir_config_ebl_modules =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "ebl" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config ebl modules: unexpected value")
         changes)
 
@@ -653,8 +653,8 @@ let test_dir_config_ebl_and_modules =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "ebl" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config ebl and modules: unexpected value")
         changes)
 
@@ -694,8 +694,8 @@ let test_dir_config_s3 =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "s3" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config s3: unexpected value")
         changes)
 
@@ -728,8 +728,8 @@ let test_dir_config_lambda_json =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "lambda" ->
-              Oth.Assert.true_ "when_modified.Wm.autoplan" when_modified.Wm.autoplan;
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.true_ when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config lambda JSON: unexpected value")
         changes)
 
@@ -799,8 +799,8 @@ let test_dir_config_null_file_patterns =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "null_file_patterns" ->
-              Oth.Assert.true_ "not when_modified.Wm.autoplan" (not when_modified.Wm.autoplan);
-              Oth.Assert.true_ "when_modified.Wm.autoapply" when_modified.Wm.autoapply
+              Oth.Assert.not_true when_modified.Wm.autoplan;
+              Oth.Assert.true_ when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Dir Config null_file_patterns: unexpected value")
         changes)
 
@@ -1035,8 +1035,8 @@ let test_recursive_dirs_tags =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "aws/prod/secrets-manager/us-east-1" ->
-              Oth.Assert.true_ "when_modified.Wm.autoplan" when_modified.Wm.autoplan;
-              Oth.Assert.true_ "not when_modified.Wm.autoapply" (not when_modified.Wm.autoapply)
+              Oth.Assert.true_ when_modified.Wm.autoplan;
+              Oth.Assert.not_true when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Recursive Dirs With Tags: unexpected value")
         changes)
 
@@ -1138,8 +1138,8 @@ let test_recursive_dirs_without_tags =
           let module Wm = Terrat_base_repo_config_v1.When_modified in
           match dir with
           | "aws/prod/secrets-manager/us-east-1" | "aws/prod/us-east-1" ->
-              Oth.Assert.true_ "when_modified.Wm.autoplan" when_modified.Wm.autoplan;
-              Oth.Assert.true_ "not when_modified.Wm.autoapply" (not when_modified.Wm.autoapply)
+              Oth.Assert.true_ when_modified.Wm.autoplan;
+              Oth.Assert.not_true when_modified.Wm.autoapply
           | _ -> Oth.Assert.false_ "Test Recursive Dirs Without Tags: unexpected value")
         changes)
 
@@ -1341,7 +1341,7 @@ let test_large_directory_count_matching_files =
         "changes = %s\n%!"
         ([%show: Terrat_change_match3.Dirspace_config.t list] changes);
       Printf.printf "len(changes) = %d\n%!" (CCList.length changes);
-      Oth.Assert.true_ "CCList.length changes = 1 + num_dirs" (CCList.length changes = 1 + num_dirs))
+      Oth.Assert.true_ (CCList.length changes = 1 + num_dirs))
 
 let test_large_file_count_with_low_match_count =
   Oth.test ~name:"Test large file count with low match count" (fun _ ->
@@ -1380,7 +1380,7 @@ let test_large_file_count_with_low_match_count =
              repo_config)
       in
       let changes = CCList.flatten (Terrat_change_match3.match_diff_list dirs diff) in
-      Oth.Assert.true_ "CCList.length changes = num_tf_dirs" (CCList.length changes = num_tf_dirs))
+      Oth.Assert.true_ (CCList.length changes = num_tf_dirs))
 
 let test_large_file_count_with_low_match_count_lesser_dir_depth =
   Oth.test ~name:"Test large file count with low match count lesser dir dpeth" (fun _ ->
@@ -1422,7 +1422,7 @@ let test_large_file_count_with_low_match_count_lesser_dir_depth =
              repo_config)
       in
       let changes = CCList.flatten (Terrat_change_match3.match_diff_list dirs diff) in
-      Oth.Assert.true_ "CCList.length changes = num_tf_dirs" (CCList.length changes = num_tf_dirs))
+      Oth.Assert.true_ (CCList.length changes = num_tf_dirs))
 
 let test_large_directory_count_non_default_when_modified =
   Oth.test ~name:"Test large directory count non default when_modified" (fun _ ->
@@ -1465,7 +1465,7 @@ let test_large_directory_count_non_default_when_modified =
              repo_config)
       in
       let changes = CCList.flatten (Terrat_change_match3.match_diff_list dirs diff) in
-      Oth.Assert.true_ "CCList.length changes = 2 + num_dirs" (CCList.length changes = 2 + num_dirs))
+      Oth.Assert.true_ (CCList.length changes = 2 + num_dirs))
 
 let test_not_match =
   Oth.test ~name:"Test not match" (fun _ ->
@@ -1655,8 +1655,6 @@ let test_index_basic =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       let dirspace = (CCList.hd changes).Terrat_change_match3.Dirspace_config.dirspace in
       Oth.Assert.true_
-        "Terrat_change.Dirspace.equal dirspace Terrat_change.Dirspace.{ dir = \"tf\"; workspace = \
-         \"default\" }"
         (Terrat_change.Dirspace.equal
            dirspace
            Terrat_change.Dirspace.{ dir = "tf"; workspace = "default" }))
@@ -1683,8 +1681,6 @@ let test_index_with_dirs_section =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       let dirspace = (CCList.hd changes).Terrat_change_match3.Dirspace_config.dirspace in
       Oth.Assert.true_
-        "Terrat_change.Dirspace.equal dirspace Terrat_change.Dirspace.{ dir = \"tf\"; workspace = \
-         \"default\" }"
         (Terrat_change.Dirspace.equal
            dirspace
            Terrat_change.Dirspace.{ dir = "tf"; workspace = "default" }))
@@ -1706,8 +1702,6 @@ let test_index_module_in_same_dir =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       let dirspace = (CCList.hd changes).Terrat_change_match3.Dirspace_config.dirspace in
       Oth.Assert.true_
-        "Terrat_change.Dirspace.equal dirspace Terrat_change.Dirspace.{ dir = \"tf\"; workspace = \
-         \"default\" }"
         (Terrat_change.Dirspace.equal
            dirspace
            Terrat_change.Dirspace.{ dir = "tf"; workspace = "default" }))
@@ -1731,8 +1725,6 @@ let test_index_symlinks =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       let dirspace = (CCList.hd changes).Terrat_change_match3.Dirspace_config.dirspace in
       Oth.Assert.true_
-        "Terrat_change.Dirspace.equal dirspace Terrat_change.Dirspace.{ dir = \"tf\"; workspace = \
-         \"default\" }"
         (Terrat_change.Dirspace.equal
            dirspace
            Terrat_change.Dirspace.{ dir = "tf"; workspace = "default" }))
@@ -1773,8 +1765,6 @@ let test_index_symlinks_dir_config =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       let dirspace = (CCList.hd changes).Terrat_change_match3.Dirspace_config.dirspace in
       Oth.Assert.true_
-        "Terrat_change.Dirspace.equal dirspace Terrat_change.Dirspace.{ dir = \"tf\"; workspace = \
-         \"default\" }"
         (Terrat_change.Dirspace.equal
            dirspace
            Terrat_change.Dirspace.{ dir = "tf"; workspace = "default" }))
@@ -2161,15 +2151,11 @@ let test_depends_on_relative_dir =
       in
       let changes = CCList.flatten changes in
       Oth.Assert.true_
-        "CCOption.is_some (CCList.find_opt (dirspace_eq { Terrat_dirspace.dir = \
-         \"projects/proj1/base\"; workspace = \"default\" }) changes)"
         (CCOption.is_some
            (CCList.find_opt
               (dirspace_eq { Terrat_dirspace.dir = "projects/proj1/base"; workspace = "default" })
               changes));
       Oth.Assert.true_
-        "CCOption.is_some (CCList.find_opt (dirspace_eq { Terrat_dirspace.dir = \
-         \"projects/proj1/database\"; workspace = \"default\" }) changes)"
         (CCOption.is_some
            (CCList.find_opt
               (dirspace_eq
@@ -2229,7 +2215,6 @@ let test_depends_on_prune_on_no_change_chain =
           changes
       in
       Oth.Assert.true_
-        "CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ \"d\" ]; [ \"b\" ]; [ \"a\" ] ]"
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "d" ]; [ "b" ]; [ "a" ] ]))
 
 let test_depends_on_prune_on_no_change_all_pruned =
@@ -2275,9 +2260,7 @@ let test_depends_on_prune_on_no_change_all_pruned =
                dirspace.Terrat_dirspace.dir))
           changes
       in
-      Oth.Assert.true_
-        "CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ \"c\" ] ]"
-        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c" ] ]))
+      Oth.Assert.true_ (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c" ] ]))
 
 (* A dirspace belongs in the earliest layer its dependencies allow.
 
@@ -2358,14 +2341,12 @@ let test_layer_is_earliest_possible =
       (* [d] has no dependency, so [d] belongs in the first layer.  This
          assertion does not depend on the hash order Tsort returns. *)
       Oth.Assert.true_
-        "d is in the first layer"
         (CCList.mem
            ~eq:CCString.equal
            "d"
            (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
       (* The whole layering, stated as it should be. *)
       Oth.Assert.true_
-        "layer_dirs = [ [ \"c\"; \"d\" ]; [ \"b\" ]; [ \"a\" ] ]"
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "d" ]; [ "b" ]; [ "a" ] ]);
       ())
 
@@ -2443,13 +2424,11 @@ let test_layer_is_earliest_possible_shared_dependent =
           changes
       in
       Oth.Assert.true_
-        "h is in the first layer"
         (CCList.mem
            ~eq:CCString.equal
            "h"
            (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
       Oth.Assert.true_
-        "layer_dirs = [ [ \"c\"; \"h\" ]; [ \"b\" ]; [ \"a\" ] ]"
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "h" ]; [ "b" ]; [ "a" ] ]);
       ())
 
@@ -2521,7 +2500,7 @@ let test_collect_dependents_visits_each_dirspace_once =
       Oth.Assert.Eq.int
         ~expected:(1 + (2 * (levels - 1)))
         ~actual:(CCList.length (CCList.flatten changes));
-      Oth.Assert.true_ "match_diff_list used less than 3 CPU seconds" (elapsed < 3.0);
+      Oth.Assert.true_ (elapsed < 3.0);
       ())
 
 (* A dirspace that [modified_by] brings into a run must itself bring in the
@@ -2619,7 +2598,6 @@ let test_modified_by_pull_collects_depends_on =
           (Terrat_change_match3.match_diff_list config diff)
       in
       Oth.Assert.true_
-        "layer_dirs = [ [ \"app\"; \"base\" ]; [ \"db\" ] ]"
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "app"; "base" ]; [ "db" ] ]);
       ())
 
@@ -2670,9 +2648,7 @@ let test_modified_by_cycle_terminates =
                  layer)
           (Terrat_change_match3.match_diff_list config diff)
       in
-      Oth.Assert.true_
-        "layer_dirs = [ [ \"a\"; \"b\" ] ]"
-        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "a"; "b" ] ]);
+      Oth.Assert.true_ (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "a"; "b" ] ]);
       ())
 
 let test_force_matches_not_pruned =
@@ -2727,9 +2703,7 @@ let test_force_matches_not_pruned =
                dirspace.Terrat_dirspace.dir))
           changes
       in
-      Oth.Assert.true_
-        "CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ \"a\" ] ]"
-        (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "a" ] ]))
+      Oth.Assert.true_ (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "a" ] ]))
 
 let test_files_in_same_dir_match_multiple_dirs =
   Oth.test ~name:"files_in_same_dir_match_multiple_dirs" (fun _ ->
@@ -2789,7 +2763,7 @@ let test_files_in_same_dir_match_multiple_dirs =
       Oth.Assert.Eq.int ~expected:1 ~actual:(CCList.length changes);
       match changes with
       | [ { Terrat_change_match3.Dirspace_config.tags; _ } ] ->
-          Oth.Assert.true_ "Terrat_tag_set.mem \"dir1\" tags" (Terrat_tag_set.mem "dir1" tags)
+          Oth.Assert.true_ (Terrat_tag_set.mem "dir1" tags)
       | _ -> Oth.Assert.false_ "files_in_same_dir_match_multiple_dirs: unexpected value")
 
 (* This test is for timing and the numbers of been reduced in this to make it
@@ -2873,7 +2847,7 @@ let test_large_directory_timing =
              repo_config)
       in
       let changes = CCList.flatten (Terrat_change_match3.match_diff_list dirs diff) in
-      Oth.Assert.true_ "CCList.length changes = num_tf_dirs" (CCList.length changes = num_tf_dirs))
+      Oth.Assert.true_ (CCList.length changes = num_tf_dirs))
 
 let test =
   Oth.parallel

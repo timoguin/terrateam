@@ -2,17 +2,13 @@ let test_valid =
   Oth.test ~name:"valid" (fun _ ->
       let template = "Hello {{ name }}" in
       let bindings = `Assoc [ ("name", `String "user") ] in
-      Oth.Assert.true_
-        "Minijinja.render_template template bindings = Ok \"Hello user\""
-        (Minijinja.render_template template bindings = Ok "Hello user"))
+      Oth.Assert.true_ (Minijinja.render_template template bindings = Ok "Hello user"))
 
 let test_invalid =
   Oth.test ~name:"invalid" (fun _ ->
       let template = "Hello {{ name " in
       let bindings = `Assoc [ ("name", `String "user") ] in
       Oth.Assert.true_
-        "Minijinja.render_template template bindings = Error {|Template parse error: syntax error: \
-         unexpected end of input, expected end of variable block (in template:1)|}"
         (Minijinja.render_template template bindings
         = Error
             {|Template parse error: syntax error: unexpected end of input, expected end of variable block (in template:1)|}
@@ -23,8 +19,6 @@ let test_invalid2 =
       let template = "Hello {% for bar %} {% endfor %} " in
       let bindings = `Assoc [ ("name", `String "user") ] in
       Oth.Assert.true_
-        "Minijinja.render_template template bindings = Error {|Template parse error: syntax error: \
-         unexpected end of block, expected in (in template:1)|}"
         (Minijinja.render_template template bindings
         = Error
             {|Template parse error: syntax error: unexpected end of block, expected in (in template:1)|}
@@ -35,8 +29,6 @@ let test_missing_value =
       let template = "Hello {{ name }}" in
       let bindings = `Assoc [] in
       Oth.Assert.true_
-        "Minijinja.render_template template bindings = Error {|Render error: undefined value (in \
-         template:1)|}"
         (Minijinja.render_template template bindings
         = Error {|Render error: undefined value (in template:1)|}))
 

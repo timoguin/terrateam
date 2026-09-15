@@ -66,7 +66,7 @@ let test =
           let s = CCString.repeat "noise\n" 500 ^ "Error: 403 Forbidden: read-only dashboard\n" in
           let out = P.tail_of ~max_bytes:200 s in
           Oth.Assert.str_contains ~haystack:out ~needle:"Error: 403 Forbidden";
-          Oth.Assert.true_ "trimmed output is bounded" (CCString.length out < 400));
+          Oth.Assert.true_ (CCString.length out < 400));
       Oth.test ~name:"a trim is announced" (fun _ ->
           let s = CCString.repeat "x\n" 500 in
           Oth.Assert.str_contains ~haystack:(P.tail_of ~max_bytes:50 s) ~needle:marker);
@@ -86,28 +86,28 @@ let test =
           let s = CCString.repeat "z" 1000 in
           let out = P.tail_of ~max_bytes:100 s in
           Oth.Assert.str_contains ~haystack:out ~needle:marker;
-          Oth.Assert.true_ "bounded" (CCString.length out < 300));
+          Oth.Assert.true_ (CCString.length out < 300));
       (* A plan, apply or init step can now carry visible_on, so the payload has to win over the
          step's default. *)
       Oth.test ~name:"a plan step obeys visible_on from the payload" (fun _ ->
           let s = step ~name:"tf/plan" ~success:true (plan_payload ~visible_on:"failure" ()) in
           Oth.Assert.not_true ~fail_msg:"hidden on a successful run" (shown ~overall_success:true s);
-          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          Oth.Assert.true_ (shown ~overall_success:false s);
           ());
       Oth.test ~name:"a plan step with no visible_on is always shown" (fun _ ->
           let s = step ~name:"tf/plan" ~success:true (plan_payload ()) in
-          Oth.Assert.true_ "shown on a successful run" (shown ~overall_success:true s);
-          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          Oth.Assert.true_ (shown ~overall_success:true s);
+          Oth.Assert.true_ (shown ~overall_success:false s);
           ());
       Oth.test ~name:"an apply step obeys visible_on from the payload" (fun _ ->
           let s = step ~name:"tf/apply" ~success:true (run_payload ~visible_on:"success" ()) in
-          Oth.Assert.true_ "shown on a successful run" (shown ~overall_success:true s);
+          Oth.Assert.true_ (shown ~overall_success:true s);
           Oth.Assert.not_true ~fail_msg:"hidden on a failed run" (shown ~overall_success:false s);
           ());
       Oth.test ~name:"an init step with no visible_on is shown only on failure" (fun _ ->
           let s = step ~name:"tf/init" ~success:true (run_payload ()) in
           Oth.Assert.not_true ~fail_msg:"hidden on a successful run" (shown ~overall_success:true s);
-          Oth.Assert.true_ "shown on a failed run" (shown ~overall_success:false s);
+          Oth.Assert.true_ (shown ~overall_success:false s);
           ());
       (* The stategraph engine names its steps stategraph/<action>, which the step dispatch used to
          miss: a plan then lost its diff and fell back to the raw stdout. *)

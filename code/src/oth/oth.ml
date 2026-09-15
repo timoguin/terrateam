@@ -60,7 +60,10 @@ module Assert = struct
         (Assert_failure_msg
            (Format.asprintf "Expected:@.@[%a@]@.Got:@.@[%a@]" pp expected pp actual))
 
-  let true_ msg v = if not v then raise (Assert_failure_msg msg)
+  let true_ ?fail_msg v =
+    if not v then
+      let msg = CCOption.get_or ~default:"Expected true, got false" fail_msg in
+      raise (Assert_failure_msg msg)
 
   let not_true ?fail_msg v =
     let msg = CCOption.get_or ~default:"Expected false, got true" fail_msg in

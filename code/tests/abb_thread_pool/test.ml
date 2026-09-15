@@ -33,7 +33,7 @@ let parallel_test =
       Abb_thread_pool.destroy pool;
       Oth.Assert.Eq.int ~expected:0 ~actual:ret1;
       Oth.Assert.Eq.int ~expected:0 ~actual:ret2;
-      Oth.Assert.true_ "stop -. start < 6.0" (stop -. start < 6.0))
+      Oth.Assert.true_ (stop -. start < 6.0))
 
 let serialize_test =
   Oth.test ~desc:"Verify overcapacity work is serialized" ~name:"Serialize test" (fun _ ->
@@ -65,8 +65,8 @@ let serialize_test =
       Oth.Assert.Eq.int ~expected:0 ~actual:ret1;
       Oth.Assert.Eq.int ~expected:0 ~actual:ret2;
       Oth.Assert.Eq.int ~expected:0 ~actual:ret3;
-      Oth.Assert.true_ "stop -. start > 3.0" (stop -. start > 3.0);
-      Oth.Assert.true_ "stop -. start < 9.0" (stop -. start < 9.0))
+      Oth.Assert.true_ (stop -. start > 3.0);
+      Oth.Assert.true_ (stop -. start < 9.0))
 
 let () =
   Random.self_init ();

@@ -6,7 +6,7 @@ let test_tempfile =
   Oth_abb.test ~desc:"Simple tempfile test" ~name:"tempfile" (fun () ->
       let open Abb.Future.Infix_monad in
       Tempfile.with_filename ~prefix:"test" ~suffix:"test" (fun _ -> Abb.Future.return (Ok ()))
-      >>| fun r -> Oth.Assert.true_ "r = Ok ()" (r = Ok ()))
+      >>| fun r -> Oth.Assert.true_ (r = Ok ()))
 
 let test_tempfile_cleanup =
   Oth_abb.test ~desc:"Verify tempfile cleanup" ~name:"tempfile cleanup" (fun () ->
@@ -16,10 +16,9 @@ let test_tempfile_cleanup =
           name := fname;
           Abb.Future.return (Ok ()))
       >>= fun r ->
-      Oth.Assert.true_ "r = Ok ()" (r = Ok ());
-      Oth.Assert.true_ "!name <> \"\"" (!name <> "");
-      Abb.File.stat !name
-      >>| fun r -> Oth.Assert.true_ "r = Error `E_no_entity" (r = Error `E_no_entity))
+      Oth.Assert.true_ (r = Ok ());
+      Oth.Assert.true_ (!name <> "");
+      Abb.File.stat !name >>| fun r -> Oth.Assert.true_ (r = Error `E_no_entity))
 
 let test_tempdir =
   Oth_abb.test ~desc:"Simple tempdir test" ~name:"tempdir" (fun () ->
@@ -31,7 +30,7 @@ let test_tempdir =
           >>= function
           | Ok file -> Abb.File.close file >>| fun _ -> Ok ()
           | Error _ -> Oth.Assert.false_ "tempdir: unexpected value")
-      >>| fun r -> Oth.Assert.true_ "r = Ok ()" (r = Ok ()))
+      >>| fun r -> Oth.Assert.true_ (r = Ok ()))
 
 let test_tempdir_cleanup =
   Oth_abb.test ~desc:"Verify tempdir cleanup" ~name:"tempdir cleanup" (fun () ->
@@ -46,10 +45,9 @@ let test_tempdir_cleanup =
           | Ok file -> Abb.File.close file >>| fun _ -> Ok ()
           | Error _ -> Oth.Assert.false_ "tempdir cleanup: unexpected value")
       >>= fun r ->
-      Oth.Assert.true_ "r = Ok ()" (r = Ok ());
-      Oth.Assert.true_ "!name <> \"\"" (!name <> "");
-      Abb.File.stat !name
-      >>| fun r -> Oth.Assert.true_ "r = Error `E_no_entity" (r = Error `E_no_entity))
+      Oth.Assert.true_ (r = Ok ());
+      Oth.Assert.true_ (!name <> "");
+      Abb.File.stat !name >>| fun r -> Oth.Assert.true_ (r = Error `E_no_entity))
 
 let test =
   Oth_abb.(parallel [ test_tempfile; test_tempfile_cleanup; test_tempdir; test_tempdir_cleanup ])

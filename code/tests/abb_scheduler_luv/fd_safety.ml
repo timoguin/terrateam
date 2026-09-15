@@ -94,10 +94,7 @@ let descriptor_number_recycled =
          [op_built_before_close] whenever the kernel hands out a different
          number. *)
       (match opened with
-      | Ok f ->
-          Oth.Assert.true_
-            "the open must have taken the closed socket's descriptor number"
-            (Abb.File.to_native f = Abb.Socket.Tcp.to_native a)
+      | Ok f -> Oth.Assert.true_ (Abb.File.to_native f = Abb.Socket.Tcp.to_native a)
       | Error _ -> Oth.Assert.false_ "could not open the suite's regular file");
       recv
       >>= fun res ->
@@ -134,7 +131,6 @@ let armed_poll_is_failed =
       settle 100
       >>= fun st ->
       Oth.Assert.true_
-        "the parked recv must be failed by the close, not left waiting"
         (match st with
         | `Det res -> Result.is_error res
         | `Undet | `Aborted | `Exn _ -> false);
@@ -212,7 +208,6 @@ let no_stranger_io_after_close =
       (* Take the freed number with a fresh pair and put recognisable bytes in it. *)
       let c, d = socket_pair () in
       Oth.Assert.true_
-        "the new pair must have taken the closed socket's descriptor number"
         (Abb.Socket.Tcp.to_native c = Abb.Socket.Tcp.to_native a
         || Abb.Socket.Tcp.to_native d = Abb.Socket.Tcp.to_native a);
       let payload = Bytes.of_string "STRANGERSTRANGER" in
@@ -226,13 +221,10 @@ let no_stranger_io_after_close =
       settle 100
       >>= fun st ->
       Oth.Assert.true_
-        "the outstanding recv must fail, not read the new socket"
         (match st with
         | `Det res -> Result.is_error res
         | `Undet | `Aborted | `Exn _ -> false);
-      Oth.Assert.true_
-        "the outstanding recv must not have written a stranger's bytes into the buffer"
-        (not (CCString.mem ~sub:"STRANGER" (Bytes.to_string buf)));
+      Oth.Assert.str_doesnt_contain ~haystack:(Bytes.to_string buf) ~needle:"STRANGER";
       close_both c d >>= fun () -> close_both a b >>= fun () -> Abb.Future.return ())
 
 (* The shape abb_tls uses: wait for readiness, retry, repeat.  The loop has to
@@ -267,7 +259,6 @@ let readable_loop_stops_on_close =
       settle 100
       >>= fun st ->
       Oth.Assert.true_
-        "a readable loop guarded by is_closed must stop once the socket closes"
         (* [n >= 1] rather than any [`Stopped]: zero means the forked loop was
            only scheduled after the close and took the [is_closed] branch on its
            first check, without ever calling [readable].  That would pass even if

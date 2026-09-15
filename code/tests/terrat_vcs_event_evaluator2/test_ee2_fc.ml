@@ -172,7 +172,7 @@ let test_both_sides_run_when_the_left_errors =
         right_ran := true;
         Abb.Future.return (Ok ()))
       >>= fun actual ->
-      Oth_abb.Assert.true_ "the right side of all2 never ran" !right_ran;
+      Oth_abb.Assert.true_ !right_ran;
       assert_result ~expected:(Error (`Suspend_eval "left")) ~actual;
       Abb.Future.return ())
 

@@ -6,15 +6,9 @@ let parse s =
 let test_empty_features =
   Oth.test ~name:"Empty features" (fun _ ->
       let t = parse "{}" in
-      Oth.Assert.true_
-        "t.Terrat_tier.num_users_per_month = CCInt.max_int"
-        (t.Terrat_tier.num_users_per_month = CCInt.max_int);
-      Oth.Assert.true_
-        "t.Terrat_tier.runs_per_month = CCInt.max_int"
-        (t.Terrat_tier.runs_per_month = CCInt.max_int);
-      Oth.Assert.true_
-        "t.Terrat_tier.private_runners = CCInt.max_int"
-        (t.Terrat_tier.private_runners = CCInt.max_int))
+      Oth.Assert.Eq.int ~expected:CCInt.max_int ~actual:t.Terrat_tier.num_users_per_month;
+      Oth.Assert.Eq.int ~expected:CCInt.max_int ~actual:t.Terrat_tier.runs_per_month;
+      Oth.Assert.Eq.int ~expected:CCInt.max_int ~actual:t.Terrat_tier.private_runners)
 
 let test_free_tier_features =
   Oth.test ~name:"Free tier features" (fun _ ->
@@ -32,12 +26,8 @@ let test_clamp_caps_win =
   Oth.test ~name:"Clamp: caps win over unlimited" (fun _ ->
       let t = Terrat_tier.clamp ~caps:Terrat_tier.oss (parse "{}") in
       Oth.Assert.Eq.int ~expected:3 ~actual:t.Terrat_tier.num_users_per_month;
-      Oth.Assert.true_
-        "t.Terrat_tier.runs_per_month = CCInt.max_int"
-        (t.Terrat_tier.runs_per_month = CCInt.max_int);
-      Oth.Assert.true_
-        "t.Terrat_tier.private_runners = CCInt.max_int"
-        (t.Terrat_tier.private_runners = CCInt.max_int))
+      Oth.Assert.Eq.int ~expected:CCInt.max_int ~actual:t.Terrat_tier.runs_per_month;
+      Oth.Assert.Eq.int ~expected:CCInt.max_int ~actual:t.Terrat_tier.private_runners)
 
 let test_clamp_lower_tier_stays =
   Oth.test ~name:"Clamp: an already-lower tier keeps its own limits" (fun _ ->
@@ -53,7 +43,7 @@ let test_clamp_max_int_identity =
   Oth.test ~name:"Clamp: max_int caps are the identity" (fun _ ->
       let tier = parse "{\"runs_per_month\":50,\"num_users_per_month\":3}" in
       let t = Terrat_tier.clamp ~caps:(parse "{}") tier in
-      Oth.Assert.true_ "clamp with empty caps is identity" (Terrat_tier.equal t tier))
+      Oth.Assert.true_ (Terrat_tier.equal t tier))
 
 let test =
   Oth.parallel

@@ -118,8 +118,8 @@ let test_suspend_unsuspend =
       >>= fun () ->
       task_a
       >>= fun () ->
-      Oth.Assert.true_ "Fut.state task_a = `Det ()" (Fut.state task_a = `Det ());
-      Oth.Assert.true_ "Fut.state task_b = `Det ()" (Fut.state task_b = `Det ());
+      Oth.Assert.true_ (Fut.state task_a = `Det ());
+      Oth.Assert.true_ (Fut.state task_b = `Det ());
       Fut.return ())
 
 let () =

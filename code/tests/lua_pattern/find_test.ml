@@ -39,7 +39,7 @@ let compare_res = ( = )
 let test_pat str pat res _ =
   let pat = CCOption.get_exn_or "lua_pattern_of_string" (Lua_pattern.of_string pat) in
   let mtch = Lua_pattern.find str pat in
-  Oth.Assert.true_ "compare_res res mtch" (compare_res res mtch)
+  Oth.Assert.true_ (compare_res res mtch)
 
 let create_test (str, pat, res) =
   Oth.test ~name:(Printf.sprintf "find %s %s" str pat) (test_pat str pat res)

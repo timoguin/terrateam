@@ -24,10 +24,7 @@ module Make (Abb : Abb_intf.S) = struct
         (* The test body runs on the scheduler's loop domain. *)
         let scheduler_domain = Domain.self () in
         Abb.Task.run ~pinned:true (fun () -> Abb.Future.return (Domain.self ()))
-        >>= fun fut ->
-        fut
-        >>| fun observed ->
-        Oth.Assert.true_ "pinned task ran on the scheduler domain" (observed = scheduler_domain))
+        >>= fun fut -> fut >>| fun observed -> Oth.Assert.true_ (observed = scheduler_domain))
 
   let unpinned_runs_off_scheduler =
     Oth_abb.test ~name:"Domain: unpinned body runs on a non-scheduler domain" (fun () ->
@@ -35,10 +32,7 @@ module Make (Abb : Abb_intf.S) = struct
         let scheduler_domain = Domain.self () in
         Abb.Task.run ~pinned:false (fun () ->
             Abb.Sys.sleep 0.01 >>= fun () -> Abb.Future.return (Domain.self ()))
-        >>= fun fut ->
-        fut
-        >>| fun observed ->
-        Oth.Assert.true_ "unpinned body ran off the scheduler domain" (observed <> scheduler_domain))
+        >>= fun fut -> fut >>| fun observed -> Oth.Assert.true_ (observed <> scheduler_domain))
 
   let skipped =
     Oth_abb.test ~name:"Domain: skipped (single-domain scheduler)" (fun () -> Abb.Future.return ())

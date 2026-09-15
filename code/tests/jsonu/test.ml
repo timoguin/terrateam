@@ -2,142 +2,93 @@ let test_bool =
   Oth.test ~name:"Test Bool" (fun _ ->
       let base = `Bool true in
       let override = `Bool false in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Bool false)"
-        (Jsonu.merge ~base override = Ok (`Bool false));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Bool false));
       let base = `Bool false in
       let override = `Bool true in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Bool true)"
-        (Jsonu.merge ~base override = Ok (`Bool true));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Bool true));
       let base = `Null in
       let override = `Bool true in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Bool true)"
-        (Jsonu.merge ~base override = Ok (`Bool true));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Bool true));
       let base = `Bool true in
       let override = `Null in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok `Null"
-        (Jsonu.merge ~base override = Ok `Null))
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok `Null))
 
 let test_int =
   Oth.test ~name:"Test Integer" (fun _ ->
       let base = `Int 1 in
       let override = `Int 2 in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Int 2)"
-        (Jsonu.merge ~base override = Ok (`Int 2));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Int 2));
       let base = `Null in
       let override = `Int 1 in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Int 1)"
-        (Jsonu.merge ~base override = Ok (`Int 1));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Int 1));
       let base = `Int 1 in
       let override = `Null in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok `Null"
-        (Jsonu.merge ~base override = Ok `Null);
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok `Null);
       let base = `Intlit "1" in
       let override = `Int 1 in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Int 1)"
-        (Jsonu.merge ~base override = Ok (`Int 1));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Int 1));
       let base = `Int 1 in
       let override = `Intlit "1" in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`Intlit \"1\")"
-        (Jsonu.merge ~base override = Ok (`Intlit "1")))
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`Intlit "1")))
 
 let test_list =
   Oth.test ~name:"Test List" (fun _ ->
       let base = `List [ `Int 1; `Int 2 ] in
       let override = `List [ `Int 3; `Int 4 ] in
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ])"
-        (Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ])))
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ])))
 
 let test_assoc =
   Oth.test ~name:"Test Assoc" (fun _ ->
       let base = `Assoc [ ("foo", `Int 1); ("bar", `String "foo") ] in
       let override = `Assoc [ ("foo", `Int 2); ("bar", `String "baz") ] in
       let res = CCResult.get_exn (Jsonu.merge ~base override) in
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"foo\" res = `Int 2"
-        (Yojson.Safe.Util.member "foo" res = `Int 2);
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"bar\" res = `String \"baz\""
-        (Yojson.Safe.Util.member "bar" res = `String "baz"))
+      Oth.Assert.true_ (Yojson.Safe.Util.member "foo" res = `Int 2);
+      Oth.Assert.true_ (Yojson.Safe.Util.member "bar" res = `String "baz"))
 
 let test_assoc_extra_keys_in_base =
   Oth.test ~name:"Test Assoc extra keys in base" (fun _ ->
       let base = `Assoc [ ("foo", `Int 1); ("bar", `String "foo") ] in
       let override = `Assoc [ ("foo", `Int 2) ] in
       let res = CCResult.get_exn (Jsonu.merge ~base override) in
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"foo\" res = `Int 2"
-        (Yojson.Safe.Util.member "foo" res = `Int 2);
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"bar\" res = `String \"foo\""
-        (Yojson.Safe.Util.member "bar" res = `String "foo"))
+      Oth.Assert.true_ (Yojson.Safe.Util.member "foo" res = `Int 2);
+      Oth.Assert.true_ (Yojson.Safe.Util.member "bar" res = `String "foo"))
 
 let test_type_mismatch_err =
   Oth.test ~name:"Test type mismatch err" (fun _ ->
       let base = `Int 1 in
       let override = `String "foo" in
       Oth.Assert.true_
-        "Jsonu.merge ~base override = Error (`Type_mismatch_err (None, `Int 1, `String \"foo\"))"
         (Jsonu.merge ~base override = Error (`Type_mismatch_err (None, `Int 1, `String "foo")));
       let base = `Assoc [ ("k", `Int 1) ] in
       let override = `Assoc [ ("k", `String "foo") ] in
       Oth.Assert.true_
-        "Jsonu.merge ~base override = Error (`Type_mismatch_err (Some \"k\", `Int 1, `String \
-         \"foo\"))"
         (Jsonu.merge ~base override = Error (`Type_mismatch_err (Some "k", `Int 1, `String "foo")));
       let base = `Assoc [ ("j", `Assoc [ ("k", `Int 1) ]) ] in
       let override = `Assoc [ ("j", `Assoc [ ("k", `String "foo") ]) ] in
       Oth.Assert.true_
-        "Jsonu.merge ~base override = Error (`Type_mismatch_err (Some \"j.k\", `Int 1, `String \
-         \"foo\"))"
         (Jsonu.merge ~base override = Error (`Type_mismatch_err (Some "j.k", `Int 1, `String "foo"))))
 
 let test_null_is_identity =
   Oth.test ~name:"Test null_is_identity" (fun _ ->
       (* null override preserves base when null_is_identity is true *)
       Oth.Assert.true_
-        "Jsonu.merge ~null_is_identity:true ~base:(`Bool true) `Null = Ok (`Bool true)"
         (Jsonu.merge ~null_is_identity:true ~base:(`Bool true) `Null = Ok (`Bool true));
+      Oth.Assert.true_ (Jsonu.merge ~null_is_identity:true ~base:(`Int 1) `Null = Ok (`Int 1));
       Oth.Assert.true_
-        "Jsonu.merge ~null_is_identity:true ~base:(`Int 1) `Null = Ok (`Int 1)"
-        (Jsonu.merge ~null_is_identity:true ~base:(`Int 1) `Null = Ok (`Int 1));
-      Oth.Assert.true_
-        "Jsonu.merge ~null_is_identity:true ~base:(`String \"s\") `Null = Ok (`String \"s\")"
         (Jsonu.merge ~null_is_identity:true ~base:(`String "s") `Null = Ok (`String "s"));
       (* null base is still replaced by override *)
-      Oth.Assert.true_
-        "Jsonu.merge ~null_is_identity:true ~base:`Null (`Int 1) = Ok (`Int 1)"
-        (Jsonu.merge ~null_is_identity:true ~base:`Null (`Int 1) = Ok (`Int 1));
+      Oth.Assert.true_ (Jsonu.merge ~null_is_identity:true ~base:`Null (`Int 1) = Ok (`Int 1));
       (* null base with null override stays null *)
-      Oth.Assert.true_
-        "Jsonu.merge ~null_is_identity:true ~base:`Null `Null = Ok `Null"
-        (Jsonu.merge ~null_is_identity:true ~base:`Null `Null = Ok `Null);
+      Oth.Assert.true_ (Jsonu.merge ~null_is_identity:true ~base:`Null `Null = Ok `Null);
       (* nested: null override in assoc preserves base value *)
       let base = `Assoc [ ("foo", `Int 1); ("bar", `String "hello") ] in
       let override = `Assoc [ ("foo", `Null) ] in
       let res = CCResult.get_exn (Jsonu.merge ~null_is_identity:true ~base override) in
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"foo\" res = `Int 1"
-        (Yojson.Safe.Util.member "foo" res = `Int 1);
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"bar\" res = `String \"hello\""
-        (Yojson.Safe.Util.member "bar" res = `String "hello");
+      Oth.Assert.true_ (Yojson.Safe.Util.member "foo" res = `Int 1);
+      Oth.Assert.true_ (Yojson.Safe.Util.member "bar" res = `String "hello");
       (* default behavior unchanged: null override replaces base *)
-      Oth.Assert.true_
-        "Jsonu.merge ~base:(`Bool true) `Null = Ok `Null"
-        (Jsonu.merge ~base:(`Bool true) `Null = Ok `Null);
-      Oth.Assert.true_
-        "Jsonu.merge ~base:(`Int 1) `Null = Ok `Null"
-        (Jsonu.merge ~base:(`Int 1) `Null = Ok `Null);
+      Oth.Assert.true_ (Jsonu.merge ~base:(`Bool true) `Null = Ok `Null);
+      Oth.Assert.true_ (Jsonu.merge ~base:(`Int 1) `Null = Ok `Null);
       ())
 
 let test_list_append_mode =
@@ -146,12 +97,9 @@ let test_list_append_mode =
       let override = `List [ `Int 3; `Int 4 ] in
       (* `Append: override appended to base *)
       Oth.Assert.true_
-        "Jsonu.merge ~list:`Append ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3; `Int 4 ])"
         (Jsonu.merge ~list:`Append ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3; `Int 4 ]));
       (* default: override prepended to base *)
-      Oth.Assert.true_
-        "Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ])"
-        (Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ]));
+      Oth.Assert.true_ (Jsonu.merge ~base override = Ok (`List [ `Int 3; `Int 4; `Int 1; `Int 2 ]));
       ())
 
 let test_both_params =
@@ -164,17 +112,11 @@ let test_both_params =
         CCResult.get_exn (Jsonu.merge ~null_is_identity:true ~list:`Append ~base override)
       in
       (* list appended *)
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"items\" res = `List [ `Int 1; `Int 2 ]"
-        (Yojson.Safe.Util.member "items" res = `List [ `Int 1; `Int 2 ]);
+      Oth.Assert.true_ (Yojson.Safe.Util.member "items" res = `List [ `Int 1; `Int 2 ]);
       (* null override preserves base *)
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"name\" res = `String \"base\""
-        (Yojson.Safe.Util.member "name" res = `String "base");
+      Oth.Assert.true_ (Yojson.Safe.Util.member "name" res = `String "base");
       (* keys only in base are kept *)
-      Oth.Assert.true_
-        "Yojson.Safe.Util.member \"extra\" res = `Int 42"
-        (Yojson.Safe.Util.member "extra" res = `Int 42);
+      Oth.Assert.true_ (Yojson.Safe.Util.member "extra" res = `Int 42);
       ())
 
 (* Documents the duplication behind duplicate drift issues (#1789): the config
@@ -203,11 +145,9 @@ let test_layer_echo_duplicates =
       let post = Yojson.Safe.Util.(member "post" (member "plan" (member "hooks" merged))) in
       (* Scalar converged... *)
       Oth.Assert.true_
-        "autoplan stays a single bool"
         (Yojson.Safe.Util.(member "autoplan" (member "when_modified" merged)) = `Bool true);
       (* ...but the hook list doubled. *)
       Oth.Assert.true_
-        "post hook list has doubled"
         (post
         = `List
             [
@@ -222,17 +162,13 @@ let test_list_dedup_modes =
       (* `Prepend_dedup: every item of the override, then the items of the base that the override
          does not already carry. *)
       Oth.Assert.true_
-        "Jsonu.merge ~list:`Prepend_dedup ~base override = Ok (`List [ `Int 2; `Int 3; `Int 1 ])"
         (Jsonu.merge ~list:`Prepend_dedup ~base override = Ok (`List [ `Int 2; `Int 3; `Int 1 ]));
       (* `Append_dedup: every item of the base, then the items of the override that the base does
          not already carry. *)
       Oth.Assert.true_
-        "Jsonu.merge ~list:`Append_dedup ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3 ])"
         (Jsonu.merge ~list:`Append_dedup ~base override = Ok (`List [ `Int 1; `Int 2; `Int 3 ]));
       (* Neither mode deduplicates a list against itself. *)
       Oth.Assert.true_
-        "Jsonu.merge ~list:`Prepend_dedup ~base:(`List []) (`List [ `Int 1; `Int 1 ]) = Ok (`List \
-         [ `Int 1; `Int 1 ])"
         (Jsonu.merge ~list:`Prepend_dedup ~base:(`List []) (`List [ `Int 1; `Int 1 ])
         = Ok (`List [ `Int 1; `Int 1 ]));
       ())
@@ -243,12 +179,8 @@ let test_list_dedup_object_key_order =
       let base = `List [ hook [ ("type", `String "run"); ("cmd", `String "echo") ] ] in
       let override = `List [ hook [ ("cmd", `String "echo"); ("type", `String "run") ] ] in
       (* The same hook, written with its keys in the other order, is the same item. *)
-      Oth.Assert.true_
-        "Jsonu.merge ~list:`Prepend_dedup ~base override = Ok override"
-        (Jsonu.merge ~list:`Prepend_dedup ~base override = Ok override);
-      Oth.Assert.true_
-        "Jsonu.merge ~list:`Append_dedup ~base override = Ok base"
-        (Jsonu.merge ~list:`Append_dedup ~base override = Ok base);
+      Oth.Assert.true_ (Jsonu.merge ~list:`Prepend_dedup ~base override = Ok override);
+      Oth.Assert.true_ (Jsonu.merge ~list:`Append_dedup ~base override = Ok base);
       ())
 
 (* The shape of #1789: the config builder emits the same post hook the repository configuration
@@ -270,9 +202,7 @@ let test_layer_echo_dedup =
       in
       let merged = CCResult.get_exn (Jsonu.merge ~list:`Prepend_dedup ~base:config config) in
       let post = Yojson.Safe.Util.(member "post" (member "plan" (member "hooks" merged))) in
-      Oth.Assert.true_
-        "post hook list has one entry"
-        (post = `List [ `Assoc [ ("type", `String "drift_create_issue") ] ]))
+      Oth.Assert.true_ (post = `List [ `Assoc [ ("type", `String "drift_create_issue") ] ]))
 
 let test =
   Oth.parallel

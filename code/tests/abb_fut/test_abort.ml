@@ -18,7 +18,7 @@ let test1 =
       let fut = Fut.Promise.future p1 in
       ignore (fut >>| Printf.printf "Hi, %s\n");
       ignore (Fut.run_with_state (Fut.abort fut) state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let test2 =
   Oth.test
@@ -31,9 +31,9 @@ let test2 =
       let fut2 = fut1 >>| fun s -> "Hi, " ^ s in
       let fut3 = fut2 >>| fun s -> Printf.printf "You said: %s\n" s in
       ignore (Fut.run_with_state (Fut.abort fut3) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test3 =
   Oth.test
@@ -46,9 +46,9 @@ let test3 =
       let fut2 = fut1 >>| fun s -> "Hi, " ^ s in
       let fut3 = fut2 >>| fun s -> Printf.printf "You said: %s\n" s in
       ignore (Fut.run_with_state (Fut.abort fut2) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test4 =
   Oth.test ~desc:"Aborting the most dependent future aborts all" ~name:"Abort #4" (fun _ ->
@@ -58,9 +58,9 @@ let test4 =
       let fut2 = fut1 >>| fun s -> "Hi, " ^ s in
       let fut3 = fut2 >>| fun s -> Printf.printf "You said: %s\n" s in
       ignore (Fut.run_with_state (Fut.abort fut1) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test5 =
   Oth.test ~desc:"Aborting works when bound to" ~name:"Abort #5" (fun _ ->
@@ -70,9 +70,9 @@ let test5 =
       let fut2 = fut1 >>| fun s -> "Hi, " ^ s in
       let fut3 = fut2 >>| fun s -> Printf.printf "You said: %s\n" s in
       ignore (Fut.run_with_state (Fut.abort fut3) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test6 =
   Oth.test ~desc:"Aborting a partially applied applicative" ~name:"Abort #6" (fun _ ->
@@ -101,9 +101,9 @@ let test6 =
       Oth.Assert.Eq.int ~expected:1 ~actual:!r;
       ignore (Fut.run_with_state (Fut.abort fut2) state);
       Oth.Assert.Eq.int ~expected:1 ~actual:!r;
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut1 = `Det 1" (Fut.state fut1 = `Det 1))
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut1 = `Det 1))
 
 let test7 =
   Oth.test ~desc:"Setting an aborted future is a no-op" ~name:"Abort #7" (fun _ ->
@@ -133,9 +133,9 @@ let test7 =
       ignore (Fut.run_with_state (Fut.abort fut2) state);
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
       Oth.Assert.Eq.int ~expected:1 ~actual:!r;
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut1 = `Det 1" (Fut.state fut1 = `Det 1))
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut1 = `Det 1))
 
 let test8 =
   Oth.test ~desc:"Await evaluated if aborted from below" ~name:"Await Abort #1" (fun _ ->
@@ -145,9 +145,9 @@ let test8 =
       let fut1 = Fut.Promise.future p1 in
       let fut2 = Fut.await fut1 >>| fun _ -> r := true in
       ignore (Fut.run_with_state (Fut.abort fut1) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Det ()" (Fut.state fut2 = `Det ());
-      Oth.Assert.true_ "!r" !r)
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Det ());
+      Oth.Assert.true_ !r)
 
 let test9 =
   Oth.test ~desc:"Await not evaluated if aborted from above" ~name:"Await Abort #2" (fun _ ->
@@ -157,9 +157,9 @@ let test9 =
       let fut1 = Fut.Promise.future p1 in
       let fut2 = Fut.await fut1 >>| fun _ -> r := true in
       ignore (Fut.run_with_state (Fut.abort fut2) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "not !r" (not !r))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.not_true !r)
 
 let test10 =
   Oth.test ~desc:"Validate that the abort function gets called on abort" ~name:"Abort #8" (fun _ ->
@@ -175,8 +175,8 @@ let test10 =
       let fut = Fut.Promise.future p1 in
       ignore (fut >>| Printf.printf "Hi, %s\n");
       ignore (Fut.run_with_state (Fut.abort fut) state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_ "!r" !r)
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ !r)
 
 let test11 =
   Oth.test ~desc:"Test abort with a applicatives" ~name:"Abort #9" (fun _ ->
@@ -192,11 +192,11 @@ let test11 =
       let fut4 = Fut.await fut4 in
       ignore (Fut.run_with_state fut4 state);
       ignore (Fut.run_with_state (Fut.abort fut2) state);
-      Oth.Assert.true_ "not !executed_anyways" (not !executed_anyways);
-      Oth.Assert.true_ "Fut.state fut4 = `Det `Aborted" (Fut.state fut4 = `Det `Aborted);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.not_true !executed_anyways;
+      Oth.Assert.true_ (Fut.state fut4 = `Det `Aborted);
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test12 =
   Oth.test ~desc:"Test abort with a applicatives" ~name:"Abort #10" (fun _ ->
@@ -212,11 +212,11 @@ let test12 =
       let fut4 = Fut.await fut4 in
       ignore (Fut.run_with_state fut4 state);
       ignore (Fut.run_with_state (Fut.abort fut1) state);
-      Oth.Assert.true_ "not !executed_anyways" (not !executed_anyways);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut4 = `Det `Aborted" (Fut.state fut4 = `Det `Aborted))
+      Oth.Assert.not_true !executed_anyways;
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut4 = `Det `Aborted))
 
 let test13 =
   Oth.test ~desc:"Await bind evaluated if aborted from below" ~name:"Await Bind Abort #1" (fun _ ->
@@ -232,9 +232,9 @@ let test13 =
           fut1
       in
       ignore (Fut.run_with_state (Fut.abort fut2) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "!r" !r)
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ !r)
 
 let test14 =
   Oth.test ~desc:"Await bind evaluated if aborted from above" ~name:"Await Bind Abort #2" (fun _ ->
@@ -250,9 +250,9 @@ let test14 =
           fut1
       in
       ignore (Fut.run_with_state (Fut.abort fut1) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Det ()" (Fut.state fut2 = `Det ());
-      Oth.Assert.true_ "!r" !r)
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Det ());
+      Oth.Assert.true_ !r)
 
 let test15 =
   Oth.test ~desc:"Await bind fails when it throws exn" ~name:"Await Bind Exn #1" (fun _ ->
@@ -261,7 +261,7 @@ let test15 =
       let fut1 = Fut.Promise.future p1 in
       let fut2 = Fut.await_bind (fun _ -> failwith "fail") fut1 in
       ignore (Fut.run_with_state (Fut.abort fut1) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
       match Fut.state fut2 with
       | `Det _ | `Aborted | `Undet -> Oth.Assert.false_ "Await Bind Exn #1: unexpected value"
       | `Exn _ -> ())
@@ -273,7 +273,7 @@ let test_cancel =
       let fut = Fut.Promise.future p1 in
       ignore (fut >>| Printf.printf "Hi, %s\n");
       ignore (Fut.run_with_state (Fut.cancel fut) state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let test_cancel_deep =
   Oth.test ~desc:"Canceling a future aborts its watchers" ~name:"Cancel #2" (fun _ ->
@@ -283,9 +283,9 @@ let test_cancel_deep =
       let fut2 = fut1 >>| fun s -> "Hi, " ^ s in
       let fut3 = fut2 >>| fun s -> Printf.printf "You said: %s\n" s in
       ignore (Fut.run_with_state (Fut.cancel fut2) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Undet" (Fut.state fut1 = `Undet);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut3 = `Aborted" (Fut.state fut3 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Undet);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut3 = `Aborted))
 
 let test_abort_determined_after_completed =
   Oth.test ~name:"Abort determined after completed" (fun _ ->
@@ -294,11 +294,11 @@ let test_abort_determined_after_completed =
       let abort () = Fut.Promise.future trigger_next_step in
       let fut = Fut.Promise.(future (create ~abort ())) in
       let abort_fut = Fut.abort fut in
-      Oth.Assert.true_ "Fut.state abort_fut = `Undet" (Fut.state abort_fut = `Undet);
+      Oth.Assert.true_ (Fut.state abort_fut = `Undet);
       ignore (Fut.run_with_state abort_fut state);
-      Oth.Assert.true_ "Fut.state abort_fut = `Undet" (Fut.state abort_fut = `Undet);
+      Oth.Assert.true_ (Fut.state abort_fut = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger_next_step ()) state);
-      Oth.Assert.true_ "Fut.state abort_fut = `Det ()" (Fut.state abort_fut = `Det ()))
+      Oth.Assert.true_ (Fut.state abort_fut = `Det ()))
 
 let () =
   Oth.(

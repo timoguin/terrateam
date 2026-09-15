@@ -10,11 +10,9 @@ let test_stategraph_minimal_round_trip =
       let json = `Assoc [ ("name", `String "stategraph") ] in
       match Sg.of_yojson json with
       | Ok t ->
-          Oth.Assert.true_ "t.Sg.name = `Stategraph" (t.Sg.name = `Stategraph);
+          Oth.Assert.true_ (t.Sg.name = `Stategraph);
           Oth.Assert.none t.Sg.version;
-          Oth.Assert.true_
-            "Sg.to_yojson t = `Assoc [ (\"name\", `String \"stategraph\") ]"
-            (Sg.to_yojson t = `Assoc [ ("name", `String "stategraph") ])
+          Oth.Assert.true_ (Sg.to_yojson t = `Assoc [ ("name", `String "stategraph") ])
       | Error msg -> failwith msg)
 
 let test_stategraph_with_version_round_trip =
@@ -22,11 +20,11 @@ let test_stategraph_with_version_round_trip =
       let json = `Assoc [ ("name", `String "stategraph"); ("version", `String "1.2.1") ] in
       match Sg.of_yojson json with
       | Ok t -> (
-          Oth.Assert.true_ "t.Sg.name = `Stategraph" (t.Sg.name = `Stategraph);
-          Oth.Assert.true_ "t.Sg.version = Some \"1.2.1\"" (t.Sg.version = Some "1.2.1");
+          Oth.Assert.true_ (t.Sg.name = `Stategraph);
+          Oth.Assert.true_ (t.Sg.version = Some "1.2.1");
           let round_tripped = Sg.to_yojson t in
           match Sg.of_yojson round_tripped with
-          | Ok t' -> Oth.Assert.true_ "t'.Sg.version = Some \"1.2.1\"" (t'.Sg.version = Some "1.2.1")
+          | Ok t' -> Oth.Assert.true_ (t'.Sg.version = Some "1.2.1")
           | Error msg -> failwith msg)
       | Error msg -> failwith msg)
 
@@ -56,8 +54,8 @@ let test_engine_chain_picks_stategraph =
       let json = `Assoc [ ("name", `String "stategraph"); ("version", `String "1.2.1") ] in
       match E.of_yojson json with
       | Ok (E.Engine_stategraph t) ->
-          Oth.Assert.true_ "t.Sg.name = `Stategraph" (t.Sg.name = `Stategraph);
-          Oth.Assert.true_ "t.Sg.version = Some \"1.2.1\"" (t.Sg.version = Some "1.2.1")
+          Oth.Assert.true_ (t.Sg.name = `Stategraph);
+          Oth.Assert.true_ (t.Sg.version = Some "1.2.1")
       | Ok _ -> failwith "Expected Engine_stategraph variant, got a different engine"
       | Error msg -> failwith msg)
 
@@ -66,7 +64,6 @@ let test_engine_chain_to_yojson_dispatches =
       let t = Sg.make ~name:`Stategraph ~version:(Some "1.2.1") () in
       let json = E.to_yojson (E.Engine_stategraph t) in
       Oth.Assert.true_
-        "json = `Assoc [ (\"name\", `String \"stategraph\"); (\"version\", `String \"1.2.1\") ]"
         (json = `Assoc [ ("name", `String "stategraph"); ("version", `String "1.2.1") ]))
 
 let test_stategraph_with_tf_fields_round_trip =
@@ -82,12 +79,10 @@ let test_stategraph_with_tf_fields_round_trip =
       in
       match Sg.of_yojson json with
       | Ok t ->
-          Oth.Assert.true_ "t.Sg.tf_cmd = Some \"tofu\"" (t.Sg.tf_cmd = Some "tofu");
-          Oth.Assert.true_ "t.Sg.tf_version = Some \"1.7.0\"" (t.Sg.tf_version = Some "1.7.0");
-          Oth.Assert.true_
-            "t.Sg.override_tf_cmd = Some \"tofu\""
-            (t.Sg.override_tf_cmd = Some "tofu");
-          Oth.Assert.true_ "Sg.to_yojson t = json" (Sg.to_yojson t = json)
+          Oth.Assert.true_ (t.Sg.tf_cmd = Some "tofu");
+          Oth.Assert.true_ (t.Sg.tf_version = Some "1.7.0");
+          Oth.Assert.true_ (t.Sg.override_tf_cmd = Some "tofu");
+          Oth.Assert.true_ (Sg.to_yojson t = json)
       | Error msg -> failwith msg)
 
 let test_engine_chain_unknown_falls_to_other =
@@ -108,24 +103,18 @@ let test_storage_plan_none_round_trip =
   Oth.test ~name:"Storage_plan_none: round-trip" (fun _ ->
       match Spn.of_yojson storage_plan_none_json with
       | Ok t ->
-          Oth.Assert.true_ "t.Spn.method_ = `None" (t.Spn.method_ = `None);
-          Oth.Assert.true_
-            "t.Spn.unsafe_apply_without_plan = false"
-            (not t.Spn.unsafe_apply_without_plan);
-          Oth.Assert.true_
-            "Spn.to_yojson t = `Assoc [ (\"method\", `String \"none\") ]"
-            (Spn.to_yojson t = storage_plan_none_json)
+          Oth.Assert.true_ (t.Spn.method_ = `None);
+          Oth.Assert.not_true t.Spn.unsafe_apply_without_plan;
+          Oth.Assert.true_ (Spn.to_yojson t = storage_plan_none_json)
       | Error msg -> failwith msg)
 
 let test_storage_plan_none_unsafe_round_trip =
   Oth.test ~name:"Storage_plan_none: unsafe_apply_without_plan round-trip" (fun _ ->
       match Spn.of_yojson storage_plan_none_unsafe_json with
       | Ok t ->
-          Oth.Assert.true_ "t.Spn.method_ = `None" (t.Spn.method_ = `None);
-          Oth.Assert.true_ "t.Spn.unsafe_apply_without_plan = true" t.Spn.unsafe_apply_without_plan;
-          Oth.Assert.true_
-            "Spn.to_yojson t preserves unsafe_apply_without_plan"
-            (Spn.to_yojson t = storage_plan_none_unsafe_json)
+          Oth.Assert.true_ (t.Spn.method_ = `None);
+          Oth.Assert.true_ t.Spn.unsafe_apply_without_plan;
+          Oth.Assert.true_ (Spn.to_yojson t = storage_plan_none_unsafe_json)
       | Error msg -> failwith msg)
 
 let test_workflow_entry_storage_plan_none =

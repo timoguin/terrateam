@@ -12,10 +12,10 @@ module Make (Abb : Abb_intf.S) = struct
         match Abb.Socket.Tcp.create ~domain:Abb_intf.Socket.Domain.Inet4 with
         | Error _ -> Oth.Assert.false_ "socket create failed"
         | Ok sock ->
-            Oth.Assert.true_ "a fresh socket is not closed" (not (Abb.Socket.is_closed sock));
+            Oth.Assert.not_true (Abb.Socket.is_closed sock);
             Abb.Socket.close sock
             >>= fun _ ->
-            Oth.Assert.true_ "a closed socket reports closed" (Abb.Socket.is_closed sock);
+            Oth.Assert.true_ (Abb.Socket.is_closed sock);
             Abb.Socket.close sock
             >>= fun second_close ->
             ignore (Oth.Assert.ok ~fail_msg:"second close should succeed" second_close);

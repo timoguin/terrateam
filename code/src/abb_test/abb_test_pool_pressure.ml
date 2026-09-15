@@ -5,7 +5,7 @@
    runs unpinned task work on the loop domain instead of queueing it
    behind whatever is occupying the pool.  These tests construct
    saturation deliberately by parking [Thread.run] payloads on a held
-   [Mutex], then Oth.Assert.true_ "a" (a) where the work actually ran (using
+   [Mutex], then Oth.Assert.true_ (a) where the work actually ran (using
    [Domain.self ()]) and (b) that it completed.
 
    A separate test, on multi-core machines, asserts that unpinned task
@@ -65,14 +65,10 @@ module Make (Abb : Abb_intf.S) = struct
             Fut_comb.List.map
               ~f:(fun i ->
                 Abb.Task.run ~pinned:true (fun () ->
-                    Oth.Assert.true_
-                      "pinned task body ran on the loop domain"
-                      (Domain.self () = loop_dom);
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
                     Abb.Sys.sleep 0.01
                     >>| fun () ->
-                    Oth.Assert.true_
-                      "pinned task stayed on the loop domain after sleep"
-                      (Domain.self () = loop_dom);
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
                     i)
                 >>= fun fut -> fut)
               (CCList.init n CCFun.id)
@@ -104,21 +100,15 @@ module Make (Abb : Abb_intf.S) = struct
               ~f:(fun i ->
                 Abb.Task.run ~pinned:false (fun () ->
                     (* Body fallback: ran on loop. *)
-                    Oth.Assert.true_
-                      "unpinned body fell back to the loop domain"
-                      (Domain.self () = loop_dom);
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
                     Abb.Sys.sleep 0.005
                     >>= fun () ->
                     (* run_callback fallback after first sleep: drained
                        inline on the loop. *)
-                    Oth.Assert.true_
-                      "unpinned callback fell back to the loop domain"
-                      (Domain.self () = loop_dom);
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
                     Abb.Sys.sleep 0.005
                     >>| fun () ->
-                    Oth.Assert.true_
-                      "unpinned task stayed on the loop domain"
-                      (Domain.self () = loop_dom);
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
                     i)
                 >>= fun fut -> fut)
               (CCList.init n CCFun.id)
@@ -144,12 +134,8 @@ module Make (Abb : Abb_intf.S) = struct
             Fut_comb.List.iter_par
               ~f:(fun _ ->
                 Abb.Task.run ~pinned:true (fun () ->
-                    Oth.Assert.true_ "pinned task ran on the loop domain" (Domain.self () = loop_dom);
-                    Abb.Sys.sleep 0.002
-                    >>| fun () ->
-                    Oth.Assert.true_
-                      "pinned task stayed on the loop domain after sleep"
-                      (Domain.self () = loop_dom))
+                    Oth.Assert.true_ (Domain.self () = loop_dom);
+                    Abb.Sys.sleep 0.002 >>| fun () -> Oth.Assert.true_ (Domain.self () = loop_dom))
                 >>= fun fut -> fut)
               (CCList.init n CCFun.id)))
 
@@ -176,8 +162,7 @@ module Make (Abb : Abb_intf.S) = struct
                       Abb.Sys.sleep 0.005)
                   >>= fun fut -> fut)
                 (CCList.init n CCFun.id)
-              >>| fun () ->
-              Oth.Assert.true_ "an unpinned body ran on a worker domain" (Atomic.get saw_other)))
+              >>| fun () -> Oth.Assert.true_ (Atomic.get saw_other)))
 
   let test =
     Oth.serial

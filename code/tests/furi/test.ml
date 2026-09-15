@@ -189,7 +189,7 @@ let match_path_equal =
       let uri = Uri.of_string "http://test.com/hello/there" in
       let rt = Furi.(root "/hello" /% Path.string) in
       match Furi.(match_uri (rt --> handle_hello_name) uri) with
-      | Some m -> Oth.Assert.true_ "Furi.Match.equal m m" (Furi.Match.equal m m)
+      | Some m -> Oth.Assert.true_ (Furi.Match.equal m m)
       | None -> Oth.Assert.false_ "Match path equal: unexpected value")
 
 let match_path_not_equal =
@@ -200,8 +200,7 @@ let match_path_not_equal =
       match
         Furi.(match_uri (rt --> handle_hello_name) uri1, match_uri (rt --> handle_hello_name) uri2)
       with
-      | Some m1, Some m2 ->
-          Oth.Assert.true_ "not (Furi.Match.equal m1 m2)" (not (Furi.Match.equal m1 m2))
+      | Some m1, Some m2 -> Oth.Assert.not_true (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match path not equal: unexpected value")
 
 let match_query_equal =
@@ -209,7 +208,7 @@ let match_query_equal =
       let uri = Uri.of_string "http://test.com?q=foo" in
       let rt = Furi.(rel /? Query.string "q") in
       match Furi.(match_uri (rt --> fun _ -> ()) uri) with
-      | Some m -> Oth.Assert.true_ "Furi.Match.equal m m" (Furi.Match.equal m m)
+      | Some m -> Oth.Assert.true_ (Furi.Match.equal m m)
       | None -> Oth.Assert.false_ "Match query equal: unexpected value")
 
 let match_query_not_equal =
@@ -218,8 +217,7 @@ let match_query_not_equal =
       let uri2 = Uri.of_string "http://test.com?q=bar" in
       let rt = Furi.(rel /? Query.string "q") in
       match Furi.(match_uri (rt --> fun _ -> ()) uri1, match_uri (rt --> fun _ -> ()) uri2) with
-      | Some m1, Some m2 ->
-          Oth.Assert.true_ "not (Furi.Match.equal m1 m2)" (not (Furi.Match.equal m1 m2))
+      | Some m1, Some m2 -> Oth.Assert.not_true (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match query not equal: unexpected value")
 
 let match_query_equal_but_different =
@@ -228,8 +226,7 @@ let match_query_equal_but_different =
       let uri2 = Uri.of_string "http://test.com?q=foo,bar" in
       let rt = Furi.(rel /? Query.string "q") in
       match Furi.(match_uri (rt --> fun _ -> ()) uri1, match_uri (rt --> fun _ -> ()) uri2) with
-      | Some m1, Some m2 ->
-          Oth.Assert.true_ "not (Furi.Match.equal m1 m2)" (not (Furi.Match.equal m1 m2))
+      | Some m1, Some m2 -> Oth.Assert.not_true (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match query equal but different: unexpected value")
 
 let match_query_order_does_not_matter =
@@ -238,7 +235,7 @@ let match_query_order_does_not_matter =
       let uri2 = Uri.of_string "http://test.com?b=bar&a=foo" in
       let rt = Furi.(rel /? Query.string "a" /? Query.string "b") in
       match Furi.(match_uri (rt --> fun _ _ -> ()) uri1, match_uri (rt --> fun _ _ -> ()) uri2) with
-      | Some m1, Some m2 -> Oth.Assert.true_ "Furi.Match.equal m1 m2" (Furi.Match.equal m1 m2)
+      | Some m1, Some m2 -> Oth.Assert.true_ (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match query order does not matter: unexpected value")
 
 let match_path_consumption =
@@ -247,8 +244,7 @@ let match_path_consumption =
       let rt1 = Furi.(rel / "foo" / "bar") in
       let rt2 = Furi.(rel /% Path.string /% Path.string) in
       match Furi.(match_uri (rt1 --> ()) uri, match_uri (rt2 --> fun _ _ -> ()) uri) with
-      | Some m1, Some m2 ->
-          Oth.Assert.true_ "not (Furi.Match.equal m1 m2)" (not (Furi.Match.equal m1 m2))
+      | Some m1, Some m2 -> Oth.Assert.not_true (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match path consumption not equal: unexpected value")
 
 let match_fragment_equal =
@@ -256,7 +252,7 @@ let match_fragment_equal =
       let uri = Uri.of_string "http://test.com#foo" in
       let rt = Furi.(rel /$ Fragment.string) in
       match Furi.(match_uri (rt --> fun _ -> ()) uri) with
-      | Some m -> Oth.Assert.true_ "Furi.Match.equal m m" (Furi.Match.equal m m)
+      | Some m -> Oth.Assert.true_ (Furi.Match.equal m m)
       | None -> Oth.Assert.false_ "Match fragment equal: unexpected value")
 
 let match_fragment_not_equal =
@@ -265,8 +261,7 @@ let match_fragment_not_equal =
       let uri2 = Uri.of_string "http://test.com#bar" in
       let rt = Furi.(rel /$ Fragment.string) in
       match Furi.(match_uri (rt --> fun _ -> ()) uri1, match_uri (rt --> fun _ -> ()) uri2) with
-      | Some m1, Some m2 ->
-          Oth.Assert.true_ "not (Furi.Match.equal m1 m2)" (not (Furi.Match.equal m1 m2))
+      | Some m1, Some m2 -> Oth.Assert.not_true (Furi.Match.equal m1 m2)
       | _ -> Oth.Assert.false_ "Match fragment not equal: unexpected value")
 
 let first_match_slash_rel =
@@ -285,10 +280,7 @@ let first_match_slash_rel =
             ]
           uri
       with
-      | Some v ->
-          Oth.Assert.true_
-            "Furi.Match.apply v = handle_homepage_slash"
-            (Furi.Match.apply v = handle_homepage_slash)
+      | Some v -> Oth.Assert.true_ (Furi.Match.apply v = handle_homepage_slash)
       | None -> Oth.Assert.false_ "First match homepage slash Rel: unexpected value")
 
 let test_path_const_with_slash =

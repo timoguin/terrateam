@@ -11,11 +11,11 @@ let bytes_read =
       let b' = Bytes.create (Bytes.length b) in
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun ret ->
-      Oth.Assert.true_ "ret = Ok (Bytes.length b')" (ret = Ok (Bytes.length b'));
-      Oth.Assert.true_ "b' = b" (b' = b);
+      Oth.Assert.true_ (ret = Ok (Bytes.length b'));
+      Oth.Assert.true_ (b' = b);
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun ret ->
-      Oth.Assert.true_ "ret = Ok 0" (ret = Ok 0);
+      Oth.Assert.true_ (ret = Ok 0);
       Fut.return ())
 
 let bytes_write =
@@ -29,16 +29,16 @@ let bytes_write =
       >>= fun write_ret ->
       Buffered.flushed w
       >>= fun flushed_ret ->
-      Oth.Assert.true_ "write_ret = Ok len" (write_ret = Ok len);
-      Oth.Assert.true_ "flushed_ret = Ok ()" (flushed_ret = Ok ());
+      Oth.Assert.true_ (write_ret = Ok len);
+      Oth.Assert.true_ (flushed_ret = Ok ());
       let b' = Bytes.create (Bytes.length buf) in
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok (Bytes.length b')" (read_ret = Ok (Bytes.length b'));
-      Oth.Assert.true_ "b' = buf" (b' = buf);
+      Oth.Assert.true_ (read_ret = Ok (Bytes.length b'));
+      Oth.Assert.true_ (b' = buf);
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok 0" (read_ret = Ok 0);
+      Oth.Assert.true_ (read_ret = Ok 0);
       Fut.return ())
 
 let read_line =
@@ -48,13 +48,13 @@ let read_line =
       let r, _ = Buffered.of_bytes b in
       Buffered.read_line r
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok (Some \"foo\")" (read_ret = Ok (Some "foo"));
+      Oth.Assert.true_ (read_ret = Ok (Some "foo"));
       Buffered.read_line r
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok (Some \"bar\")" (read_ret = Ok (Some "bar"));
+      Oth.Assert.true_ (read_ret = Ok (Some "bar"));
       Buffered.read_line r
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok None" (read_ret = Ok None);
+      Oth.Assert.true_ (read_ret = Ok None);
       Fut.return ())
 
 let close_gives_read_eof =
@@ -65,11 +65,11 @@ let close_gives_read_eof =
       let b' = Bytes.create 1024 in
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok (Bytes.length b)" (read_ret = Ok (Bytes.length b));
-      Oth.Assert.true_ "Bytes.sub b' 0 (Bytes.length b) = b" (Bytes.sub b' 0 (Bytes.length b) = b);
+      Oth.Assert.true_ (read_ret = Ok (Bytes.length b));
+      Oth.Assert.true_ (Bytes.sub b' 0 (Bytes.length b) = b);
       Buffered.read r ~buf:b' ~pos:0 ~len:(Bytes.length b')
       >>= fun read_ret ->
-      Oth.Assert.true_ "read_ret = Ok 0" (read_ret = Ok 0);
+      Oth.Assert.true_ (read_ret = Ok 0);
       Abb.Future.return ())
 
 let test = Oth_abb.(parallel [ bytes_read; bytes_write; read_line; close_gives_read_eof ])

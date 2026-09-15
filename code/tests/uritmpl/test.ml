@@ -179,348 +179,122 @@ let test_form_style_query_continuation_3_2_9 =
 
 let test_of_string_to_string =
   Oth.test ~name:"of_string to_string matches" (fun _ ->
-      Oth.Assert.true_ "of_string_to_string_matches \"foo\"" (of_string_to_string_matches "foo");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{count}\""
-        (of_string_to_string_matches "{count}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{count*}\""
-        (of_string_to_string_matches "{count*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/count}\""
-        (of_string_to_string_matches "{/count}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/count*}\""
-        (of_string_to_string_matches "{/count*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;count}\""
-        (of_string_to_string_matches "{;count}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;count*}\""
-        (of_string_to_string_matches "{;count*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?count}\""
-        (of_string_to_string_matches "{?count}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?count*}\""
-        (of_string_to_string_matches "{?count*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&count*}\""
-        (of_string_to_string_matches "{&count*}");
-      Oth.Assert.true_ "of_string_to_string_matches \"{var}\"" (of_string_to_string_matches "{var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{hello}\""
-        (of_string_to_string_matches "{hello}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{half}\""
-        (of_string_to_string_matches "{half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"O{empty}X\""
-        (of_string_to_string_matches "O{empty}X");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"O{undef}X\""
-        (of_string_to_string_matches "O{undef}X");
-      Oth.Assert.true_ "of_string_to_string_matches \"{x,y}\"" (of_string_to_string_matches "{x,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{x,hello,y}\""
-        (of_string_to_string_matches "{x,hello,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"?{x,empty}\""
-        (of_string_to_string_matches "?{x,empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"?{x,undef}\""
-        (of_string_to_string_matches "?{x,undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"?{undef,y}\""
-        (of_string_to_string_matches "?{undef,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{var:3}\""
-        (of_string_to_string_matches "{var:3}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{var:30}\""
-        (of_string_to_string_matches "{var:30}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{list}\""
-        (of_string_to_string_matches "{list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{list*}\""
-        (of_string_to_string_matches "{list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{keys}\""
-        (of_string_to_string_matches "{keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{keys*}\""
-        (of_string_to_string_matches "{keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+var}\""
-        (of_string_to_string_matches "{+var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+hello}\""
-        (of_string_to_string_matches "{+hello}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+half}\""
-        (of_string_to_string_matches "{+half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{base}index\""
-        (of_string_to_string_matches "{base}index");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+base}index\""
-        (of_string_to_string_matches "{+base}index");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"O{+empty}X\""
-        (of_string_to_string_matches "O{+empty}X");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"O{+undef}X\""
-        (of_string_to_string_matches "O{+undef}X");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+path}/here\""
-        (of_string_to_string_matches "{+path}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"here?ref={+path}\""
-        (of_string_to_string_matches "here?ref={+path}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"up{+path}{var}/here\""
-        (of_string_to_string_matches "up{+path}{var}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+x,hello,y}\""
-        (of_string_to_string_matches "{+x,hello,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+path,x}/here\""
-        (of_string_to_string_matches "{+path,x}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+path:6}/here\""
-        (of_string_to_string_matches "{+path:6}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+list}\""
-        (of_string_to_string_matches "{+list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+list*}\""
-        (of_string_to_string_matches "{+list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+keys}\""
-        (of_string_to_string_matches "{+keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{+keys*}\""
-        (of_string_to_string_matches "{+keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#var}\""
-        (of_string_to_string_matches "{#var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#hello}\""
-        (of_string_to_string_matches "{#hello}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#half}\""
-        (of_string_to_string_matches "{#half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"foo{#empty}\""
-        (of_string_to_string_matches "foo{#empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"foo{#undef}\""
-        (of_string_to_string_matches "foo{#undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#x,hello,y}\""
-        (of_string_to_string_matches "{#x,hello,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#path,x}/here\""
-        (of_string_to_string_matches "{#path,x}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#path:6}/here\""
-        (of_string_to_string_matches "{#path:6}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#list}\""
-        (of_string_to_string_matches "{#list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#list*}\""
-        (of_string_to_string_matches "{#list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#keys}\""
-        (of_string_to_string_matches "{#keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{#keys*}\""
-        (of_string_to_string_matches "{#keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{.who}\""
-        (of_string_to_string_matches "{.who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{.who,who}\""
-        (of_string_to_string_matches "{.who,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{.half,who}\""
-        (of_string_to_string_matches "{.half,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"www{.dom*}\""
-        (of_string_to_string_matches "www{.dom*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.var}\""
-        (of_string_to_string_matches "X{.var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.empty}\""
-        (of_string_to_string_matches "X{.empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.undef}\""
-        (of_string_to_string_matches "X{.undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.var:3}\""
-        (of_string_to_string_matches "X{.var:3}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.list}\""
-        (of_string_to_string_matches "X{.list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.list*}\""
-        (of_string_to_string_matches "X{.list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.keys}\""
-        (of_string_to_string_matches "X{.keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.keys*}\""
-        (of_string_to_string_matches "X{.keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.empty_keys}\""
-        (of_string_to_string_matches "X{.empty_keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"X{.empty_keys*}\""
-        (of_string_to_string_matches "X{.empty_keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/who}\""
-        (of_string_to_string_matches "{/who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/who,who}\""
-        (of_string_to_string_matches "{/who,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/half,who}\""
-        (of_string_to_string_matches "{/half,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/who,dub}\""
-        (of_string_to_string_matches "{/who,dub}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/var}\""
-        (of_string_to_string_matches "{/var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/var,empty}\""
-        (of_string_to_string_matches "{/var,empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/var,undef}\""
-        (of_string_to_string_matches "{/var,undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/var,x}/here\""
-        (of_string_to_string_matches "{/var,x}/here");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/var:1,var}\""
-        (of_string_to_string_matches "{/var:1,var}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/list}\""
-        (of_string_to_string_matches "{/list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/list*}\""
-        (of_string_to_string_matches "{/list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/list*,path:4}\""
-        (of_string_to_string_matches "{/list*,path:4}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/keys}\""
-        (of_string_to_string_matches "{/keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{/keys*}\""
-        (of_string_to_string_matches "{/keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;who}\""
-        (of_string_to_string_matches "{;who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;half}\""
-        (of_string_to_string_matches "{;half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;empty}\""
-        (of_string_to_string_matches "{;empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;v,empty,who}\""
-        (of_string_to_string_matches "{;v,empty,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;v,bar,who}\""
-        (of_string_to_string_matches "{;v,bar,who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;x,y}\""
-        (of_string_to_string_matches "{;x,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;x,y,empty}\""
-        (of_string_to_string_matches "{;x,y,empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;x,y,undef}\""
-        (of_string_to_string_matches "{;x,y,undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;hello:5}\""
-        (of_string_to_string_matches "{;hello:5}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;list}\""
-        (of_string_to_string_matches "{;list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;list*}\""
-        (of_string_to_string_matches "{;list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;keys}\""
-        (of_string_to_string_matches "{;keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{;keys*}\""
-        (of_string_to_string_matches "{;keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?who}\""
-        (of_string_to_string_matches "{?who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?half}\""
-        (of_string_to_string_matches "{?half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?x,y}\""
-        (of_string_to_string_matches "{?x,y}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?x,y,empty}\""
-        (of_string_to_string_matches "{?x,y,empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?x,y,undef}\""
-        (of_string_to_string_matches "{?x,y,undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?var:3}\""
-        (of_string_to_string_matches "{?var:3}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?list}\""
-        (of_string_to_string_matches "{?list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?list*}\""
-        (of_string_to_string_matches "{?list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?keys}\""
-        (of_string_to_string_matches "{?keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{?keys*}\""
-        (of_string_to_string_matches "{?keys*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&who}\""
-        (of_string_to_string_matches "{&who}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&half}\""
-        (of_string_to_string_matches "{&half}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"?fixed=yes{&x}\""
-        (of_string_to_string_matches "?fixed=yes{&x}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&x,y,empty}\""
-        (of_string_to_string_matches "{&x,y,empty}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&x,y,undef}\""
-        (of_string_to_string_matches "{&x,y,undef}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&var:3}\""
-        (of_string_to_string_matches "{&var:3}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&list}\""
-        (of_string_to_string_matches "{&list}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&list*}\""
-        (of_string_to_string_matches "{&list*}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&keys}\""
-        (of_string_to_string_matches "{&keys}");
-      Oth.Assert.true_
-        "of_string_to_string_matches \"{&keys*}\""
-        (of_string_to_string_matches "{&keys*}"))
+      Oth.Assert.true_ (of_string_to_string_matches "foo");
+      Oth.Assert.true_ (of_string_to_string_matches "{count}");
+      Oth.Assert.true_ (of_string_to_string_matches "{count*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/count}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/count*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;count}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;count*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?count}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?count*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&count*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{var}");
+      Oth.Assert.true_ (of_string_to_string_matches "{hello}");
+      Oth.Assert.true_ (of_string_to_string_matches "{half}");
+      Oth.Assert.true_ (of_string_to_string_matches "O{empty}X");
+      Oth.Assert.true_ (of_string_to_string_matches "O{undef}X");
+      Oth.Assert.true_ (of_string_to_string_matches "{x,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{x,hello,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "?{x,empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "?{x,undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "?{undef,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{var:3}");
+      Oth.Assert.true_ (of_string_to_string_matches "{var:30}");
+      Oth.Assert.true_ (of_string_to_string_matches "{list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+var}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+hello}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+half}");
+      Oth.Assert.true_ (of_string_to_string_matches "{base}index");
+      Oth.Assert.true_ (of_string_to_string_matches "{+base}index");
+      Oth.Assert.true_ (of_string_to_string_matches "O{+empty}X");
+      Oth.Assert.true_ (of_string_to_string_matches "O{+undef}X");
+      Oth.Assert.true_ (of_string_to_string_matches "{+path}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "here?ref={+path}");
+      Oth.Assert.true_ (of_string_to_string_matches "up{+path}{var}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{+x,hello,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+path,x}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{+path:6}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{+list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{+keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#var}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#hello}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#half}");
+      Oth.Assert.true_ (of_string_to_string_matches "foo{#empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "foo{#undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#x,hello,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#path,x}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{#path:6}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{#list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{#keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{.who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{.who,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{.half,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "www{.dom*}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.var}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.var:3}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.list}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.empty_keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "X{.empty_keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/who,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/half,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/who,dub}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/var}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/var,empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/var,undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/var,x}/here");
+      Oth.Assert.true_ (of_string_to_string_matches "{/var:1,var}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/list*,path:4}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{/keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;half}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;v,empty,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;v,bar,who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;x,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;x,y,empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;x,y,undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;hello:5}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{;keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?half}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?x,y}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?x,y,empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?x,y,undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?var:3}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{?keys*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&who}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&half}");
+      Oth.Assert.true_ (of_string_to_string_matches "?fixed=yes{&x}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&x,y,empty}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&x,y,undef}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&var:3}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&list}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&list*}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&keys}");
+      Oth.Assert.true_ (of_string_to_string_matches "{&keys*}"))
 
 let test =
   Oth.parallel

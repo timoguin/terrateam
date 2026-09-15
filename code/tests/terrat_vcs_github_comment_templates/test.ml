@@ -359,19 +359,14 @@ let test_published_bodies_carry_the_self_marker =
         | Error (`Tag_query_error _) -> true
         | Error `Not_terrateam -> false
       in
+      Oth.Assert.true_ (CCList.exists (fun (_, tmpl) -> parses_as_a_command tmpl) templates);
       Oth.Assert.true_
-        "a shipped template still parses as a command"
-        (CCList.exists (fun (_, tmpl) -> parses_as_a_command tmpl) templates);
-      Oth.Assert.true_
-        "a Terrateam-branded template still parses as a command"
         (CCList.exists
            (fun (_, tmpl) -> parses_as_a_command (Terrat_brand.to_terrateam tmpl))
            templates);
       CCList.iter
-        (fun (name, tmpl) ->
-          Oth.Assert.true_
-            (name ^ " is recognized as published by this system")
-            (Terrat_comment.is_from_self (Terrat_comment.add_self_marker tmpl)))
+        (fun (_, tmpl) ->
+          Oth.Assert.true_ (Terrat_comment.is_from_self (Terrat_comment.add_self_marker tmpl)))
         templates;
       ())
 
@@ -522,10 +517,8 @@ let test_apply_complete2_details ~name ~compact_view ~applied ~num_dirspaces =
         render Tmpl.apply_complete2 (apply_complete2_kv ~compact_view ~applied ~num_dirspaces ())
       in
       let depth, min_depth = details_balance body in
-      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
-      Oth.Assert.true_
-        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
-        (min_depth >= 0);
+      Oth.Assert.true_ (depth = 0);
+      Oth.Assert.true_ (min_depth >= 0);
       ())
 
 let test_apply_complete2_details_many_dirspaces =
@@ -777,10 +770,8 @@ let test_plan_complete2_unified_details =
       (* The counts live in the summary line, not repeated bold above it. *)
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"**1 dirspace";
       let depth, min_depth = details_balance body in
-      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
-      Oth.Assert.true_
-        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
-        (min_depth >= 0))
+      Oth.Assert.true_ (depth = 0);
+      Oth.Assert.true_ (min_depth >= 0))
 
 (* Header mode, or the summary disabled: the table stays unwrapped and always present. *)
 let test_plan_complete2_header_keeps_table_open =
@@ -832,10 +823,8 @@ let test_apply_complete2_unified_details =
       (* The counts live in the summary line, not repeated bold above it. *)
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"**3 dirspaces";
       let depth, min_depth = details_balance body in
-      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
-      Oth.Assert.true_
-        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
-        (min_depth >= 0))
+      Oth.Assert.true_ (depth = 0);
+      Oth.Assert.true_ (min_depth >= 0))
 
 let test_plan_complete2_changes_keep_apply =
   Oth.test ~tags:[ "plan_complete" ] ~name:"Plan complete: changes keep the apply footer" (fun _ ->

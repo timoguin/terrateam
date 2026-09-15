@@ -168,7 +168,7 @@ module Make (Abb : Abb_intf.S) = struct
         | `Det _ | `Exn _ | `Undet ->
             Oth.Assert.false_ "expected the aborted task future to be in `Aborted state");
         (* Worker side: the body must not have run to completion. *)
-        Oth.Assert.true_ "worker body stopped at the abort" (not (Atomic.get reached_end)))
+        Oth.Assert.not_true (Atomic.get reached_end))
 
   (* Aborting an unpinned task before the worker has advanced still
      stops it: the abort thunk waits in the task's mailbox and is
@@ -189,7 +189,7 @@ module Make (Abb : Abb_intf.S) = struct
         | `Aborted -> ()
         | `Det _ | `Exn _ | `Undet ->
             Oth.Assert.false_ "expected the aborted task future to be in `Aborted state");
-        Oth.Assert.true_ "worker body never started after abort" (not (Atomic.get reached_end)))
+        Oth.Assert.not_true (Atomic.get reached_end))
 
   (* An unpinned task (running on a worker domain) spawns a pinned
      child.  [~pinned:true] must place the child's body and callbacks on
@@ -246,7 +246,7 @@ module Make (Abb : Abb_intf.S) = struct
             | `Aborted -> ()
             | `Det _ | `Exn _ | `Undet ->
                 Oth.Assert.false_ "expected the aborted pinned child to be in `Aborted state");
-            Oth.Assert.true_ "pinned child body stopped at the abort" (not (Atomic.get reached_end)))
+            Oth.Assert.not_true (Atomic.get reached_end))
         >>= fun outer -> outer)
 
   (* Aborting the pinned child before it has reached an async suspension
@@ -268,9 +268,7 @@ module Make (Abb : Abb_intf.S) = struct
             | `Aborted -> ()
             | `Det _ | `Exn _ | `Undet ->
                 Oth.Assert.false_ "expected the aborted pinned child to be in `Aborted state");
-            Oth.Assert.true_
-              "pinned child body never ran to completion"
-              (not (Atomic.get reached_end)))
+            Oth.Assert.not_true (Atomic.get reached_end))
         >>= fun outer -> outer)
 
   (* An exception in the pinned child surfaces to the awaiting unpinned
@@ -320,7 +318,6 @@ module Make (Abb : Abb_intf.S) = struct
             child
             >>| fun (id_pinned, id_inner) ->
             Oth.Assert.true_
-              "all three task ids are distinct"
               (id_unpinned <> id_pinned && id_pinned <> id_inner && id_unpinned <> id_inner))
         >>= fun outer -> outer)
 

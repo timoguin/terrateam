@@ -541,7 +541,7 @@ let test_notifications_summary_enabled_unset =
       (match summary.Sum.enabled with
       | None -> ()
       | Some _ -> failwith "Expected an unset summary enabled");
-      Oth.Assert.true_ "An unset enabled reads as on" (Sum.enabled summary))
+      Oth.Assert.true_ (Sum.enabled summary))
 
 (* Every configuration layer of a merge passes through [to_version_1].  A repository that sets the
    mode and not [enabled] must come back with [enabled] still unset, or a layer would say something
@@ -847,17 +847,7 @@ let test_notifications_classic_comment_visible =
           let actual = N.classic_comment_visible t ~run ~success ~gates_or_denials:gates in
           (* The message names the row: a bare equality assertion on a table of thirteen says
              which value was wrong and not which case produced it. *)
-          Oth.Assert.true_
-            (Printf.sprintf
-               "classic_comment_visible enabled=%b run=%s success=%b gates=%b: expected %b"
-               enabled
-               (match run with
-               | `Plan -> "plan"
-               | `Apply -> "apply")
-               success
-               gates
-               expected)
-            (actual = expected))
+          Oth.Assert.true_ (actual = expected))
         cases)
 
 let test_notifications_summary_mode_round_trip =
