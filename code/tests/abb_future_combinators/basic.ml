@@ -19,7 +19,7 @@ let first1 =
       match Fut.state res with
       | `Det (v, fut) ->
           Oth.Assert.Eq.int ~expected:1 ~actual:v;
-          Oth.Assert.true_ "Fut.state fut = `Undet" (Fut.state fut = `Undet)
+          Oth.Assert.true_ (Fut.state fut = `Undet)
       | `Undet | `Aborted | `Exn _ ->
           Oth.Assert.false_ "first with one determined: unexpected value")
 
@@ -50,13 +50,9 @@ let first3 =
       let res = Fut_comb.first (Fut.Promise.future p1) (Fut.Promise.future p2) in
       ignore (Fut.run_with_state res dummy_state);
       ignore (Fut.run_with_state (Fut.abort res) dummy_state);
-      Oth.Assert.true_ "Fut.state res = `Aborted" (Fut.state res = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p1) = `Aborted"
-        (Fut.state (Fut.Promise.future p1) = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p2) = `Aborted"
-        (Fut.state (Fut.Promise.future p2) = `Aborted))
+      Oth.Assert.true_ (Fut.state res = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p1) = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p2) = `Aborted))
 
 let firstl1 =
   Oth.test ~desc:"firstl returns determined future" ~name:"firstl with one determined" (fun _ ->
@@ -69,7 +65,7 @@ let firstl1 =
       match Fut.state res with
       | `Det (v, [ fut ]) ->
           Oth.Assert.Eq.int ~expected:1 ~actual:v;
-          Oth.Assert.true_ "Fut.state fut = `Undet" (Fut.state fut = `Undet)
+          Oth.Assert.true_ (Fut.state fut = `Undet)
       | `Det _ -> Oth.Assert.false_ "firstl with one determined: unexpected value"
       | `Undet | `Aborted | `Exn _ ->
           Oth.Assert.false_ "firstl with one determined: unexpected value")
@@ -102,13 +98,9 @@ let firstl3 =
       let res = Fut_comb.firstl [ Fut.Promise.future p1; Fut.Promise.future p2 ] in
       ignore (Fut.run_with_state res dummy_state);
       ignore (Fut.run_with_state (Fut.abort res) dummy_state);
-      Oth.Assert.true_ "Fut.state res = `Aborted" (Fut.state res = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p1) = `Aborted"
-        (Fut.state (Fut.Promise.future p1) = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p2) = `Aborted"
-        (Fut.state (Fut.Promise.future p2) = `Aborted))
+      Oth.Assert.true_ (Fut.state res = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p1) = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p2) = `Aborted))
 
 let map1 =
   Oth.test ~desc:"Simple map test" ~name:"Simple map" (fun _ ->
@@ -116,7 +108,7 @@ let map1 =
       let vs = [ 1; 2; 3 ] in
       let fut = Fut_comb.List.map ~f:Fut.return vs in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Det [ 1; 2; 3 ]" (Fut.state fut = `Det [ 1; 2; 3 ]))
+      Oth.Assert.true_ (Fut.state fut = `Det [ 1; 2; 3 ]))
 
 let map2 =
   Oth.test ~desc:"Simple map test" ~name:"Simple map" (fun _ ->
@@ -124,7 +116,7 @@ let map2 =
       let vs = [ 1; 2; 3 ] in
       let fut = Fut_comb.List.map ~f:Fut.return vs in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Det [ 1; 2; 3 ]" (Fut.state fut = `Det [ 1; 2; 3 ]))
+      Oth.Assert.true_ (Fut.state fut = `Det [ 1; 2; 3 ]))
 
 let firstl4 =
   Oth.test
@@ -137,13 +129,9 @@ let firstl4 =
       let res = Fut_comb.firstl [ Fut.Promise.future p1; Fut.Promise.future p2 ] in
       ignore (Fut.run_with_state res dummy_state);
       ignore (Fut.run_with_state (Fut.abort (Fut.Promise.future p1)) dummy_state);
-      Oth.Assert.true_ "Fut.state res = `Aborted" (Fut.state res = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p1) = `Aborted"
-        (Fut.state (Fut.Promise.future p1) = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p2) = `Aborted"
-        (Fut.state (Fut.Promise.future p2) = `Aborted))
+      Oth.Assert.true_ (Fut.state res = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p1) = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p2) = `Aborted))
 
 let first4 =
   Oth.test
@@ -156,13 +144,9 @@ let first4 =
       let res = Fut_comb.first (Fut.Promise.future p1) (Fut.Promise.future p2) in
       ignore (Fut.run_with_state res dummy_state);
       ignore (Fut.run_with_state (Fut.abort (Fut.Promise.future p1)) dummy_state);
-      Oth.Assert.true_ "Fut.state res = `Aborted" (Fut.state res = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p1) = `Aborted"
-        (Fut.state (Fut.Promise.future p1) = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p2) = `Aborted"
-        (Fut.state (Fut.Promise.future p2) = `Aborted))
+      Oth.Assert.true_ (Fut.state res = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p1) = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p2) = `Aborted))
 
 let with_finally_success =
   Oth.test ~desc:"Test the finally block is run on success" ~name:"with_finally success" (fun _ ->
@@ -178,9 +162,9 @@ let with_finally_success =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set p ()) dummy_state);
-      Oth.Assert.true_ "!finally_exec > 0" (!finally_exec > 0);
+      Oth.Assert.true_ (!finally_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
-      Oth.Assert.true_ "Fut.state fut = `Det ()" (Fut.state fut = `Det ()))
+      Oth.Assert.true_ (Fut.state fut = `Det ()))
 
 let with_finally_aborted =
   Oth.test ~desc:"Test the finally block is run on abort" ~name:"with_finally aborted" (fun _ ->
@@ -196,9 +180,9 @@ let with_finally_aborted =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort (Fut.Promise.future p)) dummy_state);
-      Oth.Assert.true_ "!finally_exec > 0" (!finally_exec > 0);
+      Oth.Assert.true_ (!finally_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let with_finally_aborted_complete =
   Oth.test
@@ -229,7 +213,7 @@ let with_finally_aborted_complete =
       ignore (Fut.run_with_state (Fut.Promise.set trigger_finally_step ()) dummy_state);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
       Oth.Assert.Eq.int ~expected:1 ~actual:!next_step_finally_count;
-      Oth.Assert.true_ "Fut.state fut = `Det ()" (Fut.state fut = `Det ()))
+      Oth.Assert.true_ (Fut.state fut = `Det ()))
 
 let with_finally_exn =
   Oth.test
@@ -248,7 +232,7 @@ let with_finally_exn =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set_exn p (Failure "foo", None)) dummy_state);
-      Oth.Assert.true_ "!finally_exec > 0" (!finally_exec > 0);
+      Oth.Assert.true_ (!finally_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
       match Fut.state fut with
       | `Exn (Failure _, None) -> ()
@@ -269,7 +253,7 @@ let with_finally_raise =
             Fut.return ())
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "!finally_exec > 0" (!finally_exec > 0);
+      Oth.Assert.true_ (!finally_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
       match Fut.state fut with
       | `Exn (Failure _, Some _) -> ()
@@ -330,12 +314,10 @@ let with_finally_aborted_from_outside =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "!finally_exec > 0" (!finally_exec > 0);
+      Oth.Assert.true_ (!finally_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!finally_exec;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p) = `Aborted"
-        (Fut.state (Fut.Promise.future p) = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p) = `Aborted))
 
 let with_finally_nested_raise =
   Oth.test ~name:"with_finally nested raise" (fun _ ->
@@ -361,8 +343,8 @@ let with_finally_nested_raise =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set start ()) dummy_state);
-      Oth.Assert.true_ "!inner_first" !inner_first;
-      Oth.Assert.true_ "!outer_finally" !outer_finally)
+      Oth.Assert.true_ !inner_first;
+      Oth.Assert.true_ !outer_finally)
 
 let with_finally_nested_abort =
   Oth.test ~name:"with_finally nested abort" (fun _ ->
@@ -388,9 +370,9 @@ let with_finally_nested_abort =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state Fut.(abort (Promise.future start)) dummy_state);
-      Oth.Assert.true_ "!inner_first" !inner_first;
-      Oth.Assert.true_ "!outer_finally" !outer_finally;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ !inner_first;
+      Oth.Assert.true_ !outer_finally;
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let with_finally_nested_abort_outside =
   Oth.test ~name:"with_finally nested abort outside" (fun _ ->
@@ -416,9 +398,9 @@ let with_finally_nested_abort_outside =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "!inner_first" !inner_first;
-      Oth.Assert.true_ "!outer_finally" !outer_finally;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ !inner_first;
+      Oth.Assert.true_ !outer_finally;
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let with_finally_nested_abort_sequenced =
   Oth.test ~name:"with_finally nested abort sequenced" (fun _ ->
@@ -448,15 +430,11 @@ let with_finally_nested_abort_sequenced =
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger_inner ()) dummy_state);
-      Oth.Assert.true_ "!inner_first" !inner_first;
-      Oth.Assert.true_ "!outer_finally" !outer_finally;
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future start) = `Aborted"
-        (Fut.state (Fut.Promise.future start) = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future trigger_inner) = `Det ()"
-        (Fut.state (Fut.Promise.future trigger_inner) = `Det ());
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ !inner_first;
+      Oth.Assert.true_ !outer_finally;
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future start) = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future trigger_inner) = `Det ());
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let with_finally_nested_exn_sequenced =
   Oth.test ~name:"with_finally nested exn sequenced" (fun _ ->
@@ -494,8 +472,8 @@ let with_finally_nested_exn_sequenced =
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set start ()) dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger_inner ()) dummy_state);
-      Oth.Assert.true_ "!inner_first" !inner_first;
-      Oth.Assert.true_ "!outer_finally" !outer_finally;
+      Oth.Assert.true_ !inner_first;
+      Oth.Assert.true_ !outer_finally;
       (match Fut.state fut with
       | `Aborted -> Oth.Assert.false_ "with_finally nested exn sequenced: unexpected value"
       | `Det _ -> Oth.Assert.false_ "with_finally nested exn sequenced: unexpected value"
@@ -524,7 +502,7 @@ let on_failure_success =
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set p ()) dummy_state);
       Oth.Assert.Eq.int ~expected:0 ~actual:!failure_exec;
-      Oth.Assert.true_ "Fut.state fut = `Det ()" (Fut.state fut = `Det ()))
+      Oth.Assert.true_ (Fut.state fut = `Det ()))
 
 let on_failure_aborted =
   Oth.test ~desc:"Test the failure block is run on abort" ~name:"on_failure aborted" (fun _ ->
@@ -540,9 +518,9 @@ let on_failure_aborted =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort (Fut.Promise.future p)) dummy_state);
-      Oth.Assert.true_ "!failure_exec > 0" (!failure_exec > 0);
+      Oth.Assert.true_ (!failure_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!failure_exec;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let on_failure_aborted_from_outside =
   Oth.test
@@ -561,12 +539,10 @@ let on_failure_aborted_from_outside =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "!failure_exec > 0" (!failure_exec > 0);
+      Oth.Assert.true_ (!failure_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!failure_exec;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p) = `Aborted"
-        (Fut.state (Fut.Promise.future p) = `Aborted))
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p) = `Aborted))
 
 let on_failure_exn =
   Oth.test
@@ -585,7 +561,7 @@ let on_failure_exn =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set_exn p (Failure "foo", None)) dummy_state);
-      Oth.Assert.true_ "!failure_exec > 0" (!failure_exec > 0);
+      Oth.Assert.true_ (!failure_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!failure_exec;
       match Fut.state fut with
       | `Exn (Failure _, None) -> ()
@@ -606,7 +582,7 @@ let on_failure_raise =
             Fut.return ())
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "!failure_exec > 0" (!failure_exec > 0);
+      Oth.Assert.true_ (!failure_exec > 0);
       Oth.Assert.Eq.int ~expected:1 ~actual:!failure_exec;
       match Fut.state fut with
       | `Exn (Failure _, Some _) -> ()
@@ -619,12 +595,10 @@ let timeout_timeout =
       let call = Fut.Promise.create () in
       let wait = Fut_comb.timeout ~timeout:(Fut.Promise.future timeout) (Fut.Promise.future call) in
       ignore (Fut.run_with_state wait dummy_state);
-      Oth.Assert.true_ "Fut.state wait = `Undet" (Fut.state wait = `Undet);
+      Oth.Assert.true_ (Fut.state wait = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set timeout ()) dummy_state);
-      Oth.Assert.true_ "Fut.state wait = `Det `Timeout" (Fut.state wait = `Det `Timeout);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future call) = `Aborted"
-        (Fut.state (Fut.Promise.future call) = `Aborted))
+      Oth.Assert.true_ (Fut.state wait = `Det `Timeout);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future call) = `Aborted))
 
 let timeout_success =
   Oth.test ~desc:"Test timeout when the operation succeeds" ~name:"timeout success" (fun _ ->
@@ -633,12 +607,10 @@ let timeout_success =
       let call = Fut.Promise.create () in
       let wait = Fut_comb.timeout ~timeout:(Fut.Promise.future timeout) (Fut.Promise.future call) in
       ignore (Fut.run_with_state wait dummy_state);
-      Oth.Assert.true_ "Fut.state wait = `Undet" (Fut.state wait = `Undet);
+      Oth.Assert.true_ (Fut.state wait = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set call ()) dummy_state);
-      Oth.Assert.true_ "Fut.state wait = `Det (`Ok ())" (Fut.state wait = `Det (`Ok ()));
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future timeout) = `Aborted"
-        (Fut.state (Fut.Promise.future timeout) = `Aborted))
+      Oth.Assert.true_ (Fut.state wait = `Det (`Ok ()));
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future timeout) = `Aborted))
 
 let protect_test =
   Oth.test ~name:"protect" (fun _ ->
@@ -652,14 +624,10 @@ let protect_test =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Det ()"
-        (Fut.state (Fut.Promise.future protected) = `Det ()))
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Det ()))
 
 let protect_fork_finally_abort_in_protect_test =
   Oth.test ~name:"protect fork_finally pattern abort in protect" (fun _ ->
@@ -683,16 +651,12 @@ let protect_fork_finally_abort_in_protect_test =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Det ()"
-        (Fut.state (Fut.Promise.future protected) = `Det ());
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Det ());
+      Oth.Assert.true_ !hit_finally)
 
 let protect_fork_finally_abort_in_finally_test =
   Oth.test ~name:"protect fork_finally pattern abort in finally" (fun _ ->
@@ -718,15 +682,11 @@ let protect_fork_finally_abort_in_finally_test =
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ !hit_finally)
 
 let protect_fork_finally_abort_in_on_failure_test =
   Oth.test ~name:"protect fork_on_failure pattern abort in on_failure" (fun _ ->
@@ -752,15 +712,11 @@ let protect_fork_finally_abort_in_on_failure_test =
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
-      Oth.Assert.true_ "!hit_failure" !hit_failure)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ !hit_failure)
 
 let protect_finally_abort_in_protect_test =
   Oth.test ~name:"protect_finally abort in protect" (fun _ ->
@@ -782,15 +738,11 @@ let protect_finally_abort_in_protect_test =
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ !hit_finally)
 
 let protect_finally_abort_in_body_test =
   Oth.test ~name:"protect_finally abort in body" (fun _ ->
@@ -812,15 +764,11 @@ let protect_finally_abort_in_body_test =
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ !hit_finally)
 
 let protect_finally_exn_in_body_test =
   Oth.test ~name:"protect_finally exn in body" (fun _ ->
@@ -846,7 +794,7 @@ let protect_finally_exn_in_body_test =
       | `Undet -> Oth.Assert.false_ "protect_finally exn in body: unexpected value"
       | `Det _ -> Oth.Assert.false_ "protect_finally exn in body: unexpected value"
       | `Aborted -> Oth.Assert.false_ "protect_finally exn in body: unexpected value");
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ !hit_finally)
 
 let protect_finally_abort_in_finally_test =
   Oth.test ~name:"protect_finally abort in finally" (fun _ ->
@@ -870,17 +818,13 @@ let protect_finally_abort_in_finally_test =
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Det ()"
-        (Fut.state (Fut.Promise.future protected) = `Det ());
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Det ());
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
       ignore (Fut.run_with_state (Fut.Promise.set trigger3 ()) dummy_state);
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ !hit_finally)
 
 let protect_finally_success_test =
   Oth.test ~name:"protect_finally success" (fun _ ->
@@ -901,15 +845,11 @@ let protect_finally_success_test =
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set trigger1 ()) dummy_state);
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Undet"
-        (Fut.state (Fut.Promise.future protected) = `Undet);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set trigger2 ()) dummy_state);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future protected) = `Det ()"
-        (Fut.state (Fut.Promise.future protected) = `Det ());
-      Oth.Assert.true_ "Fut.state fut = `Det ()" (Fut.state fut = `Det ());
-      Oth.Assert.true_ "!hit_finally" !hit_finally)
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future protected) = `Det ());
+      Oth.Assert.true_ (Fut.state fut = `Det ());
+      Oth.Assert.true_ !hit_finally)
 
 let tap_det =
   Oth.test ~desc:"tap observes and propagates a determined value" ~name:"tap det" (fun _ ->
@@ -924,10 +864,10 @@ let tap_det =
           (Fut.Promise.future p)
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Undet" (Fut.state fut = `Undet);
+      Oth.Assert.true_ (Fut.state fut = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set p 42) dummy_state);
-      Oth.Assert.true_ "!observed = Some 42" (!observed = Some 42);
-      Oth.Assert.true_ "Fut.state fut = `Det 42" (Fut.state fut = `Det 42))
+      Oth.Assert.true_ (!observed = Some 42);
+      Oth.Assert.true_ (Fut.state fut = `Det 42))
 
 let tap_det_error =
   Oth.test
@@ -946,8 +886,8 @@ let tap_det_error =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set p (Error `Boom)) dummy_state);
-      Oth.Assert.true_ "!observed" !observed;
-      Oth.Assert.true_ "Fut.state fut = `Det (Error `Boom)" (Fut.state fut = `Det (Error `Boom)))
+      Oth.Assert.true_ !observed;
+      Oth.Assert.true_ (Fut.state fut = `Det (Error `Boom)))
 
 (* [while_] runs entirely on already-determined futures, so one [run_with_state]
    drives the whole loop to completion. *)
@@ -967,7 +907,7 @@ let while_state =
           ~betwixt:(fun _ -> Fut.return ())
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Det ((6, 15), 5)" (Fut.state fut = `Det ((6, 15), 5)))
+      Oth.Assert.true_ (Fut.state fut = `Det ((6, 15), 5)))
 
 let while_betwixt_sees_state =
   Oth.test
@@ -986,11 +926,9 @@ let while_betwixt_sees_state =
             Fut.return ())
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Det (4, 3)" (Fut.state fut = `Det (4, 3));
+      Oth.Assert.true_ (Fut.state fut = `Det (4, 3));
       (* betwixt runs between iterations, not after the last one. *)
-      Oth.Assert.true_
-        "betwixt saw [(1, 0); (2, 1); (3, 2)]"
-        (CCList.rev !seen = [ (1, 0); (2, 1); (3, 2) ]))
+      Oth.Assert.true_ (CCList.rev !seen = [ (1, 0); (2, 1); (3, 2) ]))
 
 let while_finite_tries =
   Oth.test
@@ -1011,7 +949,7 @@ let while_finite_tries =
       in
       ignore (Fut.run_with_state fut dummy_state);
       Oth.Assert.Eq.int ~expected:5 ~actual:!calls;
-      Oth.Assert.true_ "Fut.state fut = `Det (5, 4)" (Fut.state fut = `Det (5, 4)))
+      Oth.Assert.true_ (Fut.state fut = `Det (5, 4)))
 
 let while_stops_immediately =
   Oth.test
@@ -1030,8 +968,8 @@ let while_stops_immediately =
             Fut.return ())
       in
       ignore (Fut.run_with_state fut dummy_state);
-      Oth.Assert.true_ "Fut.state fut = `Det (8, 7)" (Fut.state fut = `Det (8, 7));
-      Oth.Assert.true_ "betwixt did not run" (not !betwixt_ran))
+      Oth.Assert.true_ (Fut.state fut = `Det (8, 7));
+      Oth.Assert.not_true !betwixt_ran)
 
 let retry_over_while_ =
   Oth.test
@@ -1053,7 +991,7 @@ let retry_over_while_ =
       in
       ignore (Fut.run_with_state fut dummy_state);
       (* retry returns the bare value, not the (state, value) pair. *)
-      Oth.Assert.true_ "Fut.state fut = `Det 3" (Fut.state fut = `Det 3);
+      Oth.Assert.true_ (Fut.state fut = `Det 3);
       Oth.Assert.Eq.int ~expected:3 ~actual:!calls;
       Oth.Assert.Eq.int ~expected:2 ~actual:!betwixt_calls)
 
@@ -1071,7 +1009,7 @@ let tap_exn =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.Promise.set_exn p (Failure "boom", None)) dummy_state);
-      Oth.Assert.true_ "!observed" !observed;
+      Oth.Assert.true_ !observed;
       match Fut.state fut with
       | `Exn (Failure _, None) -> ()
       | _ -> Oth.Assert.false_ "tap exn: unexpected value")
@@ -1090,8 +1028,8 @@ let tap_aborted =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort (Fut.Promise.future p)) dummy_state);
-      Oth.Assert.true_ "!observed" !observed;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted))
+      Oth.Assert.true_ !observed;
+      Oth.Assert.true_ (Fut.state fut = `Aborted))
 
 let tap_aborted_from_outside =
   Oth.test
@@ -1110,11 +1048,9 @@ let tap_aborted_from_outside =
       in
       ignore (Fut.run_with_state fut dummy_state);
       ignore (Fut.run_with_state (Fut.abort fut) dummy_state);
-      Oth.Assert.true_ "!observed" !observed;
-      Oth.Assert.true_ "Fut.state fut = `Aborted" (Fut.state fut = `Aborted);
-      Oth.Assert.true_
-        "Fut.state (Fut.Promise.future p) = `Aborted"
-        (Fut.state (Fut.Promise.future p) = `Aborted))
+      Oth.Assert.true_ !observed;
+      Oth.Assert.true_ (Fut.state fut = `Aborted);
+      Oth.Assert.true_ (Fut.state (Fut.Promise.future p) = `Aborted))
 
 let () =
   Oth.(

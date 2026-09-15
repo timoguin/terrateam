@@ -5,7 +5,7 @@ module B = Mql.Build
 let assert_renders sql ast =
   let rendered = Mql.Ast.to_string ast in
   Oth.Assert.Eq.string ~expected:sql ~actual:rendered;
-  Oth.Assert.true_ "rendered SQL must reparse" (CCResult.is_ok (Mql.Ast.of_string rendered))
+  Oth.Assert.true_ (CCResult.is_ok (Mql.Ast.of_string rendered))
 
 let test =
   Oth.parallel

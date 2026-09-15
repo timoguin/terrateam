@@ -17,7 +17,7 @@ let basic =
             ~actual:(Cohttp.Code.string_of_status res.Http.Response.status);
           Buffered.read_line rs
           >>= fun ret ->
-          Oth.Assert.true_ "ret = Ok (Some \"GET / HTTP/1.1\")" (ret = Ok (Some "GET / HTTP/1.1"));
+          Oth.Assert.true_ (ret = Ok (Some "GET / HTTP/1.1"));
           Abb.Future.return ()
       | Error _ -> Oth.Assert.false_ "Basic: unexpected value")
 

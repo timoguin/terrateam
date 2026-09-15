@@ -3,7 +3,7 @@ let test_empty_input =
       let decoder = Pgsql_codec.Decode.create () in
       let msg1 = Bytes.of_string "" in
       let res = Pgsql_codec.Decode.backend_msg decoder msg1 ~pos:0 ~len:(Bytes.length msg1) in
-      Oth.Assert.true_ "res = Ok []" (res = Ok []))
+      Oth.Assert.true_ (res = Ok []))
 
 let test_frontend_encode =
   Oth.test ~desc:"Frontend encode" ~name:"Frontend encode" (fun _ ->
@@ -18,11 +18,9 @@ let test_partial_msg_decode =
       let msg1 = Bytes.of_string "D\000\000\000 \000\002\000\000\000\016Testy McTestface\000\000" in
       let msg2 = Bytes.of_string "\000\00236" in
       let res = Pgsql_codec.Decode.backend_msg decoder msg1 ~pos:0 ~len:(Bytes.length msg1) in
-      Oth.Assert.true_ "res = Ok []" (res = Ok []);
+      Oth.Assert.true_ (res = Ok []);
       let res = Pgsql_codec.Decode.backend_msg decoder msg2 ~pos:0 ~len:(Bytes.length msg2) in
       Oth.Assert.true_
-        "res = Ok Pgsql_codec.Frame.Backend.[ DataRow { data = [ Some \"Testy McTestface\"; Some \
-         \"36\" ] } ]"
         (res
         = Ok Pgsql_codec.Frame.Backend.[ DataRow { data = [ Some "Testy McTestface"; Some "36" ] } ]
         ))
@@ -361,40 +359,30 @@ let test_binary_int2 =
       let module E = Pgsql_codec.Binary_value.Encode in
       let module D = Pgsql_codec.Binary_value.Decode in
       Oth.Assert.Eq.int ~expected:2 ~actual:(String.length (E.int2 42));
-      Oth.Assert.true_ "D.int2 (E.int2 42) = Some 42" (D.int2 (E.int2 42) = Some 42);
-      Oth.Assert.true_ "D.int2 (E.int2 (-1)) = Some (-1)" (D.int2 (E.int2 (-1)) = Some (-1));
-      Oth.Assert.true_
-        "D.int2 (E.int2 (-32768)) = Some (-32768)"
-        (D.int2 (E.int2 (-32768)) = Some (-32768));
-      Oth.Assert.true_ "D.int2 (E.int2 32767) = Some 32767" (D.int2 (E.int2 32767) = Some 32767))
+      Oth.Assert.true_ (D.int2 (E.int2 42) = Some 42);
+      Oth.Assert.true_ (D.int2 (E.int2 (-1)) = Some (-1));
+      Oth.Assert.true_ (D.int2 (E.int2 (-32768)) = Some (-32768));
+      Oth.Assert.true_ (D.int2 (E.int2 32767) = Some 32767))
 
 let test_binary_int4 =
   Oth.test ~desc:"Binary int4 roundtrip" ~name:"binary_int4" (fun _ ->
       let module E = Pgsql_codec.Binary_value.Encode in
       let module D = Pgsql_codec.Binary_value.Decode in
       Oth.Assert.Eq.int ~expected:4 ~actual:(String.length (E.int4 42l));
-      Oth.Assert.true_ "D.int4 (E.int4 42l) = Some 42l" (D.int4 (E.int4 42l) = Some 42l);
-      Oth.Assert.true_ "D.int4 (E.int4 (-1l)) = Some (-1l)" (D.int4 (E.int4 (-1l)) = Some (-1l));
-      Oth.Assert.true_
-        "D.int4 (E.int4 Int32.min_int) = Some Int32.min_int"
-        (D.int4 (E.int4 Int32.min_int) = Some Int32.min_int);
-      Oth.Assert.true_
-        "D.int4 (E.int4 Int32.max_int) = Some Int32.max_int"
-        (D.int4 (E.int4 Int32.max_int) = Some Int32.max_int))
+      Oth.Assert.true_ (D.int4 (E.int4 42l) = Some 42l);
+      Oth.Assert.true_ (D.int4 (E.int4 (-1l)) = Some (-1l));
+      Oth.Assert.true_ (D.int4 (E.int4 Int32.min_int) = Some Int32.min_int);
+      Oth.Assert.true_ (D.int4 (E.int4 Int32.max_int) = Some Int32.max_int))
 
 let test_binary_int8 =
   Oth.test ~desc:"Binary int8 roundtrip" ~name:"binary_int8" (fun _ ->
       let module E = Pgsql_codec.Binary_value.Encode in
       let module D = Pgsql_codec.Binary_value.Decode in
       Oth.Assert.Eq.int ~expected:8 ~actual:(String.length (E.int8 42L));
-      Oth.Assert.true_ "D.int8 (E.int8 42L) = Some 42L" (D.int8 (E.int8 42L) = Some 42L);
-      Oth.Assert.true_ "D.int8 (E.int8 (-1L)) = Some (-1L)" (D.int8 (E.int8 (-1L)) = Some (-1L));
-      Oth.Assert.true_
-        "D.int8 (E.int8 Int64.min_int) = Some Int64.min_int"
-        (D.int8 (E.int8 Int64.min_int) = Some Int64.min_int);
-      Oth.Assert.true_
-        "D.int8 (E.int8 Int64.max_int) = Some Int64.max_int"
-        (D.int8 (E.int8 Int64.max_int) = Some Int64.max_int))
+      Oth.Assert.true_ (D.int8 (E.int8 42L) = Some 42L);
+      Oth.Assert.true_ (D.int8 (E.int8 (-1L)) = Some (-1L));
+      Oth.Assert.true_ (D.int8 (E.int8 Int64.min_int) = Some Int64.min_int);
+      Oth.Assert.true_ (D.int8 (E.int8 Int64.max_int) = Some Int64.max_int))
 
 let test_binary_float4 =
   Oth.test ~desc:"Binary float4 roundtrip" ~name:"binary_float4" (fun _ ->
@@ -403,7 +391,7 @@ let test_binary_float4 =
       let e = E.float4 3.14 in
       Oth.Assert.Eq.int ~expected:4 ~actual:(String.length e);
       match D.float4 e with
-      | Some f -> Oth.Assert.true_ "abs_float (f -. 3.14) < 0.001" (abs_float (f -. 3.14) < 0.001)
+      | Some f -> Oth.Assert.true_ (abs_float (f -. 3.14) < 0.001)
       | None -> Oth.Assert.false_ "binary_float4: unexpected value")
 
 let test_binary_float8 =
@@ -412,14 +400,14 @@ let test_binary_float8 =
       let module D = Pgsql_codec.Binary_value.Decode in
       let e = E.float8 3.141592653589793 in
       Oth.Assert.Eq.int ~expected:8 ~actual:(String.length e);
-      Oth.Assert.true_ "D.float8 e = Some 3.141592653589793" (D.float8 e = Some 3.141592653589793))
+      Oth.Assert.true_ (D.float8 e = Some 3.141592653589793))
 
 let test_binary_bool =
   Oth.test ~desc:"Binary bool roundtrip" ~name:"binary_bool" (fun _ ->
       let module E = Pgsql_codec.Binary_value.Encode in
       let module D = Pgsql_codec.Binary_value.Decode in
-      Oth.Assert.true_ "D.bool (E.bool true) = Some true" (D.bool (E.bool true) = Some true);
-      Oth.Assert.true_ "D.bool (E.bool false) = Some false" (D.bool (E.bool false) = Some false);
+      Oth.Assert.true_ (D.bool (E.bool true) = Some true);
+      Oth.Assert.true_ (D.bool (E.bool false) = Some false);
       Oth.Assert.Eq.int ~expected:1 ~actual:(String.length (E.bool true)))
 
 let test_binary_invalid =
@@ -445,7 +433,7 @@ let test_bind_binary_format =
              result_format_codes = [ true ];
            });
       let encoded = Buffer.contents buf in
-      Oth.Assert.true_ "String.length encoded > 0" (String.length encoded > 0))
+      Oth.Assert.true_ (String.length encoded > 0))
 
 (* Regression: a frame whose final bytes complete it EXACTLY on a read boundary
    must be decoded, not stranded.  Only `bytes n` (a value field, e.g. a
@@ -465,16 +453,12 @@ let test_exact_boundary_decode =
       let header = Bytes.of_string "Z\000\000\000\005" in
       let status = Bytes.of_string "I" in
       let r1 = Pgsql_codec.Decode.backend_msg decoder header ~pos:0 ~len:(Bytes.length header) in
-      Oth.Assert.true_ "r1 = Ok []" (r1 = Ok []);
-      Oth.Assert.true_
-        "Pgsql_codec.Decode.needed_bytes decoder = Some 1"
-        (Pgsql_codec.Decode.needed_bytes decoder = Some 1);
+      Oth.Assert.true_ (r1 = Ok []);
+      Oth.Assert.true_ (Pgsql_codec.Decode.needed_bytes decoder = Some 1);
       let r2 = Pgsql_codec.Decode.backend_msg decoder status ~pos:0 ~len:(Bytes.length status) in
       (* The frame must be SURFACED here, not stranded.  Buggy code returned Ok []
          (and left needed_bytes at Some 0), which is what hung the connection. *)
-      Oth.Assert.true_
-        "r2 = Ok Pgsql_codec.Frame.Backend.[ ReadyForQuery { status = 'I' } ]"
-        (r2 = Ok Pgsql_codec.Frame.Backend.[ ReadyForQuery { status = 'I' } ]))
+      Oth.Assert.true_ (r2 = Ok Pgsql_codec.Frame.Backend.[ ReadyForQuery { status = 'I' } ]))
 
 let test =
   Oth.parallel

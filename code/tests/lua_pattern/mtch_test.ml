@@ -33,8 +33,8 @@ let compare_captures captures = function
 let test_mtch str pat res captures _ =
   let pat = CCOption.get_exn_or "lua_pattern_of_string" (Lua_pattern.of_string pat) in
   let mtch = Lua_pattern.mtch str pat in
-  Oth.Assert.true_ "compare_mtch res mtch" (compare_mtch res mtch);
-  Oth.Assert.true_ "compare_captures captures mtch" (compare_captures captures mtch)
+  Oth.Assert.true_ (compare_mtch res mtch);
+  Oth.Assert.true_ (compare_captures captures mtch)
 
 let create_test (str, pat, res, captures) =
   Oth.test ~name:(Printf.sprintf "mtch %s %s" str pat) (test_mtch str pat res captures)

@@ -46,8 +46,8 @@ module type ASSERT = sig
       both values and fails the test. *)
   val eq : eq:('a -> 'a -> bool) -> pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a -> unit
 
-  (** Asserts that the value is [true], otherwise fails the test displaying [msg]. *)
-  val true_ : string -> bool -> unit
+  (** Asserts that the value is [true], otherwise fails the test displaying [fail_msg]. *)
+  val true_ : ?fail_msg:string -> bool -> unit
 
   (** Asserts that the value is [false], otherwise fails the test displaying [msg]. Distinct from
       {!false_}, which asserts nothing and always fails: this one takes the value to check. *)

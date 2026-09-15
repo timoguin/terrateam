@@ -16,7 +16,7 @@ let test1 =
             (Abb_fut.State.set_state (Abb_fut.State.state s + 1) s, Fut.return ()))
       in
       let state = Fut.run_with_state fut state in
-      Oth.Assert.true_ "Fut.state fut = `Det ()" (Fut.state fut = `Det ());
+      Oth.Assert.true_ (Fut.state fut = `Det ());
       Oth.Assert.Eq.int ~expected:1 ~actual:(Abb_fut.State.state state))
 
 let test2 =
@@ -31,7 +31,7 @@ let test2 =
             (Abb_fut.State.set_state (Abb_fut.State.state s + 1) s, Fut.return ()))
       in
       let state = Fut.run_with_state (Fut.Promise.set promise ()) state in
-      Oth.Assert.true_ "Fut.state fut2 = `Det ()" (Fut.state fut2 = `Det ());
+      Oth.Assert.true_ (Fut.state fut2 = `Det ());
       Oth.Assert.Eq.int ~expected:1 ~actual:(Abb_fut.State.state state))
 
 let test3 =
@@ -43,7 +43,7 @@ let test3 =
         >>| fun () -> 10
       in
       let state = Fut.run_with_state fut state in
-      Oth.Assert.true_ "Fut.state fut = `Det 10" (Fut.state fut = `Det 10);
+      Oth.Assert.true_ (Fut.state fut = `Det 10);
       Oth.Assert.Eq.int ~expected:1 ~actual:(Abb_fut.State.state state))
 
 let () =

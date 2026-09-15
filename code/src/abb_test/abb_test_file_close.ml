@@ -41,11 +41,12 @@ module Make (Abb : Abb_intf.S) = struct
         >>= fun seen ->
         let distinct = CCList.length (CCList.uniq ~eq:( = ) seen) in
         Oth.Assert.true_
-          (Printf.sprintf
-             "%d distinct descriptors over %d open/close cycles: close is resolving before the fd \
-              is closed"
-             distinct
-             iterations)
+          ~fail_msg:
+            (Printf.sprintf
+               "%d distinct descriptors over %d open/close cycles: close is resolving before the \
+                fd is closed"
+               distinct
+               iterations)
           (distinct * 10 <= iterations);
         Abb.File.unlink fname >>= fun _ -> Abb.Future.return ())
 

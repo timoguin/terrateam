@@ -20,12 +20,12 @@ let test_inline =
       (* local ref untouched *)
       Oth.Assert.Eq.string ~expected:"#/definitions/Place" ~actual:(ref_of (prop "home" person));
       (* foreign definition pulled in *)
-      Oth.Assert.true_ "common_address inlined" (present (def "common_address" flat));
+      Oth.Assert.true_ (present (def "common_address" flat));
       (* transitive foreign ref pulled in and rewritten *)
       Oth.Assert.Eq.string
         ~expected:"#/definitions/deep_zip"
         ~actual:(ref_of (prop "zip" (def "common_address" flat)));
-      Oth.Assert.true_ "deep_zip inlined" (present (def "deep_zip" flat)))
+      Oth.Assert.true_ (present (def "deep_zip" flat)))
 
 (* --file-link mode: the ref points at an existing module and the file is neither loaded nor
    inlined (so its transitive deps are not pulled in either). *)
@@ -43,9 +43,9 @@ let test_file_link =
         ~expected:"#/file-link/Common/Address"
         ~actual:(ref_of (prop "address" person));
       (* not inlined *)
-      Oth.Assert.true_ "common_address not inlined" (not (present (def "common_address" flat)));
+      Oth.Assert.not_true (present (def "common_address" flat));
       (* common.json was never loaded, so its transitive dep is absent too *)
-      Oth.Assert.true_ "deep_zip absent" (not (present (def "deep_zip" flat))))
+      Oth.Assert.not_true (present (def "deep_zip" flat)))
 
 (* The search path is consulted when the ref cannot be found next to the referencing file. *)
 let test_search_path =
@@ -56,7 +56,7 @@ let test_search_path =
       Oth.Assert.Eq.string
         ~expected:"#/definitions/lib_x"
         ~actual:(ref_of (prop "x" (def "Root" flat)));
-      Oth.Assert.true_ "lib_x inlined" (present (def "lib_x" flat)))
+      Oth.Assert.true_ (present (def "lib_x" flat)))
 
 (* Mutually-recursive foreign files terminate and both definitions are inlined. *)
 let test_cycle =
@@ -66,7 +66,7 @@ let test_cycle =
       Oth.Assert.Eq.string
         ~expected:"#/definitions/a_a"
         ~actual:(ref_of (prop "a" (def "b_b" flat)));
-      Oth.Assert.true_ "a_a inlined" (present (def "a_a" flat)))
+      Oth.Assert.true_ (present (def "a_a" flat)))
 
 (* An unresolvable foreign file is a hard error. *)
 let test_missing_file =
@@ -77,7 +77,7 @@ let test_missing_file =
           false
         with Failure _ -> true
       in
-      Oth.Assert.true_ "missing foreign file raises" raised)
+      Oth.Assert.true_ raised)
 
 let test =
   Oth.parallel [ test_inline; test_file_link; test_search_path; test_cycle; test_missing_file ]

@@ -71,7 +71,6 @@ let test_short_diff_is_trusted =
 let test_cut_short_diff_asks_for_the_policy =
   Oth.test ~name:"a diff the VCS may have cut short asks for the config policy" (fun _ ->
       Oth.Assert.true_
-        "a diff at the reporting limit was trusted"
         (Terrat_access_control2.Tests.may_be_repo_config_change
            (unrelated_diff Terrat_access_control2.Tests.max_reported_diff_files)))
 

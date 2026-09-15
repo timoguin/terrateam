@@ -2,7 +2,7 @@ let test_simple =
   Oth.test ~name:"Test simple" (fun _ ->
       let query = Terrat_tag_set.of_list [] in
       let db = Terrat_tag_set.of_list [ "a"; "b"; "c" ] in
-      Oth.Assert.true_ "Terrat_tag_set.match_ ~query db" (Terrat_tag_set.match_ ~query db))
+      Oth.Assert.true_ (Terrat_tag_set.match_ ~query db))
 
 let test_of_empty_string =
   Oth.test ~name:"Test of empty string" (fun _ ->

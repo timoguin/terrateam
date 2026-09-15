@@ -1,7 +1,7 @@
 let marked_comment_is_from_self =
   Oth.test ~name:"marked comment is from self" (fun _ ->
       let body = Terrat_comment.add_self_marker "## Plan Output" in
-      Oth.Assert.true_ "marked body is from self" (Terrat_comment.is_from_self body);
+      Oth.Assert.true_ (Terrat_comment.is_from_self body);
       ())
 
 let plain_comment_is_not_from_self =
@@ -22,7 +22,7 @@ let marker_keeps_the_body_first =
       Oth.Assert.Eq.string
         ~expected:"terrateam plan"
         ~actual:(CCString.take (CCString.length "terrateam plan") body);
-      Oth.Assert.true_ "the marked body is from self" (Terrat_comment.is_from_self body);
+      Oth.Assert.true_ (Terrat_comment.is_from_self body);
       ())
 
 (* A quote-reply copies the raw markdown of the quoted comment, marker
@@ -46,7 +46,7 @@ let quoted_marked_comment_is_not_from_self =
 let trailing_whitespace_keeps_the_marker =
   Oth.test ~name:"trailing whitespace keeps the marker" (fun _ ->
       let body = Terrat_comment.add_self_marker "## Plan Output" ^ "\n" in
-      Oth.Assert.true_ "a trailing newline is ignored" (Terrat_comment.is_from_self body);
+      Oth.Assert.true_ (Terrat_comment.is_from_self body);
       ())
 
 (* The [stategraph] trigger word (#1442 Phase 3): additive next to

@@ -30,7 +30,7 @@ module Make (Abb : Abb_intf.S) = struct
         Abb.Task.run (fun () ->
             Abb.Task.id ()
             >>= fun inner ->
-            Oth.Assert.true_ "inner task id differs from outer" (inner <> outer);
+            Oth.Assert.true_ (inner <> outer);
             Abb.Future.return ())
         >>= fun _task ->
         Abb.Task.id ()
@@ -50,7 +50,7 @@ module Make (Abb : Abb_intf.S) = struct
         Abb.Task.run (fun () ->
             Abb.Task.id ()
             >>= fun inner ->
-            Oth.Assert.true_ "inner task id differs from outer" (outer <> inner);
+            Oth.Assert.true_ (outer <> inner);
             Abb.Future.return ())
         >>= fun task ->
         task
@@ -90,7 +90,7 @@ module Make (Abb : Abb_intf.S) = struct
         >>= fun ia ->
         b
         >>= fun ib ->
-        Oth.Assert.true_ "sibling task ids differ" (ia <> ib);
+        Oth.Assert.true_ (ia <> ib);
         Abb.Future.return ())
 
   (* Three nesting levels.  Each level captures its own id, dives into the next, and
@@ -107,12 +107,12 @@ module Make (Abb : Abb_intf.S) = struct
             Abb.Task.run ~name:"middle" (fun () ->
                 Abb.Task.id ()
                 >>= fun middle ->
-                Oth.Assert.true_ "middle task id differs from outer" (middle <> outer);
+                Oth.Assert.true_ (middle <> outer);
                 Abb.Task.run ~name:"inner" (fun () ->
                     Abb.Task.id ()
                     >>= fun inner ->
-                    Oth.Assert.true_ "inner task id differs from middle" (inner <> middle);
-                    Oth.Assert.true_ "inner task id differs from outer" (inner <> outer);
+                    Oth.Assert.true_ (inner <> middle);
+                    Oth.Assert.true_ (inner <> outer);
                     Abb.Future.return ())
                 >>= fun task ->
                 task
@@ -144,7 +144,7 @@ module Make (Abb : Abb_intf.S) = struct
         Abb.Task.run ~name:"setter" (fun () ->
             Abb.Task.id ()
             >>= fun inner ->
-            Oth.Assert.true_ "inner task id differs from outer" (inner <> outer);
+            Oth.Assert.true_ (inner <> outer);
             Abb.Future.Promise.set p inner)
         >>= fun task ->
         Abb.Future.Promise.future p
@@ -152,7 +152,7 @@ module Make (Abb : Abb_intf.S) = struct
         Abb.Task.id ()
         >>= fun outer_after_promise ->
         Oth.Assert.Eq.int ~expected:outer ~actual:outer_after_promise;
-        Oth.Assert.true_ "promised inner id differs from outer" (inner_id <> outer);
+        Oth.Assert.true_ (inner_id <> outer);
         task)
 
   (* Many sequential binds inside one task.  No drift — every step reads the same id. *)
@@ -236,7 +236,7 @@ module Make (Abb : Abb_intf.S) = struct
         >>= fun ia ->
         b
         >>= fun ib ->
-        Oth.Assert.true_ "applicative task ids differ" (ia <> ib);
+        Oth.Assert.true_ (ia <> ib);
         Abb.Task.id ()
         >>= fun outer_after ->
         Oth.Assert.Eq.int ~expected:outer ~actual:outer_after;
@@ -262,7 +262,7 @@ module Make (Abb : Abb_intf.S) = struct
                 Abb.Task.name ()
                 >>= fun n_b ->
                 Oth.Assert.Eq.string_option ~expected:(Some "beta") ~actual:n_b;
-                Oth.Assert.true_ "nested task ids differ" (id_b <> id_a);
+                Oth.Assert.true_ (id_b <> id_a);
                 Abb.Future.return ())
             >>= fun task ->
             task
@@ -294,7 +294,7 @@ module Make (Abb : Abb_intf.S) = struct
                 >>= fun task ->
                 task
                 >>= fun inner ->
-                Oth.Assert.true_ "inner task id differs from outer" (inner <> outer);
+                Oth.Assert.true_ (inner <> outer);
                 Abb.Task.id ()
                 >>= fun outer' ->
                 Oth.Assert.Eq.int ~expected:outer ~actual:outer';
@@ -341,9 +341,7 @@ module Make (Abb : Abb_intf.S) = struct
           ~pp:Format.pp_print_int
           ~expected:!inner_id_capture
           ~actual:!recorded_id;
-        Oth.Assert.true_
-          "abort handler saw the child task name"
-          (!recorded_name = Some (Some "child"));
+        Oth.Assert.true_ (!recorded_name = Some (Some "child"));
         Abb.Future.return ())
 
   (* Outer task aborts inner task; the handler running inside the inner should still
@@ -384,9 +382,7 @@ module Make (Abb : Abb_intf.S) = struct
           ~pp:Format.pp_print_int
           ~expected:!aborted_id_capture
           ~actual:!recorded_id;
-        Oth.Assert.true_
-          "abort handler id is the victim's, not the aborter's"
-          (!recorded_id <> !aborter_id_capture);
+        Oth.Assert.true_ (!recorded_id <> !aborter_id_capture);
         Abb.Future.return ())
 
   exception Boom
@@ -426,7 +422,7 @@ module Make (Abb : Abb_intf.S) = struct
         Abb.Task.run (fun () ->
             Abb.Task.id ()
             >>= fun inner ->
-            Oth.Assert.true_ "inner task id differs from outer" (inner <> outer);
+            Oth.Assert.true_ (inner <> outer);
             raise Boom)
         >>= fun task ->
         Abb.Future.await task

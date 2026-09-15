@@ -15,11 +15,11 @@ let test1 =
       let fut1 = Fut.Promise.future promise in
       let fut2 = Fut.fork fut1 in
       ignore (Fut.run_with_state fut2 state);
-      Oth.Assert.true_ "Fut.state fut1 = `Undet" (Fut.state fut1 = `Undet);
+      Oth.Assert.true_ (Fut.state fut1 = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set promise ()) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Det ()" (Fut.state fut1 = `Det ());
+      Oth.Assert.true_ (Fut.state fut1 = `Det ());
       match Fut.state fut2 with
-      | `Det t -> Oth.Assert.true_ "Fut.state t = `Det ()" (Fut.state t = `Det ())
+      | `Det t -> Oth.Assert.true_ (Fut.state t = `Det ())
       | _ -> Oth.Assert.false_ "Fork test #1: unexpected value")
 
 let test2 =
@@ -29,11 +29,11 @@ let test2 =
       let fut1 = Fut.Promise.future promise in
       let fut2 = Fut.fork fut1 in
       ignore (Fut.run_with_state fut2 state);
-      Oth.Assert.true_ "Fut.state fut1 = `Undet" (Fut.state fut1 = `Undet);
+      Oth.Assert.true_ (Fut.state fut1 = `Undet);
       ignore (Fut.run_with_state (Fut.Promise.set promise ()) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Det ()" (Fut.state fut1 = `Det ());
+      Oth.Assert.true_ (Fut.state fut1 = `Det ());
       match Fut.state fut2 with
-      | `Det t -> Oth.Assert.true_ "Fut.state t = `Det ()" (Fut.state t = `Det ())
+      | `Det t -> Oth.Assert.true_ (Fut.state t = `Det ())
       | _ -> Oth.Assert.false_ "Fork test #2: unexpected value")
 
 let test3 =
@@ -43,11 +43,11 @@ let test3 =
       let fut1 = Fut.Promise.future promise in
       let fut2 = Fut.fork fut1 >>= fun fut -> fut >>| fun () -> () in
       ignore (Fut.run_with_state fut2 state);
-      Oth.Assert.true_ "Fut.state fut2 = `Undet" (Fut.state fut2 = `Undet);
-      Oth.Assert.true_ "Fut.state fut1 = `Undet" (Fut.state fut1 = `Undet);
+      Oth.Assert.true_ (Fut.state fut2 = `Undet);
+      Oth.Assert.true_ (Fut.state fut1 = `Undet);
       ignore (Fut.run_with_state (Fut.abort fut2) state);
-      Oth.Assert.true_ "Fut.state fut1 = `Aborted" (Fut.state fut1 = `Aborted);
-      Oth.Assert.true_ "Fut.state fut2 = `Aborted" (Fut.state fut2 = `Aborted))
+      Oth.Assert.true_ (Fut.state fut1 = `Aborted);
+      Oth.Assert.true_ (Fut.state fut2 = `Aborted))
 
 let () =
   Random.self_init ();

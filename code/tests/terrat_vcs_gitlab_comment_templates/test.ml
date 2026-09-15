@@ -70,10 +70,8 @@ let test_apply_complete2_details ~name ~compact_view ~num_dirspaces =
   Oth.test ~tags:[ "comment_details" ] ~name (fun _ ->
       let body = render Tmpl.apply_complete2 (apply_complete2_kv ~compact_view ~num_dirspaces) in
       let depth, min_depth = details_balance body in
-      Oth.Assert.true_ (Printf.sprintf "%d <details> left open" depth) (depth = 0);
-      Oth.Assert.true_
-        (Printf.sprintf "</details> without an open, depth reached %d" min_depth)
-        (min_depth >= 0);
+      Oth.Assert.true_ (depth = 0);
+      Oth.Assert.true_ (min_depth >= 0);
       ())
 
 let test_apply_complete2_details_many_dirspaces =

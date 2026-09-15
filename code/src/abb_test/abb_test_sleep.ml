@@ -18,10 +18,10 @@ module Make (Abb : Abb_intf.S) = struct
         >>= fun (ret, fut) ->
         Abb.Sys.time ()
         >>= fun end_time ->
-        Oth.Assert.true_ "timeout fired within 1.5s" (end_time -. start_time <= 1.5);
-        Oth.Assert.true_ "the faster sleep won the race" (ret = `Timedout);
+        Oth.Assert.true_ (end_time -. start_time <= 1.5);
+        Oth.Assert.true_ (ret = `Timedout);
         (* Ensure that the future eventually does complete *)
-        fut >>| fun v -> Oth.Assert.true_ "the slower sleep eventually completed" (v = `Ok))
+        fut >>| fun v -> Oth.Assert.true_ (v = `Ok))
 
   let test = Oth_abb.serial [ basic_test; timeout_test ]
 end

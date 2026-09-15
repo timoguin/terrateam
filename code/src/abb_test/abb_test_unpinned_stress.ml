@@ -103,9 +103,8 @@ module Make (Abb : Abb_intf.S) = struct
         CCList.iter
           (fun (was_aborted, fut) ->
             match Abb.Future.state fut with
-            | `Aborted ->
-                Oth.Assert.true_ "task in `Aborted state was selected for abort" was_aborted
-            | `Det _ -> Oth.Assert.true_ "task in `Det state was not aborted" (not was_aborted)
+            | `Aborted -> Oth.Assert.true_ was_aborted
+            | `Det _ -> Oth.Assert.not_true was_aborted
             | `Undet -> Oth.Assert.false_ "task still undetermined after the wait"
             | `Exn _ -> Oth.Assert.false_ "task ended in an unexpected `Exn state")
           (CCList.combine abort_mask task_futs))
@@ -134,12 +133,10 @@ module Make (Abb : Abb_intf.S) = struct
           (fun ((idx, should_raise), fut) ->
             match Abb.Future.state fut with
             | `Det v ->
-                Oth.Assert.true_
-                  "task that returned a value was not meant to raise"
-                  (not should_raise);
+                Oth.Assert.not_true should_raise;
                 Oth.Assert.Eq.int ~expected:idx ~actual:v
             | `Exn (Failure s, _) ->
-                Oth.Assert.true_ "task that raised was meant to raise" should_raise;
+                Oth.Assert.true_ should_raise;
                 Oth.Assert.Eq.int ~expected:idx ~actual:(int_of_string s)
             | `Exn _ -> Oth.Assert.false_ "task raised an unexpected exception"
             | `Undet -> Oth.Assert.false_ "task still undetermined after the wait"

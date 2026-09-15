@@ -52,25 +52,20 @@ let private_key =
    -----END RSA PRIVATE KEY-----"
 
 let test_decode =
-  Oth.test ~desc:"Decode JWT" ~name:"Decode" (fun _ ->
-      Oth.Assert.true_ "None <> Jwt.of_token jwt" (None <> Jwt.of_token jwt))
+  Oth.test ~desc:"Decode JWT" ~name:"Decode" (fun _ -> Oth.Assert.true_ (None <> Jwt.of_token jwt))
 
 let test_algo =
   Oth.test ~desc:"Verify algorithm" ~name:"Algo" (fun _ ->
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token jwt) in
       let header = Jwt.header t in
-      Oth.Assert.true_
-        "Some \"RS256\" = Jwt.Header.algorithm header"
-        (Some "RS256" = Jwt.Header.algorithm header))
+      Oth.Assert.true_ (Some "RS256" = Jwt.Header.algorithm header))
 
 let test_kid =
   Oth.test ~desc:"kid matches expected kid" ~name:"kid match" (fun _ ->
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token jwt) in
       let header = Jwt.header t in
       let kid = CCOption.get_exn_or "jwt_header_get" (Jwt.Header.get "kid" header) in
-      Oth.Assert.true_
-        "\"7d680d8c70d44e947133cbd499ebc1a61c3d5abc\" = kid"
-        ("7d680d8c70d44e947133cbd499ebc1a61c3d5abc" = kid))
+      Oth.Assert.true_ ("7d680d8c70d44e947133cbd499ebc1a61c3d5abc" = kid))
 
 let test_verify =
   Oth.test ~desc:"Verify signature" ~name:"Verify signature" (fun _ ->
@@ -80,18 +75,18 @@ let test_verify =
       in
       let verifier = Jwt.Verifier.RS256 pub_key in
       let verified = Jwt.verify verifier t in
-      Oth.Assert.true_ "None <> verified" (None <> verified))
+      Oth.Assert.true_ (None <> verified))
 
 let test_basic_decode =
   Oth.test ~desc:"Decode Basic JWT" ~name:"Decode basic" (fun _ ->
-      Oth.Assert.true_ "None <> Jwt.of_token basic_jwt" (None <> Jwt.of_token basic_jwt))
+      Oth.Assert.true_ (None <> Jwt.of_token basic_jwt))
 
 let test_basic_verify =
   Oth.test ~desc:"Verify basic signature" ~name:"Verify basic signature" (fun _ ->
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token basic_jwt) in
       let verifier = Jwt.Verifier.HS256 basic_secret in
       let verified = Jwt.verify verifier t in
-      Oth.Assert.true_ "None <> verified" (None <> verified))
+      Oth.Assert.true_ (None <> verified))
 
 let test_sign_hs256 =
   Oth.test ~name:"Sign HS256" (fun _ ->
@@ -108,7 +103,7 @@ let test_sign_hs256 =
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token (Jwt.token verified)) in
       let verifier = Jwt.Verifier.HS256 basic_secret in
       let verified = Jwt.verify verifier t in
-      Oth.Assert.true_ "None <> verified" (None <> verified))
+      Oth.Assert.true_ (None <> verified))
 
 let test_sign_hs512 =
   Oth.test ~name:"Sign HS512" (fun _ ->
@@ -125,7 +120,7 @@ let test_sign_hs512 =
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token (Jwt.token verified)) in
       let verifier = Jwt.Verifier.HS512 basic_secret in
       let verified = Jwt.verify verifier t in
-      Oth.Assert.true_ "None <> verified" (None <> verified))
+      Oth.Assert.true_ (None <> verified))
 
 let test_sign_rs256 =
   Oth.test ~name:"Sign RS256" (fun _ ->
@@ -152,7 +147,7 @@ let test_sign_rs256 =
       let t = CCOption.get_exn_or "jwt_of_token" (Jwt.of_token (Jwt.token verified)) in
       let verifier = Jwt.Verifier.(RS256 (Pub_key.of_pub_key public_key)) in
       let verified = Jwt.verify verifier t in
-      Oth.Assert.true_ "None <> verified" (None <> verified))
+      Oth.Assert.true_ (None <> verified))
 
 (* A verifier sits on an unauthenticated path, so it has to answer for any
    string an attacker can put in the signature slot. Mirage_crypto raises
@@ -185,7 +180,7 @@ let test_rs256_degenerate_signature =
       CCList.iter
         (fun (name, signature) ->
           let t = CCOption.get_exn_or name (Jwt.of_token (hp ^ "." ^ b64 signature)) in
-          Oth.Assert.true_ name (CCOption.is_none (Jwt.verify verifier t)))
+          Oth.Assert.true_ (CCOption.is_none (Jwt.verify verifier t)))
         [
           ("all-zero signature", CCString.make 256 '\000');
           ("empty signature", "");
@@ -208,7 +203,7 @@ let test_header_without_algorithm =
         (fun (name, header_json) ->
           let token = b64 header_json ^ "." ^ b64 "{}" ^ "." in
           let t = CCOption.get_exn_or name (Jwt.of_token token) in
-          Oth.Assert.true_ name (CCOption.is_none (Jwt.verify verifier t)))
+          Oth.Assert.true_ (CCOption.is_none (Jwt.verify verifier t)))
         [
           ("header with no alg", "{}");
           ("alg none", {|{"alg":"none"}|});

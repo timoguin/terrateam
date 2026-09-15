@@ -39,9 +39,7 @@ module Make (Abb : Abb_intf.S) = struct
         >>= fun ((), other) ->
         Abb.Future.abort other
         >>| fun () ->
-        Oth.Assert.true_
-          "one of the two futures was aborted"
-          (Abb.Future.state fut_1 = `Aborted || Abb.Future.state fut_2 = `Aborted))
+        Oth.Assert.true_ (Abb.Future.state fut_1 = `Aborted || Abb.Future.state fut_2 = `Aborted))
 
   (* Pool size 1: the lone worker is busy running a long [Unix.sleepf]
      when a second [Thread.run] is submitted.  The second thunk sits
@@ -94,10 +92,7 @@ module Make (Abb : Abb_intf.S) = struct
               blocker_a
               >>= fun () ->
               blocker_b
-              >>= fun () ->
-              sentinel
-              >>| fun () ->
-              Oth.Assert.true_ "queued thread body never ran" (not (Atomic.get ran_queued)))
+              >>= fun () -> sentinel >>| fun () -> Oth.Assert.not_true (Atomic.get ran_queued))
         with
         | `Det () -> ()
         | `Aborted -> Oth.Assert.false_ "scheduler run unexpectedly aborted"

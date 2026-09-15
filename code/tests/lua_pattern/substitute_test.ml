@@ -15,7 +15,7 @@ let compare_res = ( = )
 let test_subs str pat subs res _ =
   let pat = CCOption.get_exn_or "lua_pattern_of_string" (Lua_pattern.of_string pat) in
   let ret = Lua_pattern.substitute ~s:str ~r:(Lua_pattern.rep_str subs) pat in
-  Oth.Assert.true_ "compare_res ret res" (compare_res ret res)
+  Oth.Assert.true_ (compare_res ret res)
 
 let create_test (str, pat, subs, res) =
   Oth.test ~name:(Printf.sprintf "substitue %s %s" str pat) (test_subs str pat subs res)

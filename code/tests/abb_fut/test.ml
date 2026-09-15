@@ -17,7 +17,7 @@ let test1 =
       let _ = Fut.Promise.future p1 >>| fun v -> r := Some v in
       let v = Random.int 10 in
       ignore (Fut.run_with_state (Fut.Promise.set p1 v) state);
-      Oth.Assert.true_ "!r = Some v" (!r = Some v))
+      Oth.Assert.true_ (!r = Some v))
 
 let test2 =
   Oth.test ~desc:"Setting a future executes a sequence of watchers" ~name:"Basic #2" (fun _ ->
@@ -30,7 +30,7 @@ let test2 =
       in
       let v = Random.int 10 in
       ignore (Fut.run_with_state (Fut.Promise.set p1 v) state);
-      Oth.Assert.true_ "!r = v + 2" (!r = v + 2))
+      Oth.Assert.true_ (!r = v + 2))
 
 let test3 =
   Oth.test ~desc:"Sequential evaluation of a both function" ~name:"Both" (fun _ ->
@@ -48,16 +48,16 @@ let test3 =
       in
       ignore (Fut.run_with_state (Fut.Promise.set p1 1) state);
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
-      Oth.Assert.true_ "Fut.state fut3 = `Det ()" (Fut.state fut3 = `Det ()))
+      Oth.Assert.true_ (Fut.state fut3 = `Det ()))
 
 let test4 =
   Oth.test ~desc:"Await is the determined value" ~name:"Await" (fun _ ->
       let state = Abb_fut.State.create () in
       let p1 = Fut.Promise.create () in
       let fut1 = Fut.Promise.future p1 in
-      let fut2 = Fut.await fut1 >>| fun v -> Oth.Assert.true_ "v = `Det ()" (v = `Det ()) in
+      let fut2 = Fut.await fut1 >>| fun v -> Oth.Assert.true_ (v = `Det ()) in
       ignore (Fut.run_with_state (Fut.Promise.set p1 ()) state);
-      Oth.Assert.true_ "Fut.state fut2 = `Det ()" (Fut.state fut2 = `Det ()))
+      Oth.Assert.true_ (Fut.state fut2 = `Det ()))
 
 let test5 =
   Oth.test ~desc:"An applicative implementation of both" ~name:"Both Applicative" (fun _ ->
@@ -79,7 +79,7 @@ let test5 =
       ignore (Fut.run_with_state (Fut.Promise.set p1 1) state);
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
       let state = Fut.state fut3 in
-      Oth.Assert.true_ "state = `Det ()" (state = `Det ()))
+      Oth.Assert.true_ (state = `Det ()))
 
 let test6 =
   Oth.test
@@ -112,7 +112,7 @@ let test6 =
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
       Oth.Assert.Eq.int ~expected:2 ~actual:!r;
       let state = Fut.state fut3 in
-      Oth.Assert.true_ "state = `Det ()" (state = `Det ()))
+      Oth.Assert.true_ (state = `Det ()))
 
 let test7 =
   Oth.test
@@ -145,7 +145,7 @@ let test7 =
       ignore (Fut.run_with_state (Fut.Promise.set p1 1) state);
       Oth.Assert.Eq.int ~expected:2 ~actual:!r;
       let state = Fut.state fut3 in
-      Oth.Assert.true_ "state = `Det ()" (state = `Det ()))
+      Oth.Assert.true_ (state = `Det ()))
 
 let test8 =
   Oth.test ~desc:"Sequential evaluation of a both function, in reverse order" ~name:"Both" (fun _ ->
@@ -163,7 +163,7 @@ let test8 =
       in
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
       ignore (Fut.run_with_state (Fut.Promise.set p1 1) state);
-      Oth.Assert.true_ "Fut.state fut3 = `Det ()" (Fut.state fut3 = `Det ()))
+      Oth.Assert.true_ (Fut.state fut3 = `Det ()))
 
 let test9 =
   Oth.test
@@ -176,7 +176,7 @@ let test9 =
       let fut = Fut.Promise.future p1 >>= fun v1 -> Fut.Promise.future p2 >>| fun v2 -> (v1, v2) in
       ignore (Fut.run_with_state (Fut.Promise.set p1 1) state);
       ignore (Fut.run_with_state (Fut.Promise.set p2 2) state);
-      Oth.Assert.true_ "Fut.state fut = `Det (1, 2)" (Fut.state fut = `Det (1, 2)))
+      Oth.Assert.true_ (Fut.state fut = `Det (1, 2)))
 
 let () =
   Random.self_init ();
