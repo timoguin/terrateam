@@ -1,7 +1,12 @@
-val create : Terrat_storage.t -> Brtl_mw.Mw.t Abb.Future.t
+(** The session middleware. [cookie_name] names the browser session cookie. *)
+val create : cookie_name:string -> Terrat_storage.t -> Brtl_mw.Mw.t Abb.Future.t
+
 val create_user_session : Terrat_user.t -> ('a, 'b) Brtl_ctx.t -> ('a, 'b) Brtl_ctx.t
 
+(** Delete the session that the [cookie_name] cookie of the request refers to. Give the same
+    [cookie_name] as to {!create}. *)
 val rem_session :
+  cookie_name:string ->
   Terrat_storage.t ->
   ('a, 'b) Brtl_ctx.t ->
   (('a, 'b) Brtl_ctx.t, [> Pgsql_pool.err | Pgsql_io.err ]) result Abb.Future.t

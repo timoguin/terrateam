@@ -34,7 +34,6 @@ module Cookie = struct
   end
 
   let default_caps = Terrat_user.Capability.[ Access_token_create; Kv_store_read; Kv_store_write ]
-  let cookie_name = "session"
 
   let load storage id =
     match Uuidm.of_string id with
@@ -155,7 +154,7 @@ module Sql = struct
       /^ "select encode(data, 'hex') from encryption_keys order by rank")
 end
 
-let create storage =
+let create ~cookie_name storage =
   let open Abb.Future.Infix_monad in
   Pgsql_pool.with_conn storage ~f:(fun db ->
       Pgsql_io.Prepared_stmt.fetch db (Sql.select_encryption_keys ()) ~f:CCFun.id)
@@ -169,7 +168,7 @@ let create storage =
           cookie =
             Some
               {
-                Brtl_mw_session.Config.Cookie.name = Cookie.cookie_name;
+                Brtl_mw_session.Config.Cookie.name = cookie_name;
                 expiration = `Session;
                 domain = None;
                 path = Some "/";
@@ -193,9 +192,9 @@ let get_session ctx = Brtl_mw_session.get_session_value key ctx
 
 let set_session t ctx = Brtl_mw_session.set_session_value key (Brtl_mw_session.Auth.Cookie t) ctx
 
-let rem_session storage ctx =
+let rem_session ~cookie_name storage ctx =
   let f =
-    match Brtl_mw_session.get_session_key Cookie.cookie_name ctx with
+    match Brtl_mw_session.get_session_key cookie_name ctx with
     | Some token ->
         let open Abbs_future_combinators.Infix_result_monad in
         let token = CCOption.get_exn_or ("token: " ^ token) (Uuidm.of_string token) in
