@@ -187,8 +187,8 @@ struct
     existing_wm ->
     Tjc.Compute_node.t option
 
-  (* The answer of every state machine but the config builder: a new work
-     manifest gets its own compute node, thus its own action run. *)
+  (* The answer for a plan and for an apply: a new work manifest gets its own
+     compute node, thus its own action run. *)
   let no_compute_node_reuse : reuse_compute_node = fun _ _ _ -> None
 
   (* The configuration answers before the compute node does.  With
@@ -201,6 +201,46 @@ struct
     | Ms.None -> no_compute_node_reuse
     | Ms.All | Ms.Setup | Ms.Setup_and_plan -> reuse
 
+  (* The steps that may share one compute node, and so one action run.
+
+     These are the steps that prepare a job.  They build the tree, then the
+     configuration, then the index, each waiting for the one before it, and all
+     three read the same checkout of the same refs.  They are also the steps that
+     declare no [environment] and no [runs_on].
+
+     That second fact is what makes sharing safe, and it is why a plan and an
+     apply are not in this list.  Those two declare both, and a work manifest
+     that runs inside the action run of another one takes the [environment] and
+     the [runs_on] of that run, not its own.  [environment] selects the
+     protection rules of the VCS, so a plan in a builder run would ask the wrong
+     rules. *)
+  let prepares_a_job = function
+    | [ step ] -> (
+        match step with
+        | Wm.Step.Build_tree | Wm.Step.Build_config | Wm.Step.Index -> true
+        | Wm.Step.Apply | Wm.Step.Plan | Wm.Step.Unsafe_apply -> false)
+    | [] | _ :: _ :: _ -> false
+
+  (* Join the compute node of this evaluation when the step that just finished on
+     it prepares the same job on the same refs, and its run is still going.
+
+     One job evaluation covers the working branch and the destination branch, and
+     the action of a node has one of them checked out, so the refs must agree.
+     The node must be [starting], because the whole reason a node can take
+     another step is that its run has not ended. *)
+  let reuse_after_preparation_step : reuse_compute_node =
+   fun compute_node work_manifest_event work_manifest ->
+    let module C = Tjc.Compute_node in
+    let module E = Keys.Work_manifest_event in
+    match (compute_node, work_manifest_event) with
+    | ( Some ({ C.state = C.State.Starting; _ } as compute_node),
+        Some (E.Result { work_manifest = previous; _ }) )
+      when prepares_a_job previous.Wm.steps
+           && prepares_a_job work_manifest.Wm.steps
+           && CCString.equal previous.Wm.base_ref work_manifest.Wm.base_ref
+           && CCString.equal previous.Wm.branch_ref work_manifest.Wm.branch_ref -> Some compute_node
+    | (Some _ | None), _ -> None
+
   (* Give a compute node a second work manifest.
 
      This is safe only because of an order.  The index
@@ -210,11 +250,12 @@ struct
      raises a raw unique violation and fails the whole results transaction.
 
      The order that keeps it safe: the [Result] branch of [run] calls
-     [update_state_completed] for the tree builder before the evaluation reaches
-     the [create] branch of the config builder, and that write fires the trigger
-     [work_manifest_compute_node_work_state_trigger], which takes the tree
-     builder row out of [created].  The node therefore owes nothing when this
-     row goes in. *)
+     [update_state_completed] for the step that just finished before the
+     evaluation can reach the [create] branch of the step after it, and that
+     write fires the trigger [work_manifest_compute_node_work_state_trigger],
+     which takes the finished row out of [created].  The node therefore owes
+     nothing when this row goes in.  The step after it is behind a data
+     dependency on the one before, so the two cannot be created together. *)
   let attach_to_compute_node s compute_node { Wm.id; _ } db =
     let module C = Tjc.Compute_node in
     time_it
@@ -237,9 +278,9 @@ struct
 
   (* Give each new work manifest a compute node.  [reuse] answers, for one work
      manifest, whether the compute node of this evaluation may perform it as
-     well.  Only the config builder says yes, and only for the node that just
-     finished the tree builder of the same refs, which is what makes the two
-     builder steps one action run. *)
+     well.  A step that prepares a job says yes for the node that just finished
+     the step before it on the same refs, which is what makes those steps one
+     action run.  A plan and an apply always say no. *)
   let make_compute_nodes ~reuse s wms db =
     Abbs_future_combinators.List_result.iter
       ~f:(fun wm ->

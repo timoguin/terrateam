@@ -44,8 +44,16 @@ module Make
     existing_wm ->
     Terrat_job_context.Compute_node.t option
 
-  (** Answers no: a new work manifest gets its own compute node, thus its own action run. *)
+  (** Answers no: a new work manifest gets its own compute node, thus its own action run. This is
+      the answer for a plan and for an apply, which declare an [environment] and a [runs_on] of
+      their own. *)
   val no_compute_node_reuse : reuse_compute_node
+
+  (** Answers yes when the step that just finished on the compute node of this evaluation prepares
+      the same job on the same refs, and its run is still going. The steps that prepare a job are
+      the tree builder, the config builder and the indexer: each waits for the one before it, they
+      read the same checkout, and none of them declares an [environment] or a [runs_on]. *)
+  val reuse_after_preparation_step : reuse_compute_node
 
   val run :
     name:string ->
@@ -60,10 +68,10 @@ module Make
       Builder.B.State.t ->
       Builder.Bs.Fetcher.t ->
       (existing_wm list, Builder.err) result Abb.Future.t) ->
-    (* Every state machine but the config builder passes
-       [no_compute_node_reuse].  The configuration answers first: with
-       [Batch_runs.Merge_steps.None] no work manifest joins a run, whatever this
-       function says. *)
+    (* A step that prepares a job passes [reuse_after_preparation_step].  A plan
+       and an apply pass [no_compute_node_reuse].  The configuration answers
+       first: with [Batch_runs.Merge_steps.None] no work manifest joins a run,
+       whatever this function says. *)
     reuse_compute_node:reuse_compute_node ->
     initiate:
       (existing_wm ->
