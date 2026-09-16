@@ -1,0 +1,363 @@
+# FIPS build of the terrat-ee server image.
+#
+# All cryptography must resolve to one OpenSSL install that has the FIPS
+# provider active, so the runtime deletes the distro libssl/libcrypto and puts
+# /usr/local/ssl on the loader path in their place. The base OpenSSL version
+# must stay the one Wolfi links its own binaries against, or those binaries
+# lose symbols when the swap happens.
+#
+# docker/terrat/Dockerfile remains the non-FIPS build. This file shares no cog
+# regions with it and docker/terrat/render.sh does not generate it.
+
+ARG WOLFI_BASE=cgr.dev/chainguard/wolfi-base:latest
+
+# ---------------------------------------------------------------------------
+# OpenSSL with the FIPS provider, and libtls built against it.
+#
+# fips.so comes from the validated source release, which is older than the base
+# release it is loaded into. That pairing is what OpenSSL's README-FIPS
+# describes, so the two versions move independently.
+#
+# Wolfi ships no libretls-dev and its libretls carries a different soname, so
+# code/src/otls (pkg-config libtls) has nothing to build against unless libtls
+# is built here.
+# ---------------------------------------------------------------------------
+FROM ${WOLFI_BASE} AS openssl-fips
+
+ARG OPENSSL_FIPS_PROVIDER_VERSION=3.1.2
+ARG OPENSSL_VERSION=3.6.4
+ARG LIBRETLS_VERSION=3.8.1
+ARG PGP_KEYSERVER=keyserver.ubuntu.com
+
+ARG OPENSSL_FIPS_PROVIDER_SHA256=a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539
+ARG OPENSSL_SHA256=9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef
+ARG LIBRETLS_SHA256=3bc9fc0e61827ee2f608e5e44993a8fda6d610b80a1e01a9c75610cc292997b5
+
+# Two signers: the OpenSSL project key covers the current release, and the
+# 3.1.2 tarball predates it.
+ARG OPENSSL_PGP_FINGERPRINTS="0xB146647E45A7B33947AB226B2A2C87D161692D40 0xEFC0A467D613CB83C7ED6D30D894E2CE8B3D79F5"
+
+ENV SSL_PREFIX=/usr/local/ssl
+
+RUN apk add --no-cache \
+    autoconf \
+    automake \
+    build-base \
+    ca-certificates \
+    curl \
+    gnupg \
+    gnupg-dirmngr \
+    gpg \
+    gpg-agent \
+    libtool \
+    make \
+    perl \
+    pkgconf \
+    zlib-dev
+
+WORKDIR /usr/src
+
+# SHA-256 pins the exact artifact; the OpenSSL release signatures prove who
+# produced it. libretls publishes no signature, so the digest is its only gate.
+RUN set -eux; \
+    curl -fsSLO "https://www.openssl.org/source/old/3.1/openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz"; \
+    curl -fsSLO "https://www.openssl.org/source/old/3.1/openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz.asc"; \
+    curl -fsSLO "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz"; \
+    curl -fsSLO "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz.asc"; \
+    curl -fsSLO "https://causal.agency/libretls/libretls-${LIBRETLS_VERSION}.tar.gz"; \
+    echo "${OPENSSL_FIPS_PROVIDER_SHA256}  openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz" | sha256sum -c -; \
+    echo "${OPENSSL_SHA256}  openssl-${OPENSSL_VERSION}.tar.gz" | sha256sum -c -; \
+    echo "${LIBRETLS_SHA256}  libretls-${LIBRETLS_VERSION}.tar.gz" | sha256sum -c -; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
+    for key in ${OPENSSL_PGP_FINGERPRINTS}; do \
+        gpg --batch --keyserver "${PGP_KEYSERVER}" --recv-keys "${key}"; \
+    done; \
+    gpg --batch --verify "openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz.asc" "openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz"; \
+    gpg --batch --verify "openssl-${OPENSSL_VERSION}.tar.gz.asc" "openssl-${OPENSSL_VERSION}.tar.gz"; \
+    gpgconf --kill all || :; \
+    rm -rf "${GNUPGHOME}"; \
+    tar -xzf "openssl-${OPENSSL_FIPS_PROVIDER_VERSION}.tar.gz"; \
+    tar -xzf "openssl-${OPENSSL_VERSION}.tar.gz"; \
+    tar -xzf "libretls-${LIBRETLS_VERSION}.tar.gz"
+
+# The provider tree is configured and built but never installed: only
+# providers/fips.so leaves it.
+RUN set -eux; \
+    cd "openssl-${OPENSSL_FIPS_PROVIDER_VERSION}"; \
+    ./Configure enable-fips \
+                no-weak-ssl-ciphers \
+                enable-ec_nistp_64_gcc_128 \
+                no-ssl3 \
+                no-rc5 \
+                no-mdc2 \
+                no-idea \
+                shared \
+                --prefix="${SSL_PREFIX}" \
+                --openssldir="${SSL_PREFIX}" \
+                --libdir=lib; \
+    make -j"$(nproc)"; \
+    test -f providers/fips.so
+
+RUN set -eux; \
+    cd "openssl-${OPENSSL_VERSION}"; \
+    ./Configure enable-fips \
+                no-weak-ssl-ciphers \
+                enable-ec_nistp_64_gcc_128 \
+                no-ssl3 \
+                no-rc5 \
+                no-mdc2 \
+                no-idea \
+                shared \
+                --prefix="${SSL_PREFIX}" \
+                --openssldir="${SSL_PREFIX}" \
+                --libdir=lib; \
+    make -j"$(nproc)"; \
+    make install_sw; \
+    make install_ssldirs; \
+    cp "../openssl-${OPENSSL_FIPS_PROVIDER_VERSION}/providers/fips.so" providers/fips.so; \
+    make install_fips; \
+    mkdir -p /etc/ld.so.conf.d; \
+    echo "include /etc/ld.so.conf.d/*.conf" > /etc/ld.so.conf; \
+    echo "${SSL_PREFIX}/lib" > /etc/ld.so.conf.d/openssl-fips.conf; \
+    ldconfig
+
+ENV PATH="${SSL_PREFIX}/bin:${PATH}"
+
+# The distro libcrypto stays on the loader path otherwise, and it carries its
+# own OPENSSLDIR, so the CLI and every tool in this stage would read a config
+# that has no FIPS provider in it.
+RUN set -eux; \
+    rm -f /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3; \
+    ldconfig; \
+    openssl version -d | grep -q '"/usr/local/ssl"'
+
+# fips is the only provider the default properties allow, and base carries the
+# encoders and decoders, which the FIPS module does not contain.
+RUN set -eux; \
+    cnf="${SSL_PREFIX}/openssl.cnf"; \
+    sed -i 's|# .include fipsmodule.cnf|.include '"${SSL_PREFIX}"'/fipsmodule.cnf|' "${cnf}"; \
+    sed -i 's|^default = default_sect|fips = fips_sect\nbase = base_sect\n\n[base_sect]\nactivate = 1|' "${cnf}"; \
+    sed -i 's|^\[openssl_init\]|[openssl_init]\nalg_section = evp_properties|' "${cnf}"; \
+    printf '\n[evp_properties]\ndefault_properties = fips=yes\n' >> "${cnf}"; \
+    grep -q '^\.include '"${SSL_PREFIX}"'/fipsmodule.cnf' "${cnf}"; \
+    grep -q '^fips = fips_sect' "${cnf}"
+
+# libtls links the FIPS OpenSSL, not the distro one.
+RUN set -eux; \
+    cd "libretls-${LIBRETLS_VERSION}"; \
+    PKG_CONFIG_PATH="${SSL_PREFIX}/lib/pkgconfig" \
+        ./configure --prefix="${SSL_PREFIX}" --disable-static; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    test -f "${SSL_PREFIX}/include/tls.h"; \
+    test -f "${SSL_PREFIX}/lib/pkgconfig/libtls.pc"
+
+# Build fails here rather than shipping a provider that does not load, or one
+# the default properties do not select.
+RUN set -eux; \
+    openssl version -a; \
+    openssl fipsinstall -verify -module "${SSL_PREFIX}/lib/ossl-modules/fips.so" -in "${SSL_PREFIX}/fipsmodule.cnf"; \
+    openssl list -providers | tee /tmp/providers.txt; \
+    grep -q 'OpenSSL FIPS Provider' /tmp/providers.txt; \
+    grep -q 'status: active' /tmp/providers.txt; \
+    ! grep -q 'OpenSSL Default Provider' /tmp/providers.txt; \
+    echo fips-selftest | openssl dgst -sha256 > /dev/null; \
+    if echo fips-selftest | openssl dgst -md5 > /dev/null 2>&1; then \
+        echo "MD5 is reachable: the FIPS properties are not in force" >&2; exit 1; \
+    fi; \
+    rm -f /tmp/providers.txt
+
+# ---------------------------------------------------------------------------
+# opam switch and the OCaml, Rust and Node dependencies of the terrat build.
+# ---------------------------------------------------------------------------
+FROM ${WOLFI_BASE} AS build-base
+
+ENV SSL_PREFIX=/usr/local/ssl
+
+RUN apk add --no-cache \
+    bash \
+    build-base \
+    ca-certificates \
+    cmake \
+    coreutils \
+    curl \
+    curl-dev \
+    findutils \
+    git \
+    glibc-dev \
+    gmp-dev \
+    go \
+    jq \
+    libffi-dev \
+    libssh2-dev \
+    libuv-dev \
+    m4 \
+    make \
+    mercurial \
+    nghttp2-dev \
+    nghttp3-dev \
+    npm \
+    opam \
+    openssh \
+    patch \
+    perl \
+    pkgconf \
+    py3.13-pyyaml \
+    python-3.13 \
+    rsync \
+    rust \
+    sqlite-dev \
+    unzip \
+    wget \
+    zlib-dev \
+    zstd-dev
+
+# The FIPS OpenSSL replaces the distro one for everything built from here on,
+# so the OCaml stubs, libcurl and libtls all resolve to the same libcrypto.
+COPY --from=openssl-fips ${SSL_PREFIX}/ ${SSL_PREFIX}/
+RUN set -eux; \
+    mkdir -p /etc/ld.so.conf.d; \
+    echo "include /etc/ld.so.conf.d/*.conf" > /etc/ld.so.conf; \
+    echo "${SSL_PREFIX}/lib" > /etc/ld.so.conf.d/openssl-fips.conf; \
+    rm -f /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3; \
+    ldconfig; \
+    ln -sf "${SSL_PREFIX}/bin/openssl" /usr/bin/openssl
+
+ENV PKG_CONFIG_PATH="${SSL_PREFIX}/lib/pkgconfig"
+ENV OPENSSL_DIR="${SSL_PREFIX}"
+ENV PATH="${SSL_PREFIX}/bin:${PATH}"
+
+WORKDIR /tmp
+# The opam-repository index is fetched once here. Bump the date to force the
+# layer to run again when a package published on a newer snapshot is missing.
+ARG OPAM_INDEX_DATE=2026-09-15
+RUN echo "opam-repository index refreshed ${OPAM_INDEX_DATE}" && \
+    opam init -ay --disable-sandboxing --bare
+# Only the dependency manifests reach this layer, so a source change does not
+# rebuild the switch.
+COPY opam /tmp/mono/opam
+COPY vendor /tmp/mono/vendor
+COPY code/opam.pins code/stategraph.pins /tmp/mono/code/
+RUN eval $(opam env) && \
+    opam switch create -y 5.5.1 && \
+    eval $(opam env) && \
+    opam repository add opam-acsl mono/opam && \
+    opam pin add -n ISO8601 mono/vendor/ISO8601 --no-depexts && \
+    opam pin add -n cohttp mono/vendor/cohttp --no-depexts
+RUN eval $(opam env) && cd mono/code && \
+    opam install -j$(nproc --all) -y --no-depexts dune.3.24.2 menhir && \
+    cat opam.pins stategraph.pins | xargs opam install -j$(nproc --all) -y --no-depexts
+
+# ---------------------------------------------------------------------------
+# The iris UI assets.
+#
+# The bundler hashes content with MD5, which the FIPS provider refuses, so this
+# stage keeps the distro OpenSSL. Its output is static files and carries no
+# cryptography into the image.
+# ---------------------------------------------------------------------------
+FROM ${WOLFI_BASE} AS iris-build
+
+RUN apk add --no-cache \
+    bash \
+    build-base \
+    git \
+    npm \
+    python-3.13
+
+WORKDIR /tmp/mono
+COPY api_schemas/terrat/api.json api_schemas/terrat/api.json
+COPY code/src/iris code/src/iris
+RUN cd code/src/iris && \
+    ln -sf ../../../api_schemas/terrat/api.json api.json && \
+    npm install && \
+    npm run generate-api-types && \
+    npm run build && \
+    test -f dist/index.html
+
+# ---------------------------------------------------------------------------
+# The terrat binaries.
+# ---------------------------------------------------------------------------
+# The tree is wiped before the checkout is copied back in: overlaying sources
+# on the base image's tree and reusing its _build produces binaries that mix
+# object files from two tree states.
+FROM build-base AS terrat-build
+ARG GIT_SHA=""
+RUN rm -rf /tmp/mono
+COPY ./ /tmp/mono
+WORKDIR /tmp/mono
+RUN if [ -n "$GIT_SHA" ]; then \
+      printf 'let sha = "%s"\n' "$GIT_SHA" > code/src/terrat_build_info/terrat_build_info.ml; \
+    fi && \
+    eval $(opam env) && \
+    make -C code terrat_ee
+
+# ---------------------------------------------------------------------------
+# Runtime.
+# ---------------------------------------------------------------------------
+FROM ${WOLFI_BASE} AS terrat-fips-base
+
+ENV SSL_PREFIX=/usr/local/ssl
+ENV TERRAT_BRAND=terrateam
+
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    curl \
+    gettext \
+    gmp \
+    jq \
+    libffi \
+    nginx-stable \
+    python-3.13 \
+    py3.13-requests \
+    runit \
+    sudo \
+    zlib
+
+COPY --from=openssl-fips ${SSL_PREFIX}/ ${SSL_PREFIX}/
+RUN set -eux; \
+    mkdir -p /etc/ld.so.conf.d; \
+    echo "include /etc/ld.so.conf.d/*.conf" > /etc/ld.so.conf; \
+    echo "${SSL_PREFIX}/lib" > /etc/ld.so.conf.d/openssl-fips.conf; \
+    rm -f /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3; \
+    ldconfig; \
+    ln -sf "${SSL_PREFIX}/bin/openssl" /usr/bin/openssl
+
+# docker/terrat/service/nginx execs /usr/sbin/nginx, which Wolfi reaches
+# through its /usr/sbin -> bin symlink.
+RUN test -x /usr/sbin/nginx
+
+RUN addgroup -S terrat && adduser -S -G terrat terrat
+RUN mkdir -p /usr/local/bin /etc/service/terrat /etc/service/nginx /etc/service/nginx/control /usr/local/share/terrat/ui/assets
+COPY docker/terrat/install-ca-cert.py /usr/local/bin/install-ca-cert
+RUN chmod 755 /usr/local/bin/install-ca-cert && \
+    chown root:root /usr/local/bin/install-ca-cert
+RUN echo 'terrat ALL=(root) NOPASSWD:SETENV: /usr/local/bin/install-ca-cert' > /etc/sudoers.d/terrat && \
+    chmod 440 /etc/sudoers.d/terrat
+# nginx on Wolfi keeps its prefix at /var/lib/nginx and its pid at
+# /run/nginx.pid, and it creates the temp directories itself only when the
+# parent is writable.
+RUN mkdir -p /var/lib/nginx/tmp /var/log/nginx /run && \
+    chown -R terrat:terrat /etc/service /usr/local/share/terrat /etc/nginx /var/lib/nginx /var/log/nginx /run
+COPY docker/terrat/service/terrat /etc/service/terrat/run
+COPY docker/terrat/service/nginx /etc/service/nginx/run
+COPY --chmod=755 docker/terrat/runit-init /usr/local/bin/runit-init
+COPY --chmod=755 docker/terrat/service/nginx-control-t /etc/service/nginx/control/t
+COPY docker/terrat/nginx.conf.template /etc/nginx/nginx.conf.template
+COPY --from=iris-build /tmp/mono/code/src/iris/dist/ /usr/local/share/terrat/ui/assets/
+
+# The assembled runtime, not just the builder, has to select the FIPS provider.
+RUN set -eux; \
+    openssl list -providers | grep -q 'OpenSSL FIPS Provider'; \
+    openssl list -providers | grep -q 'status: active'; \
+    if echo fips-selftest | openssl dgst -md5 > /dev/null 2>&1; then \
+        echo "MD5 is reachable: the FIPS properties are not in force" >&2; exit 1; \
+    fi
+
+USER terrat
+EXPOSE 8080
+CMD ["/usr/local/bin/runit-init"]
+
+FROM terrat-fips-base AS terrat-ee-fips
+COPY --from=terrat-build /tmp/mono/_build/default/code/src/terrat_ee/terrat_ee.exe /usr/local/bin/terrat
