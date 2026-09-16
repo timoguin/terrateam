@@ -1,5 +1,6 @@
 (* Round-trip and validation tests for Engine_stategraph at the schema layer. *)
 
+module Br = Terrat_repo_config.Batch_runs
 module E = Terrat_repo_config.Engine
 module Sg = Terrat_repo_config.Engine_stategraph
 module Spn = Terrat_repo_config.Storage_plan_none
@@ -213,6 +214,35 @@ let test_notifications_summary_rejects_unknown_mode =
       | Ok _ -> failwith "Expected unknown mode to be rejected, but it was accepted"
       | Error _ -> ())
 
+let test_batch_runs_merge_steps_round_trip =
+  Oth.test ~name:"Batch_runs: merge_steps round-trip" (fun _ ->
+      let json = `Assoc [ ("merge_steps", `String "setup_and_plan") ] in
+      match Br.of_yojson json with
+      | Ok t -> (
+          Oth.Assert.true_
+            ~fail_msg:"t.Br.merge_steps = `Setup_and_plan"
+            (t.Br.merge_steps = `Setup_and_plan);
+          match Br.of_yojson (Br.to_yojson t) with
+          | Ok t' ->
+              Oth.Assert.true_
+                ~fail_msg:"t'.Br.merge_steps = `Setup_and_plan"
+                (t'.Br.merge_steps = `Setup_and_plan)
+          | Error msg -> failwith msg)
+      | Error msg -> failwith msg)
+
+let test_batch_runs_merge_steps_default =
+  Oth.test ~name:"Batch_runs: merge_steps defaults to setup" (fun _ ->
+      match Br.of_yojson (`Assoc []) with
+      | Ok t -> Oth.Assert.true_ ~fail_msg:"t.Br.merge_steps = `Setup" (t.Br.merge_steps = `Setup)
+      | Error msg -> failwith msg)
+
+let test_batch_runs_rejects_unknown_merge_steps =
+  Oth.test ~name:"Batch_runs: unknown merge_steps rejected" (fun _ ->
+      let json = `Assoc [ ("merge_steps", `String "everything") ] in
+      match Br.of_yojson json with
+      | Ok _ -> failwith "Expected unknown merge_steps to be rejected, but it was accepted"
+      | Error _ -> ())
+
 let test =
   Oth.parallel
     [
@@ -233,6 +263,9 @@ let test =
       test_notifications_summary_enabled_unset;
       test_notifications_summary_enabled_unset_round_trip;
       test_notifications_summary_rejects_unknown_mode;
+      test_batch_runs_merge_steps_round_trip;
+      test_batch_runs_merge_steps_default;
+      test_batch_runs_rejects_unknown_merge_steps;
     ]
 
 let () =

@@ -510,13 +510,18 @@ module type S = sig
       (Terrat_api_components.Work_manifest_build_tree_result.Files.t option, [> `Error ]) result
       Abb.Future.t
 
+    (* The next work manifest to start an action run for, with the compute node
+       it belongs to.  A work manifest whose node already runs is not returned,
+       because that node picks it up on its next poll.  The node is [None] for a
+       work manifest made before the server made a node with each one. *)
     val query_next_pending_work_manifest :
       ?new_age:bool ->
       request_id:string ->
       t ->
-      ( ( Api.Account.t,
-          (unit Api.Pull_request.t, Api.Repo.t) Target.t )
-        Terrat_work_manifest3.Existing.t
+      ( (( Api.Account.t,
+           (unit Api.Pull_request.t, Api.Repo.t) Target.t )
+         Terrat_work_manifest3.Existing.t
+        * Uuidm.t option)
         option,
         [> `Error ] )
       result
@@ -1032,6 +1037,14 @@ module type S = sig
       val query :
         request_id:string ->
         compute_node_id:Uuidm.t ->
+        Db.t ->
+        (Terrat_job_context.Compute_node.t option, [> `Error ]) result Abb.Future.t
+
+      (* The compute node that owns a work manifest.  The id of a node is the id
+         of its first work manifest only, so a later one cannot be found by id. *)
+      val query_by_work_manifest :
+        request_id:string ->
+        work_manifest_id:Uuidm.t ->
         Db.t ->
         (Terrat_job_context.Compute_node.t option, [> `Error ]) result Abb.Future.t
 

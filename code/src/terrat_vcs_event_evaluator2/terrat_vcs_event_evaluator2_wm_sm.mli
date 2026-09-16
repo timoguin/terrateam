@@ -1,6 +1,6 @@
 module Make
     (S : Terrat_vcs_provider2.S)
-    (_ : module type of Terrat_vcs_event_evaluator2_targets.Make (S)) : sig
+    (Keys : module type of Terrat_vcs_event_evaluator2_targets.Make (S)) : sig
   module Builder : module type of Terrat_vcs_event_evaluator2_builder.Make (S)
 
   type existing_wm =
@@ -35,6 +35,18 @@ module Make
       [> Str_template.err ] )
     result
 
+  (** Whether the compute node of an evaluation may perform a new work manifest as well, instead of
+      that work manifest getting its own node. Asked for one work manifest at a time, from the
+      compute node and the work manifest event of the evaluation that makes it. *)
+  type reuse_compute_node =
+    Terrat_job_context.Compute_node.t option ->
+    Keys.Work_manifest_event.t option ->
+    existing_wm ->
+    Terrat_job_context.Compute_node.t option
+
+  (** Answers no: a new work manifest gets its own compute node, thus its own action run. *)
+  val no_compute_node_reuse : reuse_compute_node
+
   val run :
     name:string ->
     eq:(existing_wm -> bool) ->
@@ -48,6 +60,11 @@ module Make
       Builder.B.State.t ->
       Builder.Bs.Fetcher.t ->
       (existing_wm list, Builder.err) result Abb.Future.t) ->
+    (* Every state machine but the config builder passes
+       [no_compute_node_reuse].  The configuration answers first: with
+       [Batch_runs.Merge_steps.None] no work manifest joins a run, whatever this
+       function says. *)
+    reuse_compute_node:reuse_compute_node ->
     initiate:
       (existing_wm ->
       Builder.B.State.t ->

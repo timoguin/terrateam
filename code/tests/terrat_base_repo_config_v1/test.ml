@@ -1028,6 +1028,55 @@ let test_engine_custom_resource_summary =
           | _ -> failwith "to_version_1 did not write resource_summary back")
       | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
 
+(* [batch_runs.merge_steps] gives the highest step that may join an action run that is
+   already going.  The default is [Setup], which is what a repository gets with no
+   configuration.  [enabled] does not gate it: [enabled] caps the workspaces of a batch. *)
+let test_batch_runs_merge_steps_defaults =
+  Oth.test ~name:"of_version_1_json: merge_steps defaults" (fun _ ->
+      let cfg =
+        Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json (`Assoc []))
+      in
+      Oth.Assert.eq
+        ~eq:V1.Batch_runs.equal
+        ~pp:V1.Batch_runs.pp
+        (V1.batch_runs cfg)
+        (V1.Batch_runs.make ~merge_steps:V1.Batch_runs.Merge_steps.Setup ());
+      ())
+
+let test_batch_runs_merge_steps_each_value =
+  Oth.test ~name:"of_version_1_json: merge_steps each value" (fun _ ->
+      let module Ms = V1.Batch_runs.Merge_steps in
+      CCList.iter
+        (fun (value, expected) ->
+          let json = `Assoc [ ("batch_runs", `Assoc [ ("merge_steps", `String value) ]) ] in
+          let cfg =
+            Oth.Assert.ok_show ~show:V1.show_of_version_1_json_err (V1.of_version_1_json json)
+          in
+          Oth.Assert.eq
+            ~eq:V1.Batch_runs.equal
+            ~pp:V1.Batch_runs.pp
+            (V1.batch_runs cfg)
+            (* [enabled] stays false, which shows that it does not gate this key. *)
+            (V1.Batch_runs.make ~merge_steps:expected ()))
+        [
+          ("none", Ms.None);
+          ("setup", Ms.Setup);
+          ("setup_and_plan", Ms.Setup_and_plan);
+          ("all", Ms.All);
+        ];
+      ())
+
+let test_batch_runs_merge_steps_round_trip =
+  Oth.test ~name:"to_version_1: merge_steps round-trip" (fun _ ->
+      let json = `Assoc [ ("batch_runs", `Assoc [ ("merge_steps", `String "setup_and_plan") ]) ] in
+      match V1.of_version_1_json json with
+      | Ok cfg -> (
+          let v1 = V1.to_version_1 cfg in
+          match v1.Repo.Version_1.batch_runs with
+          | Some { Repo.Batch_runs.merge_steps = `Setup_and_plan; _ } -> ()
+          | Some _ | None -> failwith "Round-trip to Version_1 did not produce merge_steps")
+      | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
+
 let test =
   Oth.parallel
     [
@@ -1077,6 +1126,9 @@ let test =
       test_notifications_classic_comment_visible;
       test_notifications_summary_mode_round_trip;
       test_engine_custom_resource_summary;
+      test_batch_runs_merge_steps_defaults;
+      test_batch_runs_merge_steps_each_value;
+      test_batch_runs_merge_steps_round_trip;
     ]
 
 let () =

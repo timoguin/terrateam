@@ -316,6 +316,39 @@ struct
         assert false
     | Terrat_api_components_work_manifest_result.Work_manifest_index_result _ -> assert false
 
+  (* The config builder step waits for the tree, so the server makes this work
+     manifest while it reads the results of the tree builder run.  That run is
+     still going, so its compute node can perform this step as well, which is
+     what turns the two steps into one action run.
+
+     The node may take it only when its work manifest is the tree builder of the
+     same refs.  One job evaluation covers the working branch and the destination
+     branch, and the action of a node is checked out on one of them.  A config
+     builder of the other branch must therefore get its own node.
+
+     Only the config builder does this.  The results evaluation runs the whole
+     job, so it also makes other work manifests, a plan among them.  Each of
+     those keeps its own node: a plan that ran inside a builder run would take
+     the environment and the runs_on of that builder, and the environment selects
+     the protection rules of the VCS. *)
+  let reuse_compute_node compute_node work_manifest_event work_manifest =
+    let module C = Terrat_job_context.Compute_node in
+    let module E = Keys.Work_manifest_event in
+    match (compute_node, work_manifest_event) with
+    (* The state of the node is part of the test, and not only the refs.  The
+       whole argument for giving a node a second work manifest is that its run is
+       still going, and a node that is not [starting] has no run to give.  Today
+       a node in this position is always [starting], so this arm is insurance
+       rather than a live path, but it is the condition the rest of the reasoning
+       rests on, so it belongs in the code. *)
+    | ( Some ({ C.state = C.State.Starting; _ } as compute_node),
+        Some (E.Result { work_manifest = tree_builder_wm; _ }) )
+      when tree_builder_wm.Wm.steps = [ Wm.Step.Build_tree ]
+           && CCString.equal tree_builder_wm.Wm.base_ref work_manifest.Wm.base_ref
+           && CCString.equal tree_builder_wm.Wm.branch_ref work_manifest.Wm.branch_ref ->
+        Some compute_node
+    | (Some _ | None), _ -> None
+
   let run ~cache_ref ~dest_branch_ref ~branch_ref ~branch ~name =
     Wm_sm.run
       ~name
@@ -324,6 +357,7 @@ struct
       ~branch_ref
       ~branch
       ~create:(create ~cache_ref)
+      ~reuse_compute_node
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~cache_ref ~branch_ref ~branch)

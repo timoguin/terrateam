@@ -801,6 +801,7 @@ struct
         ~branch_ref
         ~branch
         ~create
+        ~reuse_compute_node:Wm_sm.no_compute_node_reuse
         ~initiate
         ~fail
         ~result
@@ -1019,6 +1020,7 @@ struct
         ~branch_ref
         ~branch
         ~create
+        ~reuse_compute_node:Wm_sm.no_compute_node_reuse
         ~initiate
         ~fail
         ~result
