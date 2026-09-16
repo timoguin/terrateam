@@ -4,10 +4,10 @@
 
 There is a cycle between dirspaces that is preventing operations from being evaluated.  This means that a two or more dirspaces depend on each other.
 
-Here is an example of the cycle:
+Here is an example of the cycle.  Each line gives one dirspace that waits, the dirspace it waits for, and the rule that made it wait:
 
 {% for c in cycle %}
-- `{{ c.dir }}:{{ c.workspace }}`
+- `{{ c.dependent_dir }}:{{ c.dependent_workspace }}` waits for `{{ c.dependency_dir }}:{{ c.dependency_workspace }}` because of `{{ c.rule }}`
 {% endfor %}
 
 ### What to do?

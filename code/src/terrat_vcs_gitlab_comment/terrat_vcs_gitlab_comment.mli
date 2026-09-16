@@ -12,7 +12,7 @@ module S : sig
     hooks : (Scope.t * Terrat_api_components_workflow_step_output.t list) list;
     pull_request : unit Api.Pull_request.t;
     request_id : string;
-    remaining_layers : Terrat_change_match3.Dirspace_config.t list list;
+    num_remaining_layers : int;
     result : Terrat_api_components_work_manifest_tf_operation_result2.t;
     repo_config : Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t;
     synthesized_config : Terrat_change_match3.Config.t;

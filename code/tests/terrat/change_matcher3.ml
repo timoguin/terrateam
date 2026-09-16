@@ -2451,7 +2451,7 @@ let test_layer_is_earliest_possible_shared_dependent =
 let test_collect_dependents_visits_each_dirspace_once =
   Oth.test ~name:"collect dependents visits each dirspace one time" (fun _ ->
       let module R = Terrat_base_repo_config_v1 in
-      let levels = 24 in
+      let levels = 2000 in
       let name i j = Printf.sprintf "l%02dw%d" i j in
       let dir i =
         if i = 0 then R.Dirs.Dir.make ()
@@ -2568,6 +2568,14 @@ let test_modified_by_pull_collects_depends_on =
                      ~names:
                        (Sln_map.String.of_list
                           [
+                            (* [db] declares [depends_on] against [app], which is
+                               another stack.  A [depends_on] may only cross a
+                               stack boundary inside a nested stack, so one holds
+                               all four. *)
+                            ( "all",
+                              R.Stacks.Stack.make
+                                ~type_:(R.Stacks.Type_.Nested [ "base"; "other"; "db"; "app" ])
+                                () );
                             ("base", stack "base");
                             ("other", stack "other");
                             ("db", stack "db");
@@ -2849,6 +2857,677 @@ let test_large_directory_timing =
       let changes = CCList.flatten (Terrat_change_match3.match_diff_list dirs diff) in
       Oth.Assert.true_ (CCList.length changes = num_tf_dirs))
 
+(* The layer function, run over a subset of a run.  [layers_of] answers "what
+   can run now, and how many rounds are left" for the dirspaces that remain, so
+   the three tests below pin what a dirspace outside the subset does to the
+   order.
+
+   The chain is [a] depends_on [b] depends_on [c] in every one of them. *)
+let layers_of_chain_config () =
+  let module R = Terrat_base_repo_config_v1 in
+  let dir_depends_on tag =
+    R.Dirs.Dir.make
+      ~workspaces:
+        (Sln_map.String.of_list
+           [
+             ( "default",
+               R.Dirs.Workspace.make
+                 ~when_modified:(R.When_modified.make ~depends_on:(depends_on_q tag) ())
+                 () );
+           ])
+      ()
+  in
+  let repo_config =
+    derive
+      ~ctx
+      ~index:R.Index.empty
+      ~file_list:[ "a/main.tf"; "b/main.tf"; "c/main.tf" ]
+      (R.of_view
+         (R.View.make
+            ~dirs:
+              (Sln_map.String.of_list
+                 [
+                   ("a", dir_depends_on "dir:b");
+                   ("b", dir_depends_on "dir:c");
+                   ("c", R.Dirs.Dir.make ());
+                 ])
+            ()))
+  in
+  CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+
+(* The directory of every dirspace, layer by layer, sorted inside each layer so
+   the assertion does not depend on the order the sort happens to return. *)
+let dirs_of_layers layers =
+  CCList.map
+    (fun layer ->
+      CCList.sort CCString.compare
+      @@ CCList.map
+           (fun {
+                  Terrat_change_match3.Dirspace_config.dirspace;
+                  file_pattern_matcher = _;
+                  lock_branch_target = _;
+                  stack_config = _;
+                  stack_name = _;
+                  stack_paths = _;
+                  tags = _;
+                  when_modified = _;
+                }
+              -> dirspace.Terrat_dirspace.dir)
+           layer)
+    layers
+
+(* Every dirspace of a run, with the layer boundaries thrown away. *)
+let flatten_matches config diff = CCList.flatten (Terrat_change_match3.match_diff_list config diff)
+
+let dirspace_configs_of_dirs config dirs =
+  CCList.map
+    (fun dir ->
+      CCOption.get_exn_or ("no such dirspace: " ^ dir)
+      @@ Terrat_change_match3.of_dirspace config { Terrat_dirspace.dir; workspace = "default" })
+    dirs
+
+let test_layers_of_dependency_outside_subset =
+  Oth.test ~name:"layers_of: a dependency outside the subset does not delay" (fun _ ->
+      let config = layers_of_chain_config () in
+      (* [c] has been applied and is gone from the subset.  [b] depended only on
+         [c], so nothing holds [b] back any more. *)
+      let layers =
+        dirs_of_layers
+        @@ Terrat_change_match3.layers_of config (dirspace_configs_of_dirs config [ "b"; "a" ])
+      in
+      Oth.Assert.true_
+        ~fail_msg:"layers = [ [ \"b\" ]; [ \"a\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layers [ [ "b" ]; [ "a" ] ]);
+      ())
+
+let test_layers_of_dependency_inside_subset =
+  Oth.test ~name:"layers_of: a dependency inside the subset delays" (fun _ ->
+      let config = layers_of_chain_config () in
+      let layers =
+        dirs_of_layers
+        @@ Terrat_change_match3.layers_of config (dirspace_configs_of_dirs config [ "c"; "b"; "a" ])
+      in
+      (* The number of layers is the depth of the subset. *)
+      Oth.Assert.true_
+        ~fail_msg:"layers = [ [ \"c\" ]; [ \"b\" ]; [ \"a\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layers [ [ "c" ]; [ "b" ]; [ "a" ] ]);
+      ())
+
+(* The case a direct-edge rule gets wrong.  [b] is not in the subset, and the
+   only path from [c] to [a] runs through it.  [b] cannot delay anything, but
+   [a] still depends on [c] through it, so [a] must not join [c] in the first
+   layer.
+
+   This is the shape of the [prune_on_no_change] fixture
+   [core/layered_runs/0012]: [match_diff_list] prunes [b] after it has sorted,
+   so the run that reaches the evaluator is exactly [c] and [a]. *)
+let test_layers_of_contracts_through_a_missing_dirspace =
+  Oth.test ~name:"layers_of: the order survives a dirspace that is not in the subset" (fun _ ->
+      let config = layers_of_chain_config () in
+      let layers =
+        dirs_of_layers
+        @@ Terrat_change_match3.layers_of config (dirspace_configs_of_dirs config [ "c"; "a" ])
+      in
+      Oth.Assert.true_
+        ~fail_msg:"layers = [ [ \"c\" ]; [ \"a\" ] ]"
+        (CCList.equal (CCList.equal CCString.equal) layers [ [ "c" ]; [ "a" ] ]);
+      ())
+
+(* Two environments, [dev] and [prod], each [networking -> database -> app] by
+   [depends_on], one stack for each environment, and [apply_after: [dev]] on
+   [prod].  This is the [core/stacks/0027] fixture.  [cross_env_depends_on]
+   makes [dev/database] depend on [prod/networking] instead, which crosses the
+   stack boundary. *)
+let two_environment_config
+    ?(cross_env_depends_on = false)
+    ?(nested = false)
+    ?(apply_after = true)
+    () =
+  let module R = Terrat_base_repo_config_v1 in
+  let dir ~env ?depends_on () =
+    R.Dirs.Dir.make
+      ~workspaces:
+        (Sln_map.String.of_list
+           [
+             ( "default",
+               R.Dirs.Workspace.make
+                 ~tags:[ env ]
+                 ~when_modified:
+                   (R.When_modified.make ?depends_on:(CCOption.map depends_on_q depends_on) ())
+                 () );
+           ])
+      ()
+  in
+  let stack ?rules tag =
+    R.Stacks.Stack.make
+      ~type_:(R.Stacks.Type_.Stack (CCResult.get_exn (Terrat_tag_query.of_string tag)))
+      ?rules
+      ()
+  in
+  let dev_database_depends_on =
+    if cross_env_depends_on then "dir:prod/networking" else "dir:dev/networking"
+  in
+  derive
+    ~ctx
+    ~index:R.Index.empty
+    ~file_list:
+      [
+        "dev/networking/main.tf";
+        "dev/database/main.tf";
+        "dev/app/main.tf";
+        "prod/networking/main.tf";
+        "prod/database/main.tf";
+        "prod/app/main.tf";
+      ]
+    (R.of_view
+       (R.View.make
+          ~dirs:
+            (Sln_map.String.of_list
+               [
+                 ("dev/networking", dir ~env:"dev" ());
+                 ("dev/database", dir ~env:"dev" ~depends_on:dev_database_depends_on ());
+                 ("dev/app", dir ~env:"dev" ~depends_on:"dir:dev/database" ());
+                 ("prod/networking", dir ~env:"prod" ());
+                 ("prod/database", dir ~env:"prod" ~depends_on:"dir:prod/networking" ());
+                 ("prod/app", dir ~env:"prod" ~depends_on:"dir:prod/database" ());
+               ])
+          ~stacks:
+            (R.Stacks.make
+               ~names:
+                 (Sln_map.String.of_list
+                    ((if nested then
+                        [
+                          ( "all",
+                            R.Stacks.Stack.make ~type_:(R.Stacks.Type_.Nested [ "dev"; "prod" ]) ()
+                          );
+                        ]
+                      else [])
+                    @ [
+                        ("dev", stack "dev");
+                        ( "prod",
+                          stack
+                            ~rules:
+                              (R.Stacks.Rules.make
+                                 ~apply_after:(if apply_after then [ "dev" ] else [])
+                                 ())
+                            "prod" );
+                      ]))
+               ())
+          ()))
+
+let two_environment_networking_diff =
+  Terrat_change.Diff.
+    [
+      Change { filename = "dev/networking/main.tf" };
+      Change { filename = "prod/networking/main.tf" };
+    ]
+
+(* [apply_after] adds no plan edge, so the two environments interleave in the
+   plan layering and the run looks three rounds long.  It really takes six,
+   because no [prod] dirspace may apply while a [dev] one is unapplied.  That is
+   the number the comment has to show, and it is what [apply_layers_of] is
+   for. *)
+let test_apply_layers_of_counts_apply_after =
+  Oth.test ~name:"apply_layers_of: apply_after is a round, plan layering is not" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let config =
+        CCResult.get_exn
+          (Terrat_change_match3.synthesize_config ~index:R.Index.empty (two_environment_config ()))
+      in
+      let matches = flatten_matches config two_environment_networking_diff in
+      let plan_layers =
+        dirs_of_layers
+        @@ Terrat_change_match3.match_diff_list config two_environment_networking_diff
+      in
+      Oth.Assert.true_
+        ~fail_msg:"the plan layering interleaves the environments"
+        (CCList.equal
+           (CCList.equal CCString.equal)
+           plan_layers
+           [
+             [ "dev/networking"; "prod/networking" ];
+             [ "dev/database"; "prod/database" ];
+             [ "dev/app"; "prod/app" ];
+           ]);
+      Oth.Assert.true_
+        ~fail_msg:"the apply layering is one dirspace per round"
+        (CCList.equal
+           (CCList.equal CCString.equal)
+           (dirs_of_layers @@ Terrat_change_match3.apply_layers_of config matches)
+           [
+             [ "dev/networking" ];
+             [ "dev/database" ];
+             [ "dev/app" ];
+             [ "prod/networking" ];
+             [ "prod/database" ];
+             [ "prod/app" ];
+           ]);
+      ())
+
+(* After [dev/networking] applies, [dev/database] is free because its only
+   dependency is applied, and [prod/networking] is free because [apply_after] is
+   not a plan edge.  They plan together.  This is the step the run used to stop
+   at. *)
+let test_layers_of_frees_a_branch_after_an_apply =
+  Oth.test ~name:"layers_of: an applied dependency frees its dependent" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let config =
+        CCResult.get_exn
+          (Terrat_change_match3.synthesize_config ~index:R.Index.empty (two_environment_config ()))
+      in
+      let remaining =
+        CCList.filter
+          (fun {
+                 Terrat_change_match3.Dirspace_config.dirspace;
+                 file_pattern_matcher = _;
+                 lock_branch_target = _;
+                 stack_config = _;
+                 stack_name = _;
+                 stack_paths = _;
+                 tags = _;
+                 when_modified = _;
+               }
+             -> not (CCString.equal "dev/networking" dirspace.Terrat_dirspace.dir))
+          (flatten_matches config two_environment_networking_diff)
+      in
+      let layers = dirs_of_layers @@ Terrat_change_match3.layers_of config remaining in
+      Oth.Assert.true_
+        ~fail_msg:"the first layer is dev/database and prod/networking"
+        (CCList.equal
+           CCString.equal
+           (CCOption.get_or ~default:[] (CCList.head_opt layers))
+           [ "dev/database"; "prod/networking" ]);
+      ())
+
+(* [depends_on] gives the order inside one stack.  Reaching out of the stack is
+   an error, the same way a stack rule that names a stack that does not exist is
+   an error.  The message has to name both directories and both stacks, because
+   neither half tells the user which configuration to change. *)
+let test_depends_on_crossing_a_stack_boundary =
+  Oth.test ~name:"depends_on across two stacks is an error" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      match
+        Terrat_change_match3.synthesize_config
+          ~index:R.Index.empty
+          (two_environment_config ~cross_env_depends_on:true ~apply_after:false ())
+      with
+      | Ok _ -> Oth.Assert.false_ "depends_on across two stacks: expected an error"
+      | Error
+          (`Depends_on_crosses_stack_err
+             {
+               Terrat_change_match3.Stack_boundary.dependent =
+                 { Terrat_dirspace.dir = dep_dir; workspace = _ };
+               dependent_stack;
+               dependency = { Terrat_dirspace.dir = dependency_dir; workspace = _ };
+               dependency_stack;
+             }) ->
+          Oth.Assert.Eq.string ~expected:"dev/database" ~actual:dep_dir;
+          Oth.Assert.Eq.string ~expected:"dev" ~actual:dependent_stack;
+          Oth.Assert.Eq.string ~expected:"prod/networking" ~actual:dependency_dir;
+          Oth.Assert.Eq.string ~expected:"prod" ~actual:dependency_stack;
+          ()
+      | Error _ -> Oth.Assert.false_ "depends_on across two stacks: unexpected error")
+
+(* The same [depends_on], with both stacks nested under one.  They now have a
+   stack in common, so the dependency stays inside it and the configuration is
+   good. *)
+let test_depends_on_inside_a_nested_stack =
+  Oth.test ~name:"depends_on across two stacks of one nested stack is fine" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      match
+        Terrat_change_match3.synthesize_config
+          ~index:R.Index.empty
+          (two_environment_config ~cross_env_depends_on:true ~nested:true ~apply_after:false ())
+      with
+      | Ok _ -> ()
+      | Error err ->
+          Oth.Assert.false_
+            ("nested stacks: unexpected error: "
+            ^ Terrat_change_match3.show_synthesize_config_err err))
+
+(* A stack rule that orders the same pair does not excuse the [depends_on].  The
+   two are separate configuration mistakes and the user has to be told about the
+   one they wrote. *)
+let test_depends_on_crossing_a_boundary_a_stack_rule_also_orders =
+  Oth.test ~name:"a stack rule does not excuse a depends_on across a boundary" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list:[ "d1/main.tf"; "d2/main.tf" ]
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ( "d1",
+                         R.Dirs.Dir.make
+                           ~workspaces:
+                             (Sln_map.String.of_list
+                                [
+                                  ( "default",
+                                    R.Dirs.Workspace.make
+                                      ~when_modified:
+                                        (R.When_modified.make
+                                           ~depends_on:(depends_on_q "dir:d2")
+                                           ())
+                                      () );
+                                ])
+                           () );
+                       ("d2", R.Dirs.Dir.make ());
+                     ])
+                ~stacks:
+                  (R.Stacks.make
+                     ~names:
+                       (Sln_map.String.of_list
+                          [
+                            ( "x",
+                              R.Stacks.Stack.make
+                                ~type_:
+                                  (R.Stacks.Type_.Stack
+                                     (CCResult.get_exn (Terrat_tag_query.of_string "dir:d1")))
+                                ~rules:(R.Stacks.Rules.make ~plan_after:[ "y" ] ())
+                                () );
+                            ( "y",
+                              R.Stacks.Stack.make
+                                ~type_:
+                                  (R.Stacks.Type_.Stack
+                                     (CCResult.get_exn (Terrat_tag_query.of_string "dir:d2")))
+                                () );
+                          ])
+                     ())
+                ()))
+      in
+      match Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config with
+      | Ok _ -> Oth.Assert.false_ "a stack rule hid the boundary crossing"
+      | Error (`Depends_on_crosses_stack_err _) -> ()
+      | Error _ -> Oth.Assert.false_ "unexpected error")
+
+(* A cycle can still mix a [depends_on] with a stack rule, as long as both ends
+   are in one nested stack.  [d1] waits for [d2] because its stack says
+   [plan_after: [y]], and [d2] waits for [d1] because of its own [depends_on].
+   The message has to say which rule made which edge -- the two configuration
+   sections are far apart in the file and the dirspace names alone do not say
+   where to look. *)
+let test_depends_on_cycle_names_the_rule =
+  Oth.test ~name:"the cycle message names the rule of each edge" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let stack ?rules dir =
+        R.Stacks.Stack.make
+          ~type_:
+            (R.Stacks.Type_.Stack (CCResult.get_exn (Terrat_tag_query.of_string ("dir:" ^ dir))))
+          ?rules
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list:[ "d1/main.tf"; "d2/main.tf" ]
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ("d1", R.Dirs.Dir.make ());
+                       ( "d2",
+                         R.Dirs.Dir.make
+                           ~workspaces:
+                             (Sln_map.String.of_list
+                                [
+                                  ( "default",
+                                    R.Dirs.Workspace.make
+                                      ~when_modified:
+                                        (R.When_modified.make
+                                           ~depends_on:(depends_on_q "dir:d1")
+                                           ())
+                                      () );
+                                ])
+                           () );
+                     ])
+                ~stacks:
+                  (R.Stacks.make
+                     ~names:
+                       (Sln_map.String.of_list
+                          [
+                            ( "all",
+                              R.Stacks.Stack.make ~type_:(R.Stacks.Type_.Nested [ "x"; "y" ]) () );
+                            ("x", stack ~rules:(R.Stacks.Rules.make ~plan_after:[ "y" ] ()) "d1");
+                            ("y", stack "d2");
+                          ])
+                     ())
+                ()))
+      in
+      match Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config with
+      | Ok _ -> Oth.Assert.false_ "expected a cycle"
+      | Error (`Depends_on_cycle_err edges) ->
+          let named =
+            CCList.sort CCString.compare
+            @@ CCList.map
+                 (fun {
+                        Terrat_change_match3.Dependency_edge.dependent =
+                          { Terrat_dirspace.dir = dependent; workspace = _ };
+                        dependency = { Terrat_dirspace.dir = dependency; workspace = _ };
+                        rule;
+                      }
+                    -> dependent ^ " waits for " ^ dependency ^ " by " ^ rule)
+                 edges
+          in
+          Oth.Assert.true_
+            ~fail_msg:("cycle edges = " ^ CCString.concat ", " named)
+            (CCList.equal
+               CCString.equal
+               named
+               [ "d1 waits for d2 by plan_after"; "d2 waits for d1 by depends_on" ]);
+          ()
+      | Error _ -> Oth.Assert.false_ "unexpected error")
+
+(* Contraction must not invent an order that the run did not already have.
+
+   A stack rule never pulls a dirspace into a run -- [collect_dependents]
+   follows [depends_on] and [modified_by] only -- so a stack in the middle of a
+   [plan_after] chain can be empty while the stacks on both sides of it run.
+   Contraction walks through that empty stack.  It adds nothing, because
+   [collect_deps] closes [plan_after] transitively when the configuration is
+   synthesized, so [sc] already lists [sa] and the edge is a direct one.
+
+   The assertion is that the two layerings agree.  If they ever stop agreeing,
+   [match_diff_list] and [layers_of] disagree about the same dirspaces, and the
+   first layer of a run would depend on which of them computed it. *)
+let test_layers_of_agrees_with_match_diff_list_through_an_empty_stack =
+  Oth.test ~name:"layers_of: an empty stack in a plan_after chain adds no order" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let stack ?rules dir =
+        R.Stacks.Stack.make
+          ~type_:
+            (R.Stacks.Type_.Stack (CCResult.get_exn (Terrat_tag_query.of_string ("dir:" ^ dir))))
+          ?rules
+          ()
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list:[ "a/main.tf"; "b/main.tf"; "c/main.tf" ]
+          (R.of_view
+             (R.View.make
+                ~dirs:
+                  (Sln_map.String.of_list
+                     [
+                       ("a", R.Dirs.Dir.make ());
+                       ("b", R.Dirs.Dir.make ());
+                       ("c", R.Dirs.Dir.make ());
+                     ])
+                ~stacks:
+                  (R.Stacks.make
+                     ~names:
+                       (Sln_map.String.of_list
+                          [
+                            ("sa", stack "a");
+                            ("sb", stack ~rules:(R.Stacks.Rules.make ~plan_after:[ "sa" ] ()) "b");
+                            ("sc", stack ~rules:(R.Stacks.Rules.make ~plan_after:[ "sb" ] ()) "c");
+                          ])
+                     ())
+                ()))
+      in
+      let config =
+        CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+      in
+      (* Only [a] and [c] change, so the stack [sb] has nothing in the run. *)
+      let diff =
+        Terrat_change.Diff.[ Change { filename = "a/main.tf" }; Change { filename = "c/main.tf" } ]
+      in
+      let matched = Terrat_change_match3.match_diff_list config diff in
+      Oth.Assert.true_
+        ~fail_msg:"the run is [a] and [c] only"
+        (CCList.equal (CCList.equal CCString.equal) (dirs_of_layers matched) [ [ "a" ]; [ "c" ] ]);
+      Oth.Assert.true_
+        ~fail_msg:"re-layering the same dirspaces gives the same layers"
+        (CCList.equal
+           (CCList.equal CCString.equal)
+           (dirs_of_layers (Terrat_change_match3.layers_of config (CCList.flatten matched)))
+           (dirs_of_layers matched));
+      ())
+
+(* Contraction walks the configuration graph, not the run, so a long chain of
+   dirspaces that have left the run must not cost more than the chain is long.
+   The memo is what makes it one visit per dirspace rather than one per path.
+
+   Measured: the layering alone takes 3ms at 1000 dirspaces, 8ms at 2000 and
+   25ms at 4000, so it is linear in practice.  Without the memo it is the number
+   of paths, which doubles with each level.  The bound below is loose enough for
+   a loaded machine and still two orders of magnitude under a walk that lost the
+   memo.  Most of this test's wall time is [synthesize_config], which compares
+   every pair of dirspaces and is not what is being measured here. *)
+let test_layers_of_contraction_is_not_quadratic =
+  Oth.test ~name:"layers_of: contraction through a long chain stays cheap" (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let levels = 2000 in
+      let name i = Printf.sprintf "d%04d" i in
+      let dirs =
+        CCList.map
+          (fun i ->
+            ( name i,
+              if i = 0 then R.Dirs.Dir.make ()
+              else
+                R.Dirs.Dir.make
+                  ~workspaces:
+                    (Sln_map.String.of_list
+                       [
+                         ( "default",
+                           R.Dirs.Workspace.make
+                             ~when_modified:
+                               (R.When_modified.make
+                                  ~depends_on:(depends_on_q ("dir:" ^ name (i - 1)))
+                                  ())
+                             () );
+                       ])
+                  () ))
+          (CCList.range' 0 levels)
+      in
+      let repo_config =
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list:(CCList.map (fun (d, _) -> d ^ "/main.tf") dirs)
+          (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ()))
+      in
+      let config =
+        CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+      in
+      (* Every other dirspace has left the run, so every edge that is left has to
+         be contracted through one that is gone. *)
+      let subset =
+        dirspace_configs_of_dirs
+          config
+          (CCList.map name (CCList.filter (fun i -> i mod 2 = 0) (CCList.range' 0 levels)))
+      in
+      let start = Unix.gettimeofday () in
+      let layers = Terrat_change_match3.layers_of config subset in
+      let elapsed = Unix.gettimeofday () -. start in
+      Oth.Assert.true_
+        ~fail_msg:(Printf.sprintf "layers = %d, expected %d" (CCList.length layers) (levels / 2))
+        (CCList.length layers = levels / 2);
+      Oth.Assert.true_
+        ~fail_msg:(Printf.sprintf "contraction took %f seconds" elapsed)
+        (elapsed < 1.0);
+      ())
+
+(* [synthesize_config] compares every pair of dirspaces to build the topology, so
+   its cost grows with the square of the number of dirspaces.  What it does for
+   each pair is what decides whether that is affordable, and the answer has to
+   depend on how much the configuration actually declares.
+
+   A dirspace that declares no [depends_on] and no stack rule cannot order
+   anything, so its scan of every other dirspace is dead work and is skipped.
+   That is the common shape: most directories declare nothing.
+
+   Measured at 2000 dirspaces: the configuration where every directory declares a
+   [depends_on] takes about 1 second, and the one that declares nothing takes
+   about 0.005 seconds.  Before the skip the second was 0.05 seconds, ten times
+   more.
+
+   The assertion is the RATIO of the two, not a wall clock bound on either, so a
+   loaded machine moves both numbers together and the test does not become
+   flaky. *)
+let test_synthesize_config_skips_dirspaces_that_declare_nothing =
+  Oth.test
+    ~name:"synthesize_config skips the pair scan for a dirspace that declares nothing"
+    (fun _ ->
+      let module R = Terrat_base_repo_config_v1 in
+      let dirspaces = 2000 in
+      let name i = Printf.sprintf "d%04d" i in
+      let depends_on_previous i =
+        if i = 0 then R.Dirs.Dir.make ()
+        else
+          R.Dirs.Dir.make
+            ~workspaces:
+              (Sln_map.String.of_list
+                 [
+                   ( "default",
+                     R.Dirs.Workspace.make
+                       ~when_modified:
+                         (R.When_modified.make
+                            ~depends_on:(depends_on_q ("dir:" ^ name (i - 1)))
+                            ())
+                       () );
+                 ])
+            ()
+      in
+      let time_synthesize make_dir =
+        let dirs = CCList.map (fun i -> (name i, make_dir i)) (CCList.range' 0 dirspaces) in
+        let repo_config =
+          derive
+            ~ctx
+            ~index:R.Index.empty
+            ~file_list:(CCList.map (fun (d, _) -> d ^ "/main.tf") dirs)
+            (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ()))
+        in
+        let start = Unix.gettimeofday () in
+        let config =
+          CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+        in
+        let elapsed = Unix.gettimeofday () -. start in
+        ignore config;
+        elapsed
+      in
+      let every_dir_declares = time_synthesize depends_on_previous in
+      let no_dir_declares = time_synthesize (fun _ -> R.Dirs.Dir.make ()) in
+      (* Both shapes are measured in this one run on this one machine, so load
+         moves them together and the ratio between them is what stays put.  With
+         the skip the ratio is about 330; without it, when both shapes walk every
+         pair, it is about 20.  Fifty sits between the two with room on each
+         side. *)
+      Oth.Assert.true_
+        ~fail_msg:
+          (Printf.sprintf
+             "declaring nothing (%f s) must be far cheaper than declaring everything (%f s)"
+             no_dir_declares
+             every_dir_declares)
+        (no_dir_declares *. 50.0 < every_dir_declares);
+      ())
+
 let test =
   Oth.parallel
     [
@@ -2908,6 +3587,18 @@ let test =
       test_modified_by_pull_collects_depends_on;
       test_modified_by_cycle_terminates;
       test_files_in_same_dir_match_multiple_dirs;
+      test_layers_of_dependency_outside_subset;
+      test_layers_of_dependency_inside_subset;
+      test_layers_of_contracts_through_a_missing_dirspace;
+      test_apply_layers_of_counts_apply_after;
+      test_layers_of_frees_a_branch_after_an_apply;
+      test_depends_on_crossing_a_stack_boundary;
+      test_depends_on_inside_a_nested_stack;
+      test_depends_on_crossing_a_boundary_a_stack_rule_also_orders;
+      test_depends_on_cycle_names_the_rule;
+      test_layers_of_agrees_with_match_diff_list_through_an_empty_stack;
+      test_layers_of_contraction_is_not_quadratic;
+      test_synthesize_config_skips_dirspaces_that_declare_nothing;
       test_large_directory_timing;
     ]
 

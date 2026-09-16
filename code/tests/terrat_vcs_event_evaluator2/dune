@@ -1,10 +1,13 @@
 (tests
- (names test test_ee2_fc)
+ (names test test_ee2_fc test_work_set)
  (libraries
   abb
   abbs
   containers
   oth
   oth_abb
+  sln
+  terrat_base_repo_config_v1
   terrat_change
+  terrat_change_match3
   terrat_vcs_event_evaluator2))

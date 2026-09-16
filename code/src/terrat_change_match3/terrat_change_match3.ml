@@ -2,8 +2,28 @@ module R = Terrat_base_repo_config_v1
 module Dirspace_map = Terrat_data.Dirspace_map
 module Dirspace_set = Terrat_data.Dirspace_set
 
+module Dependency_edge = struct
+  type t = {
+    dependent : Terrat_dirspace.t;
+    dependency : Terrat_dirspace.t;
+    rule : string;
+  }
+  [@@deriving show, eq]
+end
+
+module Stack_boundary = struct
+  type t = {
+    dependent : Terrat_dirspace.t;
+    dependent_stack : string;
+    dependency : Terrat_dirspace.t;
+    dependency_stack : string;
+  }
+  [@@deriving show, eq]
+end
+
 type synthesize_config_err =
-  [ `Depends_on_cycle_err of Terrat_dirspace.t list
+  [ `Depends_on_cycle_err of Dependency_edge.t list
+  | `Depends_on_crosses_stack_err of Stack_boundary.t
   | `Workspace_in_multiple_stacks_err of Terrat_dirspace.t
   | `Workspace_matches_no_stacks_err of Terrat_dirspace.t
   | `Stack_not_found_err of string
@@ -81,27 +101,50 @@ let match_dependency ~dependent ~dependency =
       Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
     depends_on
 
-let match_plan_after_dependency ~dependent ~dependency =
+(* Does [dependency] have to wait for [dependent]?  [stack_rule] says which of
+   the stack rules of [dependency] count as an edge.  The two callers below
+   differ only in that. *)
+let match_stack_dependency ~stack_rule ~dependent ~dependency =
   let module Wm = R.When_modified in
   let module Depends_on = R.Depends_on in
   let module S = R.Stacks.Stack in
-  let module Rules = R.Stacks.Rules in
   let { Dirspace_config.dirspace; tags; stack_name; _ } = dependent in
   let {
     Dirspace_config.dirspace = working_dirspace;
     when_modified = { Wm.depends_on; _ };
-    stack_config = { S.rules = { Rules.plan_after; _ }; _ };
+    stack_config = { S.rules; type_ = _; variables = _ };
     _;
   } =
     dependency
   in
-  CCList.mem ~eq:CCString.equal stack_name plan_after
+  CCList.mem ~eq:CCString.equal stack_name (stack_rule rules)
   || CCOption.map_or
        ~default:false
        (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
          let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
          Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
        depends_on
+
+(* The edge of the plan layering.  [apply_after] is deliberately absent: it
+   orders applies, and a dirspace that it holds back must still plan with the
+   dirspaces it plans with. *)
+let match_plan_after_dependency ~dependent ~dependency =
+  let module Rules = R.Stacks.Rules in
+  match_stack_dependency
+    ~stack_rule:(fun { Rules.plan_after; apply_after = _; auto_apply = _; modified_by = _ } ->
+      plan_after)
+    ~dependent
+    ~dependency
+
+(* The edge of the layering that counts how many rounds are left.  A round ends
+   with an apply, so [apply_after] is a real edge here. *)
+let match_apply_after_dependency ~dependent ~dependency =
+  let module Rules = R.Stacks.Rules in
+  match_stack_dependency
+    ~stack_rule:(fun { Rules.plan_after; apply_after; auto_apply = _; modified_by = _ } ->
+      plan_after @ apply_after)
+    ~dependent
+    ~dependency
 
 (* [matches] are those dirspace configs that we have identified from the diff.
    [dirspaces] is all dirspaces in the configuration file.  [topology] maps a
@@ -192,7 +235,58 @@ let layers_of_topology topo dirspaces =
     in_degree
     (CCList.filter (fun ds -> Dirspace_map.get_or ~default:0 ds in_degree = 0) dirspaces)
 
-let sort topology dirspaces matches =
+(* The dirspaces that wait for [dirspace], keeping only the edges that [edge]
+   calls real.  [topology] is (dependency -> dependents). *)
+let dependents_of ~edge topology dirspaces dirspace =
+  let dependent = Dirspace_map.find dirspace dirspaces in
+  CCList.filter_map
+    (fun ds ->
+      let open CCOption.Infix in
+      Dirspace_map.get ds dirspaces
+      >>= fun dependency -> if edge ~dependent ~dependency then Some ds else None)
+    (Dirspace_map.get_or ~default:[] dirspace topology)
+
+(* An edge [X -> Z] for every path from [X] to [Z] whose interior dirspaces are
+   all outside [match_set].
+
+   A dirspace that is not running cannot hold anything back, but it must not
+   break the order between the two dirspaces it sits between.  An applied
+   dependency drops out and its dependent moves up, which is the point of the
+   whole exercise.  A dirspace that [prune_no_change_dirspaces] removed keeps
+   the order it carried, which a direct-edge rule loses.
+
+   [topology_of_dirspace_configs] has already proved the graph acyclic, so this
+   recursion terminates without a visit set.  The memo makes it one visit per
+   dirspace. *)
+let contracted_topo ~edge topology dirspaces match_set matches =
+  (* [memo] is threaded through every call so that it accumulates across the
+     whole traversal, and each dirspace is expanded one time. *)
+  let rec reach memo dirspace =
+    match Dirspace_map.get dirspace memo with
+    | Some reached -> (memo, reached)
+    | None ->
+        let memo, reached =
+          CCListLabels.fold_left
+            ~f:(fun (memo, acc) ds ->
+              if Dirspace_set.mem ds match_set then (memo, Dirspace_set.add ds acc)
+              else
+                let memo, reached = reach memo ds in
+                (memo, Dirspace_set.union acc reached))
+            ~init:(memo, Dirspace_set.empty)
+            (dependents_of ~edge topology dirspaces dirspace)
+        in
+        (Dirspace_map.add dirspace reached memo, reached)
+  in
+  CCList.rev
+  @@ snd
+  @@ CCListLabels.fold_left
+       ~f:(fun (memo, acc) dirspace ->
+         let memo, reached = reach memo dirspace in
+         (memo, (dirspace, Dirspace_set.to_list reached) :: acc))
+       ~init:(Dirspace_map.empty, [])
+       matches
+
+let sort ?(topo = `Direct) ~edge topology dirspaces matches =
   (* The in-degree count needs each dirspace one time.  A duplicate would
      inflate the in-degree of everything that waits on it, and those dirspaces
      would never leave the frontier. *)
@@ -207,26 +301,21 @@ let sort topology dirspaces matches =
          matches
   in
   let match_set = Dirspace_set.of_list matches in
-  (* The topology as we defined it is (dependency -> dependents).  Keep only
-     those edges whose ends are both in the match set: a dependent that is not
-     itself running imposes no order on anything. *)
   let topo =
     Dirspace_map.of_list
-    @@ CCList.map
-         (fun dirspace ->
-           let dependent = Dirspace_map.find dirspace dirspaces in
-           ( dirspace,
-             CCList.filter_map (fun ds ->
-                 let open CCOption.Infix in
-                 Dirspace_map.get ds dirspaces
-                 >>= fun dependency ->
-                 if
-                   Dirspace_set.mem ds match_set
-                   && match_plan_after_dependency ~dependent ~dependency
-                 then Some ds
-                 else None)
-             @@ Dirspace_map.get_or ~default:[] dirspace topology ))
-         matches
+    @@
+    match topo with
+    | `Contracted -> contracted_topo ~edge topology dirspaces match_set matches
+    | `Direct ->
+        (* Keep only those edges whose ends are both in the match set: a
+           dependent that is not itself running imposes no order on anything. *)
+        CCList.map
+          (fun dirspace ->
+            ( dirspace,
+              CCList.filter
+                (CCFun.flip Dirspace_set.mem match_set)
+                (dependents_of ~edge topology dirspaces dirspace) ))
+          matches
   in
   let layers = layers_of_topology topo matches in
   (* Every match is in exactly one layer.  A missing one means a cycle, and that
@@ -264,48 +353,172 @@ end
 
    2. We want to use this as a lookup such that we can take a match we have and
       look up all those that depend on it running first. *)
+(* Two dirspaces are in the same stack when the paths to their stacks have a
+   name in common: the stack itself when it is the same stack, an ancestor when
+   they are two stacks nested under one.  A dirspace always shares a name with
+   itself, so a [depends_on] that matches its own dirspace is never a boundary
+   crossing. *)
+let shares_a_stack a b =
+  let names
+      {
+        Dirspace_config.stack_paths;
+        dirspace = _;
+        file_pattern_matcher = _;
+        lock_branch_target = _;
+        stack_config = _;
+        stack_name = _;
+        tags = _;
+        when_modified = _;
+      } =
+    CCList.flatten stack_paths
+  in
+  let b = names b in
+  CCList.exists (fun n -> CCList.mem ~eq:CCString.equal n b) (names a)
+
+(* [Tsort.sort] answers a cycle with the nodes that never became isolated, which
+   is the cycle AND everything downstream of it, in hash order.  That is enough
+   to know there is a cycle and too little to report one, so ask for the
+   strongly connected components instead: a component of more than one dirspace
+   is a cycle, and so is a component of one dirspace that waits for itself.
+   Report the edges inside it, each with the rule that made it. *)
+let cycle_edges topology edges =
+  let component_is_a_cycle = function
+    | [] -> false
+    | [ ds ] ->
+        CCList.exists (Terrat_dirspace.equal ds) (Dirspace_map.get_or ~default:[] ds topology)
+    | _ :: _ :: _ -> true
+  in
+  match
+    CCList.find_opt
+      component_is_a_cycle
+      (Tsort.find_strongly_connected_components (Dirspace_map.to_list topology))
+  with
+  | Some component ->
+      let member ds = CCList.exists (Terrat_dirspace.equal ds) component in
+      CCList.filter
+        (fun { Dependency_edge.dependent; dependency; rule = _ } ->
+          member dependent && member dependency)
+        edges
+  (* [Tsort.sort] said there is a cycle and the components disagree.  That should
+     not happen, and answering with every edge in the configuration would put a
+     repository-sized list into a pull request comment, so answer with none and
+     let the heading carry the message. *)
+  | None -> []
+
 let topology_of_dirspace_configs dirspaces =
   let module Wm = R.When_modified in
   let module Depends_on = R.Depends_on in
   let module S = R.Stacks.Stack in
   let module Rules = R.Stacks.Rules in
   let dirspaces = Dirspace_map.to_list dirspaces in
-  let topology =
+  let topology, edges =
     CCListLabels.fold_left
       ~f:(fun
           acc
           ( working_dirspace,
-            {
-              Dirspace_config.when_modified = { Wm.depends_on; _ };
-              stack_config =
-                { S.rules = { Rules.plan_after; apply_after; modified_by = _; auto_apply = _ }; _ };
-              _;
-            } )
+            ({
+               Dirspace_config.when_modified =
+                 {
+                   Wm.depends_on;
+                   autoapply = _;
+                   autoplan = _;
+                   autoplan_draft_pr = _;
+                   file_patterns = _;
+                 };
+               stack_config =
+                 {
+                   S.rules = { Rules.plan_after; apply_after; modified_by = _; auto_apply = _ };
+                   type_ = _;
+                   variables = _;
+                 };
+               stack_name = working_stack_name;
+               dirspace = _;
+               file_pattern_matcher = _;
+               lock_branch_target = _;
+               stack_paths = _;
+               tags = _;
+             } as working_config) )
         ->
-        let all_stack_deps = plan_after @ apply_after in
-        CCListLabels.fold_left
-          ~f:(fun acc (dirspace, { Dirspace_config.tags; stack_name; _ }) ->
-            let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
-            if
-              CCOption.map_or
-                ~default:false
-                (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
-                  Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
-                depends_on
-              || CCList.mem ~eq:CCString.equal stack_name all_stack_deps
-            then
-              (* This says adds [working_dirspace] in the list of dirspaces that
-                 depend on [dirspace] being completed before they can run. *)
-              Dirspace_map.add_to_list dirspace working_dirspace acc
-            else acc)
-          ~init:acc
-          dirspaces)
-      ~init:Dirspace_map.empty
+        (* A dirspace that declares no order over anything cannot make an edge
+           with any partner, so its whole scan of [dirspaces] is dead work.  This
+           is the common case -- most directories declare nothing -- and the
+           scan is the whole of the quadratic cost, so skipping it here is what
+           keeps a large repository affordable. *)
+        if CCOption.is_none depends_on && CCList.is_empty plan_after && CCList.is_empty apply_after
+        then acc
+        else
+          (* Both rules are closed transitively when the stacks are expanded, so
+             these lists grow with the number of stacks.  The membership test
+             below runs for every dirspace in the repository, so pay for the sets
+             one time here rather than a list scan for each partner. *)
+          let plan_after = Sln_set.String.of_list plan_after in
+          let apply_after = Sln_set.String.of_list apply_after in
+          CCListLabels.fold_left
+            ~f:(fun
+                (topology, edges)
+                ( dirspace,
+                  ({
+                     Dirspace_config.tags;
+                     stack_name;
+                     dirspace = _;
+                     file_pattern_matcher = _;
+                     lock_branch_target = _;
+                     stack_config = _;
+                     stack_paths = _;
+                     when_modified = _;
+                   } as config) )
+              ->
+              let depends_on_matches =
+                CCOption.map_or
+                  ~default:false
+                  (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
+                    (* The context is built here, and not once for the pair,
+                       because only a [depends_on] needs it. *)
+                    let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
+                    Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
+                  depends_on
+              in
+              (* [depends_on] orders dirspaces inside a stack.  Reaching out of
+                 the stack is the error a stack rule would be, and the two are
+                 tested apart: a pair that a stack rule also orders must still
+                 report it. *)
+              if depends_on_matches && not (shares_a_stack working_config config) then
+                raise
+                  (Synthesize_config_err
+                     (`Depends_on_crosses_stack_err
+                        {
+                          Stack_boundary.dependent = working_dirspace;
+                          dependent_stack = working_stack_name;
+                          dependency = dirspace;
+                          dependency_stack = stack_name;
+                        }));
+              let plan_after_matches = Sln_set.String.mem stack_name plan_after in
+              let apply_after_matches = Sln_set.String.mem stack_name apply_after in
+              (* The pair with no edge must allocate nothing.  The labels cost
+                 one record per edge, and there are as many edges as the
+                 configuration declares. *)
+              if not (depends_on_matches || plan_after_matches || apply_after_matches) then
+                (topology, edges)
+              else
+                let edge rule =
+                  { Dependency_edge.dependent = working_dirspace; dependency = dirspace; rule }
+                in
+                let edges = if apply_after_matches then edge "apply_after" :: edges else edges in
+                let edges = if plan_after_matches then edge "plan_after" :: edges else edges in
+                let edges = if depends_on_matches then edge "depends_on" :: edges else edges in
+                (* This adds [working_dirspace] to the list of dirspaces that
+                   depend on [dirspace] being completed before they can run. *)
+                (Dirspace_map.add_to_list dirspace working_dirspace topology, edges))
+            ~init:acc
+            dirspaces)
+      ~init:(Dirspace_map.empty, [])
       dirspaces
   in
   match Tsort.sort @@ Dirspace_map.to_list topology with
   | Tsort.Sorted _ -> topology
-  | Tsort.ErrorCycle cycle -> raise (Synthesize_config_err (`Depends_on_cycle_err cycle))
+  | Tsort.ErrorCycle _ ->
+      raise
+        (Synthesize_config_err (`Depends_on_cycle_err (cycle_edges topology (CCList.rev edges))))
 
 let build_symlinks =
   CCListLabels.fold_left
@@ -796,8 +1009,27 @@ let match_diff_list ?(force_matches = []) config diff_list =
   in
   real_matches
   |> collect_dependents config.Config.topology modifies_lookup config.Config.dirspaces
-  |> sort config.Config.topology config.Config.dirspaces
+  |> sort ~edge:match_plan_after_dependency config.Config.topology config.Config.dirspaces
   |> prune_no_change_dirspaces real_change_set
+
+(* Both of these re-layer a subset of a run, so both contract through the
+   dirspaces they are not given.  They differ only in which stack rule counts
+   as an edge. *)
+let layers_of config dirspace_configs =
+  sort
+    ~topo:`Contracted
+    ~edge:match_plan_after_dependency
+    config.Config.topology
+    config.Config.dirspaces
+    dirspace_configs
+
+let apply_layers_of config dirspace_configs =
+  sort
+    ~topo:`Contracted
+    ~edge:match_apply_after_dependency
+    config.Config.topology
+    config.Config.dirspaces
+    dirspace_configs
 
 let of_dirspace config dirspace = Dirspace_map.get dirspace config.Config.dirspaces
 

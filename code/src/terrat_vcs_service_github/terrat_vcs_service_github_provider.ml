@@ -2925,7 +2925,7 @@ module Comment = struct
           client
           db
           is_layered_run
-          remaining_layers
+          num_remaining_layers
           repo_config
           result
           pull_request
@@ -2960,7 +2960,7 @@ module Comment = struct
             hooks;
             is_layered_run;
             pull_request;
-            remaining_layers;
+            num_remaining_layers;
             repo_config;
             result;
             synthesized_config;
@@ -3717,14 +3717,24 @@ module Comment = struct
              Tmpl.synthesize_config_err_stack_cycle
              kv
     | Msg.Synthesize_config_err (`Depends_on_cycle_err cycle) ->
+        let dirspace { Terrat_dirspace.dir; workspace } = (`String dir, `String workspace) in
         let kv =
           `Assoc
             [
               ( "cycle",
                 `List
                   (CCList.map
-                     (fun { Terrat_dirspace.dir; workspace } ->
-                       `Assoc [ ("dir", `String dir); ("workspace", `String workspace) ])
+                     (fun { Terrat_change_match3.Dependency_edge.dependent; dependency; rule } ->
+                       let dependent_dir, dependent_workspace = dirspace dependent in
+                       let dependency_dir, dependency_workspace = dirspace dependency in
+                       `Assoc
+                         [
+                           ("dependent_dir", dependent_dir);
+                           ("dependent_workspace", dependent_workspace);
+                           ("dependency_dir", dependency_dir);
+                           ("dependency_workspace", dependency_workspace);
+                           ("rule", `String rule);
+                         ])
                      cycle) );
             ]
         in
@@ -3735,6 +3745,33 @@ module Comment = struct
              pull_request
              "DEPENDS_ON_CYCLE"
              Tmpl.synthesize_config_err_cycle
+             kv
+    | Msg.Synthesize_config_err
+        (`Depends_on_crosses_stack_err
+           {
+             Terrat_change_match3.Stack_boundary.dependent = { Terrat_dirspace.dir; workspace };
+             dependent_stack;
+             dependency = { Terrat_dirspace.dir = dependency_dir; workspace = dependency_workspace };
+             dependency_stack;
+           }) ->
+        let kv =
+          `Assoc
+            [
+              ("dir", `String dir);
+              ("workspace", `String workspace);
+              ("stack", `String dependent_stack);
+              ("depends_on_dir", `String dependency_dir);
+              ("depends_on_workspace", `String dependency_workspace);
+              ("depends_on_stack", `String dependency_stack);
+            ]
+        in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "DEPENDS_ON_CROSSES_STACK"
+             Tmpl.synthesize_config_err_depends_on_crosses_stack
              kv
     | Msg.Synthesize_config_err
         (`Workspace_in_multiple_stacks_err { Terrat_dirspace.dir; workspace }) ->
@@ -4389,7 +4426,7 @@ module Comment = struct
           config;
           db;
           is_layered_run;
-          remaining_layers;
+          num_remaining_layers;
           repo_config;
           result;
           synthesized_config;
@@ -4408,7 +4445,7 @@ module Comment = struct
             client
             db
             is_layered_run
-            remaining_layers
+            num_remaining_layers
             repo_config
             result
             pull_request

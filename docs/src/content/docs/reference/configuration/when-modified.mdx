@@ -55,6 +55,17 @@ The `depends_on` key allows you to specify dependencies on other directories wit
 
 While the `depends_on` key can be specified in the top-level `when_modified` configuration (which would make ALL directories depend on the specified directories), it is strongly recommended to define dependencies at the directory or workspace level for better control. Use `dirs.<directory>.when_modified.depends_on` or `dirs.<directory>.workspaces.<workspace>.when_modified.depends_on` instead.
 
+A top-level `depends_on` is also incompatible with the [`stacks`](/reference/configuration/stacks/) section: it applies to every directory, so it names directories outside the stack of the directory that carries it, which is an error. See [`depends_on` and Stacks](#depends_on-and-stacks) below.
+
+#### `depends_on` and Stacks
+A `depends_on` gives the order inside one stack. It cannot reach out of the stack it is written in.
+
+If you use the [`stacks`](/reference/configuration/stacks/) section, every directory a `depends_on` names must be in the same stack as the directory that declares it, or in a stack that shares a nested stack with it. A `depends_on` that reaches into an unrelated stack is a configuration error, and the run reports it instead of planning.
+
+Two directories are in the same stack when the paths to their stacks have a stack in common. That is the stack itself when they are in the same stack, and a nested stack that holds both when they are in two different ones. To order two stacks that share nothing, use the `plan_after` or `apply_after` rule of the `stacks` section, which is what those rules are for.
+
+A repository with no `stacks` section is unaffected: every directory is in the same stack there.
+
 #### Object Form and `prune_on_no_change`
 The `depends_on` value may be either a string (a tag query) or an object. The object form lets you set additional options alongside the dependency:
 

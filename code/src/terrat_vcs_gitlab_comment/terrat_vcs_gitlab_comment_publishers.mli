@@ -53,7 +53,7 @@ module Publisher_tools : sig
     Terrat_tier.Check.runs_per_month option ->
     Api.Config.t ->
     bool ->
-    'a list ->
+    int ->
     (Scope.t, Terrat_api_components_workflow_step_output.t list) CCList.Assoc.t ->
     Terrat_api_components_gate.t list option ->
     ( Api.Account.t,

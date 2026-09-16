@@ -3,6 +3,7 @@ module Irm = Abbs_future_combinators.Infix_result_monad
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module Msg = Terrat_vcs_provider2.Msg
+module Work_set = Terrat_vcs_event_evaluator2_work_set
 
 module Make
     (S : Terrat_vcs_provider2.S)
@@ -428,7 +429,6 @@ struct
               ~repo_tree
               ~index:_
               () =
-            let module Dc = Terrat_change_match3.Dirspace_config in
             let module Dir_set = CCSet.Make (CCString) in
             let open Irm in
             fetch Keys.synthesized_config
@@ -471,119 +471,34 @@ struct
                       CCList.exists (CCString.prefix ~pre:d) repo_tree)
                 dirs
             in
-            (* Filter out any dirspaces that have been applied or refer to a
-               directory that no longer exists. This could happen because of
-               [out_of_change_applies], these may refer to directories that no
-               longer exist, and thus we can't do much about them other than
-               ignore them. *)
-            let all_unapplied_matches =
-              CCList.filter_map
-                (fun layer ->
-                  match
-                    CCList.filter
-                      (fun { Dc.dirspace = { Terrat_dirspace.dir; _ } as dirspace; _ } ->
-                        (not (Terrat_data.Dirspace_set.mem dirspace applied_dirspaces))
-                        && Dir_set.mem dir existing_dirs)
-                      layer
-                  with
-                  | [] -> None
-                  | layer -> Some layer)
-                all_matches
+            let op =
+              let module T = Tjc.Job.Type_ in
+              (* Every [Plan] kind is listed rather than caught by a
+                 wildcard, so adding a [Kind.t] forces a decision here instead
+                 of quietly becoming a layer plan. *)
+              match job.Tjc.Job.type_ with
+              | T.Apply _ | T.Autoapply -> Work_set.Op.Apply
+              | T.Plan { kind = Some (T.Kind.Drift _); tag_query = _ } -> Work_set.Op.Drift_plan
+              | T.Plan { kind = None; tag_query = _ }
+                when not (CCString.is_empty (Terrat_tag_query.to_string tag_query)) ->
+                  Work_set.Op.Explicit_plan
+              | T.Plan { kind = None; tag_query = _ }
+              | T.Autoplan
+              | T.Gate_approval _
+              | T.Help
+              | T.Index
+              | T.Repo_config
+              | T.Unlock _
+              | T.Push -> Work_set.Op.Layer_plan
             in
-            let unapplied_dirspaces =
-              all_unapplied_matches
-              |> CCList.flat_map (fun layer ->
-                  CCList.map (fun { Dc.dirspace; _ } -> dirspace) layer)
-              |> Terrat_data.Dirspace_set.of_list
-            in
-            let working_layer =
-              all_matches
-              |> CCList.filter (fun layer ->
-                  CCList.exists
-                    (fun { Dc.dirspace; _ } ->
-                      Terrat_data.Dirspace_set.mem dirspace unapplied_dirspaces)
-                    layer)
-              |> CCList.head_opt
-              |> CCOption.get_or ~default:[]
-            in
-            let working_set_matches =
-              match all_unapplied_matches with
-              | layer :: _ -> (
-                  match job.Tjc.Job.type_ with
-                  | Tjc.Job.Type_.(Apply _ | Autoapply) ->
-                      (* If it's an apply, we limit the working set to only
-                         those that can be applied, based on stacks
-                         configuration. *)
-                      let module S = Terrat_base_repo_config_v1.Stacks.Stack in
-                      let module Oc = Terrat_base_repo_config_v1.Stacks.Rules in
-                      let flat_all_unapplied_matches = CCList.flatten all_unapplied_matches in
-                      layer
-                      |> CCList.filter (Terrat_change_match3.match_tag_query ~tag_query)
-                      |> CCList.filter
-                           (fun { Dc.stack_config = { S.rules = { Oc.apply_after; _ }; _ }; _ } ->
-                             (* Filter this dirspace from the layer if its is meant to apply after
-                                any other unapplied stack. *)
-                             not
-                               (CCList.exists
-                                  (fun { Dc.stack_name; _ } ->
-                                    CCList.mem ~eq:CCString.equal stack_name apply_after)
-                                  flat_all_unapplied_matches))
-                  | Tjc.Job.Type_.(Plan { tag_query = _; kind = Some (Tjc.Job.Type_.Kind.Drift _) })
-                    ->
-                      (* In the case that it is a plan for drift, then plan all
-                         layers in one go.  We match against [all_matches]
-                         because in the case of planning drift, we explicitly do
-                         not care if any dirspace is considered applied.
-
-                         Consider this scenario:
-
-                         1. Drift run against [main], find no drift.
-
-                         2. Nobody merges anything to [main].
-
-                         3. Drift runs again.  It runs nothing.
-
-                         The reason (3) happens is because we consider all
-                         dirspaces in [main] as "applied" because their plans
-                         came back with no changes.  This is what we would do in
-                         a PR flow, but not what we want to do in a drift flow.
-                         There could be drift between (1) and (2). So we ignore
-                         anything considered "applied" in (3) and run everything
-                         again.
-                       *)
-                      CCList.filter (Terrat_change_match3.match_tag_query ~tag_query)
-                      @@ CCList.flatten all_matches
-                  | Tjc.Job.Type_.Plan _
-                    when not (CCString.is_empty (Terrat_tag_query.to_string tag_query)) ->
-                      (* An explicit query names what the user wants planned.  A
-                         dirspace whose last plan found no changes is filtered out
-                         of the unapplied set, which made a scoped re-plan
-                         impossible: the working set came up empty and the user
-                         was told everything was applied.  Select from the working
-                         layer instead, applied or not, the same reasoning as the
-                         drift arm above.  Later layers stay excluded so plan
-                         ordering is preserved. *)
-                      CCList.filter (Terrat_change_match3.match_tag_query ~tag_query) working_layer
-                  | Tjc.Job.Type_.Autoplan
-                  | Tjc.Job.Type_.Plan _
-                  | Tjc.Job.Type_.Gate_approval _
-                  | Tjc.Job.Type_.Help
-                  | Tjc.Job.Type_.Index
-                  | Tjc.Job.Type_.Repo_config
-                  | Tjc.Job.Type_.Unlock _
-                  | Tjc.Job.Type_.Push ->
-                      CCList.filter (Terrat_change_match3.match_tag_query ~tag_query) layer)
-              | [] -> (
-                  (* Nothing is unapplied.  An explicit query is still a request:
-                     everything it names has been applied or planned clean, so
-                     re-planning any of it cannot violate layer ordering. *)
-                  match job.Tjc.Job.type_ with
-                  | Tjc.Job.Type_.Plan { tag_query = _; kind = None }
-                    when not (CCString.is_empty (Terrat_tag_query.to_string tag_query)) ->
-                      CCList.filter
-                        (Terrat_change_match3.match_tag_query ~tag_query)
-                        (CCList.flatten all_matches)
-                  | _ -> [])
+            let { Work_set.working_set_matches; all_unapplied_matches; working_layer } =
+              Work_set.make
+                ~config
+                ~op
+                ~tag_query
+                ~applied:applied_dirspaces
+                ~dir_exists:(CCFun.flip Dir_set.mem existing_dirs)
+                ~all_matches
             in
             let all_tag_query_matches =
               CCList.map
@@ -3278,41 +3193,53 @@ struct
                   >>= fun () ->
                   fetch Keys.finalize_unfinished_terrateam_checks
                   >>= fun () -> fetch Keys.maybe_automerge
-              | _ :: _ -> (
-                  let module Dc = Terrat_change_match3.Dirspace_config in
+              | _ :: _ as all_unapplied_matches -> (
                   fetch Keys.working_layer
                   >>= fun working_layer ->
-                  let working_layer_dirspaces =
-                    Terrat_data.Dirspace_set.of_list
-                      (CCList.map (fun { Dc.dirspace; _ } -> dirspace) working_layer)
-                  in
+                  fetch Keys.synthesized_config
+                  >>= fun config ->
                   fetch Keys.work_manifests_for_job
                   >>= fun work_manifests ->
-                  let changes =
-                    Terrat_data.Dirspace_set.of_list
-                    @@ CCList.flat_map
-                         (fun { Wm.changes; _ } ->
-                           CCList.map Terrat_change.Dirspaceflow.to_dirspace changes)
-                         work_manifests
+                  let just_ran =
+                    CCList.flat_map
+                      (fun {
+                             Wm.changes;
+                             account = _;
+                             base_ref = _;
+                             branch = _;
+                             branch_ref = _;
+                             completed_at = _;
+                             created_at = _;
+                             denied_dirspaces = _;
+                             environment = _;
+                             id = _;
+                             initiator = _;
+                             run_id = _;
+                             runs_on = _;
+                             state = _;
+                             steps = _;
+                             tag_query = _;
+                             target = _;
+                           }
+                         -> CCList.map Terrat_change.Dirspaceflow.to_dirspace changes)
+                      work_manifests
                   in
-                  if Terrat_data.Dirspace_set.disjoint changes working_layer_dirspaces then (
-                    (* If there is no overlap between the dirspaces that were
-                       just ran as part of the work manifest and the remaining
-                       unapplied dirspaces, that means we can safely try to run
-                       the remaining layers.  If there is overlap then it means
-                       we should not try to run another iteration because we'll
-                       just operate on the same dirspaces we just did.  This
-                       doesn't necessarily mean something went wrong.  For
-                       example, planning a change means we'd come to this test
-                       and if the plans had changes, they would be unapplied but
-                       we would have just planned them so we would not want to
-                       try to do another iteration of planning.  But we could
-                       also get in to this situation through some unforseen
-                       series of operations where we are not correctly
-                       determining which changes have been applied (for example
-                       things being merged in an order we did not anticipate) in
-                       which case this also prevents us from getting into an
-                       infinite loop. *)
+                  (* Start another round only if this work manifest left
+                     something ready that was not ready before.
+
+                     "Did the first layer gain a member" is the test, not "is
+                     what just ran disjoint from the first layer".  After an
+                     apply the two are always disjoint, because an applied
+                     dirspace has already left the run, so the disjoint test
+                     would fire every single time.
+
+                     A plan, in turn, leaves everything it planned in the run,
+                     so the first layer is the one it has just planned and
+                     nothing is gained.  That is what stops a run from planning
+                     the same layer over and over -- and it also holds for a
+                     partial apply, which frees nobody and must not set another
+                     plan going. *)
+                  if Work_set.next_round_ready ~config ~all_unapplied_matches ~just_ran then (
                     let { Tjc.Job.context; initiator; type_; _ } = job in
                     let job_type =
                       match type_ with
