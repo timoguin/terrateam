@@ -367,9 +367,28 @@ module Automerge : sig
 end
 
 module Batch_runs : sig
+  (** The highest step that may join an action run that is already going.
+
+      The server puts the steps of a job into as few action runs as it can, because many runs are
+      slower than one run. This value is the limit the user gives it. [None] stops each join, so
+      each step gets a run of its own. [Setup] permits the tree builder, the config builder and the
+      indexer. [Setup_and_plan] also permits a plan. [All] also permits an apply, so a chain of
+      layers shares one run. *)
+  module Merge_steps : sig
+    type t =
+      | All
+      | None
+      | Setup
+      | Setup_and_plan
+    [@@deriving show, yojson, eq]
+
+    val make : [< `All | `None | `Setup | `Setup_and_plan ] -> t
+  end
+
   type t = {
     enabled : bool; [@default false]
     max_workspaces_per_batch : int; [@default 1]
+    merge_steps : Merge_steps.t; [@default Merge_steps.Setup]
   }
   [@@deriving make, show, yojson, eq]
 end

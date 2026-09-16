@@ -274,11 +274,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         Terrat_vcs_api.collapse_call_err (fun () ->
             S.Api.react_to_comment ~request_id client pull_request comment_id))
 
+  (* The legacy evaluator does not use compute nodes, it uses flow states, so it
+     drops the compute node the query gives back. *)
   let query_next_pending_work_manifest request_id db =
+    let open Abbs_future_combinators.Infix_result_monad in
     Abbs_time_it.run
       (fun time ->
         Logs.info (fun m -> m "%s : QUERY_NEXT_PENDING_WORK_MANIFEST : time=%f" request_id time))
-      (fun () -> S.Db.query_next_pending_work_manifest ~request_id db)
+      (fun () ->
+        S.Db.query_next_pending_work_manifest ~request_id db
+        >>| CCOption.map (fun (work_manifest, _) -> work_manifest))
 
   let run_work_manifest request_id config client work_manifest =
     let module Wm = Terrat_work_manifest3 in

@@ -182,6 +182,73 @@ struct
           ~work_manifest:id
           db)
 
+  type reuse_compute_node =
+    Tjc.Compute_node.t option ->
+    Keys.Work_manifest_event.t option ->
+    existing_wm ->
+    Tjc.Compute_node.t option
+
+  (* The answer of every state machine but the config builder: a new work
+     manifest gets its own compute node, thus its own action run. *)
+  let no_compute_node_reuse : reuse_compute_node = fun _ _ _ -> None
+
+  (* The configuration answers before the compute node does.  With
+     [Merge_steps.None] no work manifest joins a run, so each step gets an action
+     run of its own.  Each other value leaves the answer to [reuse]. *)
+  let reuse_permitted repo_config (reuse : reuse_compute_node) : reuse_compute_node =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let module Ms = V1.Batch_runs.Merge_steps in
+    match (V1.batch_runs repo_config).V1.Batch_runs.merge_steps with
+    | Ms.None -> no_compute_node_reuse
+    | Ms.All | Ms.Setup | Ms.Setup_and_plan -> reuse
+
+  (* Give a compute node a second work manifest.
+
+     This is safe only because of an order.  The index
+     [compute_node_work_wm_state_idx] permits one row in the state [created] per
+     node, and [upsert_compute_node_work.sql] conflicts on
+     (compute_node, work_manifest), which is a different index, so a breach here
+     raises a raw unique violation and fails the whole results transaction.
+
+     The order that keeps it safe: the [Result] branch of [run] calls
+     [update_state_completed] for the tree builder before the evaluation reaches
+     the [create] branch of the config builder, and that write fires the trigger
+     [work_manifest_compute_node_work_state_trigger], which takes the tree
+     builder row out of [created].  The node therefore owes nothing when this
+     row goes in. *)
+  let attach_to_compute_node s compute_node { Wm.id; _ } db =
+    let module C = Tjc.Compute_node in
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : WM : ATTACH_COMPUTE_NODE : compute_node_id=%a : work_manifest_id=%a : time=%f"
+          log_id
+          Uuidm.pp
+          compute_node.C.id
+          Uuidm.pp
+          id
+          time)
+      (fun () ->
+        S.Job_context.Compute_node.add_work
+          ~request_id:(Builder.log_id s)
+          ~compute_node_id:compute_node.C.id
+          ~work_manifest:id
+          db)
+
+  (* Give each new work manifest a compute node.  [reuse] answers, for one work
+     manifest, whether the compute node of this evaluation may perform it as
+     well.  Only the config builder says yes, and only for the node that just
+     finished the tree builder of the same refs, which is what makes the two
+     builder steps one action run. *)
+  let make_compute_nodes ~reuse s wms db =
+    Abbs_future_combinators.List_result.iter
+      ~f:(fun wm ->
+        match reuse wm with
+        | Some compute_node -> attach_to_compute_node s compute_node wm db
+        | None -> create_compute_node s wm db)
+      wms
+
   let update_state_completed s name work_manifest_id db =
     time_it
       s
@@ -270,6 +337,7 @@ struct
       ~branch_ref
       ~branch
       ~create
+      ~reuse_compute_node
       ~initiate
       ~fail
       ~result
@@ -383,10 +451,28 @@ struct
                     >>= fun job ->
                     Builder.run_db s ~f:(fun db -> add_work_manifests s job.Tjc.Job.id wms db)
                     >>= fun () ->
-                    Builder.run_db s ~f:(fun db ->
-                        Abbs_future_combinators.List_result.iter
-                          ~f:(fun wm -> create_compute_node s wm db)
-                          wms)
+                    (* Read [Keys.compute_node], and not [Keys.compute_node_id].
+                       The server makes these work manifests while it reads the
+                       results of a run, and the results entry point adds the
+                       node to the store, not its id. *)
+                    fetch Keys.compute_node
+                    >>= fun compute_node ->
+                    fetch Keys.work_manifest_event
+                    >>= fun work_manifest_event ->
+                    (* Read the configuration that the repository holds, and not
+                       the one that the config builder makes.  A step that
+                       prepares a job runs before a built configuration exists,
+                       and this value must be the same for each step of a job. *)
+                    fetch Keys.repo_config_raw'
+                    >>= fun (_, repo_config_raw) ->
+                    let reuse =
+                      reuse_permitted
+                        repo_config_raw
+                        reuse_compute_node
+                        compute_node
+                        work_manifest_event
+                    in
+                    Builder.run_db s ~f:(fun db -> make_compute_nodes ~reuse s wms db)
                     >>? fun () -> Error (`Suspend_eval name))
             | wms when all_wms_completed wms ->
                 Logs.info (fun m ->

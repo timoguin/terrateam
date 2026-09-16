@@ -668,9 +668,25 @@ module Automerge = struct
 end
 
 module Batch_runs = struct
+  module Merge_steps = struct
+    type t =
+      | All
+      | None
+      | Setup
+      | Setup_and_plan
+    [@@deriving show, yojson, eq]
+
+    let make = function
+      | `All -> All
+      | `None -> None
+      | `Setup -> Setup
+      | `Setup_and_plan -> Setup_and_plan
+  end
+
   type t = {
     enabled : bool; [@default false]
     max_workspaces_per_batch : int; [@default 1]
+    merge_steps : Merge_steps.t; [@default Merge_steps.Setup]
   }
   [@@deriving make, show, yojson, eq]
 end
@@ -2340,8 +2356,9 @@ let of_version_automerge automerge =
 
 let of_version_1_batch_runs batch_runs =
   let module Br = Terrat_repo_config_batch_runs in
-  let { Br.enabled; max_workspaces_per_batch } = batch_runs in
-  Ok (Batch_runs.make ~enabled ~max_workspaces_per_batch ())
+  let { Br.enabled; max_workspaces_per_batch; merge_steps } = batch_runs in
+  let merge_steps = Batch_runs.Merge_steps.make merge_steps in
+  Ok (Batch_runs.make ~enabled ~max_workspaces_per_batch ~merge_steps ())
 
 let of_version_1_config_builder { Terrat_repo_config.Config_builder.enabled; script } =
   Ok (Config_builder.make ~enabled ?script ())
@@ -3158,8 +3175,16 @@ let to_version_1_automerge automerge =
 
 let to_version_1_batch_runs batch_runs =
   let module Br = Terrat_repo_config.Batch_runs in
-  let { Batch_runs.enabled; max_workspaces_per_batch } = batch_runs in
-  { Br.enabled; max_workspaces_per_batch }
+  let module Ms = Batch_runs.Merge_steps in
+  let { Batch_runs.enabled; max_workspaces_per_batch; merge_steps } = batch_runs in
+  let merge_steps =
+    match merge_steps with
+    | Ms.All -> `All
+    | Ms.None -> `None
+    | Ms.Setup -> `Setup
+    | Ms.Setup_and_plan -> `Setup_and_plan
+  in
+  { Br.enabled; max_workspaces_per_batch; merge_steps }
 
 let to_version_1_config_builder config_builder =
   let module Cb = Terrat_repo_config.Config_builder in

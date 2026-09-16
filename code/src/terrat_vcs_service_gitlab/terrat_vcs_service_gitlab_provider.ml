@@ -478,6 +478,9 @@ module Db = struct
         //
         (* id *)
         Ret.uuid
+        //
+        (* compute_node *)
+        Ret.(option uuid)
         /^ read [%blob "sql/select_next_work_manifest.sql"])
 
     let select_flow_state_query = read [%blob "sql/select_flow_data.sql"]
@@ -1692,10 +1695,14 @@ module Db = struct
             (fun time ->
               Logs.info (fun m ->
                   m "%s : QUERY_NEXT_PENDING_WORK_MANIFEST : time=%f" request_id time))
-            (fun () -> Pgsql_io.Prepared_stmt.fetch db ~f:CCFun.id Sql.select_next_work_manifest))
+            (fun () ->
+              Pgsql_io.Prepared_stmt.fetch
+                db
+                ~f:(fun id compute_node -> (id, compute_node))
+                Sql.select_next_work_manifest))
       >>= function
       | [] -> Abbs_future_combinators.return_ok None
-      | [ id ] ->
+      | [ (id, compute_node) ] ->
           Abbs_time_it.run
             (fun time ->
               Logs.info (fun m ->
@@ -1706,7 +1713,7 @@ module Db = struct
               | Some wm ->
                   let module Wm = Terrat_work_manifest3 in
                   assert (wm.Wm.state = Wm.State.Queued);
-                  Some wm
+                  Some (wm, compute_node)
               | None -> None)
       | _ :: _ -> assert false
     in
@@ -5549,6 +5556,27 @@ module Job_context = struct
 
     let work_of_json = CCFun.(Terrat_api_components.Work_manifest.of_yojson %> CCResult.to_opt)
 
+    let select_compute_node_by_work_manifest () =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* id *)
+        Ret.uuid
+        //
+        (* state *)
+        Ret.u Ret.text to_compute_node_state
+        //
+        (* capabilities *)
+        Ret.u Ret.json to_capabilities
+        //
+        (* created_at *)
+        Ret.text
+        //
+        (* updated_at *)
+        Ret.text
+        /^ read [%blob "sql/select_compute_node_by_work_manifest.sql"]
+        /% Var.uuid "work_manifest_id")
+
     let select_compute_node_work =
       Pgsql_io.Typed_sql.(
         sql
@@ -5877,6 +5905,22 @@ module Job_context = struct
       | Ok (compute_node :: _) -> Abbs_future_combinators.return_ok (Some compute_node)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : COMPUTE_NODE : CREATE : %a" request_id Pgsql_io.pp_err err);
+          Abbs_future_combinators.return_err `Error
+
+    let query_by_work_manifest ~request_id ~work_manifest_id db =
+      let open Abb.Future.Infix_monad in
+      Pgsql_io.Prepared_stmt.fetch
+        db
+        (Sql.select_compute_node_by_work_manifest ())
+        ~f:(fun id state capabilities created_at updated_at ->
+          { Tjc.Compute_node.id; state; capabilities; created_at; updated_at })
+        work_manifest_id
+      >>= function
+      | Ok [] -> Abbs_future_combinators.return_ok None
+      | Ok (compute_node :: _) -> Abbs_future_combinators.return_ok (Some compute_node)
+      | Error (#Pgsql_io.err as err) ->
+          Logs.err (fun m ->
+              m "%s : COMPUTE_NODE : QUERY_BY_WORK_MANIFEST : %a" request_id Pgsql_io.pp_err err);
           Abbs_future_combinators.return_err `Error
 
     let query_work ~request_id ~compute_node_id db =

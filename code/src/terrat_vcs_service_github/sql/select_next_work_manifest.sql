@@ -125,15 +125,37 @@ rejected_work_manifests as (
            and bds.workspace = dswm.workspace
            and bds.unified_run_type = wms.unified_run_type
 ),
+-- A work manifest that belongs to a compute node which already runs must not
+-- start a second action run.  The node picks it up on its next poll instead.
+--
+-- The filter belongs here, and not in the final select, because this is where
+-- row_number() ranks a repository's queued work manifests and the final select
+-- takes rn = 1.  Such a work manifest is still 'queued', so it can rank first.
+-- A filter in the final select would then return no row at all, and the
+-- dispatcher would stop dispatching for that repository until the running node
+-- finished.
+--
+-- A work manifest with no compute node is one made before the phase that makes
+-- a node with each work manifest.  It keeps the old path.
+--
+-- Neither join can multiply rows: compute_node_work has a unique index on
+-- work_manifest, and compute_nodes joins on its primary key.  Every work
+-- manifest therefore still contributes one row, and the ranking of the others
+-- does not move.
 next_work_manifests as (
     select
         wms.id,
+        cn.id as compute_node,
         row_number() over (partition by wms.repository order by wms.priority, wms.created_at) as rn
     from wms
     left join rejected_work_manifests as rwm on rwm.id = wms.id
-    where wms.state = 'queued' and rwm.id is null
+    left join compute_node_work as cnw on cnw.work_manifest = wms.id
+    left join compute_nodes as cn on cn.id = cnw.compute_node
+    where wms.state = 'queued'
+          and rwm.id is null
+          and (cn.id is null or cn.state = 'queued')
 )
-select wm.id from work_manifests as wm
+select wm.id, nwm.compute_node from work_manifests as wm
 inner join next_work_manifests as nwm on nwm.id = wm.id
 left join flow_states
   on flow_states.id = wm.id

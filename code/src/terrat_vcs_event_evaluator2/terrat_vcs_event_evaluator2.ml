@@ -195,16 +195,23 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             Pgsql_io.tx db ~f:(fun () ->
                 S.Db.query_next_pending_work_manifest ~new_age:true ~request_id db
                 >>= function
-                | Some wm -> (
+                | Some (wm, compute_node_id) -> (
                     Logs.info (fun m ->
                         m "%s : RUN_WORK_MANIFEST : id=%a" request_id Uuidm.pp wm.Wm.id);
-                    S.Job_context.Compute_node.create
-                      ~request_id
-                      ~id:wm.Wm.id
-                      ~capabilities:
-                        { Tjc.Compute_node.Capabilities.flags = []; sha = wm.Wm.branch_ref }
-                      db
-                    >>= fun compute_node ->
+                    (* A work manifest made before the server made a node with
+                       each one has no node, so make it here.  Every other one
+                       arrives with its node already. *)
+                    (match compute_node_id with
+                      | Some compute_node_id -> Abbs_future_combinators.return_ok compute_node_id
+                      | None ->
+                          S.Job_context.Compute_node.create
+                            ~request_id
+                            ~id:wm.Wm.id
+                            ~capabilities:
+                              { Tjc.Compute_node.Capabilities.flags = []; sha = wm.Wm.branch_ref }
+                            db
+                          >>| fun { Tjc.Compute_node.id; _ } -> id)
+                    >>= fun compute_node_id ->
                     S.Api.create_client ~request_id config wm.Wm.account db
                     >>= fun client ->
                     let open Abb.Future.Infix_monad in
@@ -229,7 +236,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                            it stays [queued] for all of its life. *)
                         S.Job_context.Compute_node.update_state
                           ~request_id
-                          ~compute_node_id:compute_node.Tjc.Compute_node.id
+                          ~compute_node_id
                           db
                           Tjc.Compute_node.State.Starting
                         >>| fun () -> `Cont
@@ -239,7 +246,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         >>= fun () ->
                         S.Job_context.Compute_node.update_state
                           ~request_id
-                          ~compute_node_id:compute_node.Tjc.Compute_node.id
+                          ~compute_node_id
                           db
                           Tjc.Compute_node.State.Terminated
                         >>= fun () ->
@@ -672,22 +679,32 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | Some work_manifest -> Ok work_manifest
           | None -> Error `Error)
     in
+    (* Read the node through [compute_node_work].  The id of a node is the id of
+       its first work manifest only, so a later work manifest of the same node
+       finds no node by id, and its results would fail. *)
     let query_compute_node db =
       Abbs_time_it.run
         (fun time ->
           Logs.info (fun m ->
               m
-                "%s : QUERY_COMPUTE_NODE : compute_node_id = %a : time=%f"
+                "%s : QUERY_COMPUTE_NODE : work_manifest_id = %a : time=%f"
                 request_id
                 Uuidm.pp
                 work_manifest_id
                 time))
         (fun () ->
           let open Irm in
-          S.Job_context.Compute_node.query ~request_id ~compute_node_id:work_manifest_id db
-          >>? function
-          | Some compute_node -> Ok compute_node
-          | None -> Error `Error)
+          S.Job_context.Compute_node.query_by_work_manifest ~request_id ~work_manifest_id db
+          >>= function
+          | Some compute_node -> Abbs_future_combinators.return_ok compute_node
+          | None -> (
+              (* A work manifest made before the server wrote a row with each
+                 work manifest has no row, and the id of its node is its own
+                 id. *)
+              S.Job_context.Compute_node.query ~request_id ~compute_node_id:work_manifest_id db
+              >>? function
+              | Some compute_node -> Ok compute_node
+              | None -> Error `Error))
     in
     let query_job db =
       Abbs_time_it.run

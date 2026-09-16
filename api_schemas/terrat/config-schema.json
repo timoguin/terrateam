@@ -282,6 +282,16 @@
         "max_workspaces_per_batch": {
           "default": 1,
           "type": "integer"
+        },
+        "merge_steps": {
+          "default": "setup",
+          "enum": [
+            "none",
+            "setup",
+            "setup_and_plan",
+            "all"
+          ],
+          "type": "string"
         }
       },
       "type": "object"
