@@ -370,7 +370,7 @@ struct
       ~branch_ref
       ~branch
       ~create
-      ~reuse_compute_node:Wm_sm.no_compute_node_reuse
+      ~reuse_compute_node:Wm_sm.reuse_after_preparation_step
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~branch)
