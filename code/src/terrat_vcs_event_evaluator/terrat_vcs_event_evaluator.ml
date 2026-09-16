@@ -4562,8 +4562,19 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         account_status;
                         config = Ctx.config ctx;
                         db = Ctx.storage ctx;
+                        (* These two keep counting plan layers, which is what
+                           this evaluator has always shown.  The [apply_after]
+                           count needs the config that produced [matches], and
+                           here [synthesized_config] is a second synthesis built
+                           from a repo tree this function may have replaced with
+                           the built one above, so the two can describe different
+                           dirspaces.  [apply_layers_of] raises on a dirspace its
+                           config does not hold, and this is the comment path.
+                           This evaluator only runs when
+                           TERRAT_EVENT_EVALUATOR_MODE selects it. *)
                         is_layered_run = CCList.length matches.Dv.Matches.all_matches > 1;
-                        remaining_layers = matches.Dv.Matches.all_unapplied_matches;
+                        num_remaining_layers =
+                          CCList.length matches.Dv.Matches.all_unapplied_matches;
                         result;
                         repo_config;
                         synthesized_config;

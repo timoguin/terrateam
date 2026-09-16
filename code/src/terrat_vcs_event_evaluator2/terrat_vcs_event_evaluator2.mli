@@ -1,4 +1,5 @@
 module Batch : module type of Terrat_vcs_event_evaluator2_batch
+module Work_set : module type of Terrat_vcs_event_evaluator2_work_set
 module Ee2_fc : module type of Terrat_vcs_event_evaluator2_fc
 module Exec : module type of Abb_bounded_suspendable_executor.Make (Abb) (CCString)
 

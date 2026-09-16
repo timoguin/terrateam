@@ -50,6 +50,12 @@ Each named stack can be either a **regular stack** (with `tag_query`) or a **nes
 | `auto_apply` | Boolean | Whether to automatically apply this stack after successful plan |
 
 
+## Stack Boundaries
+
+A stack is the unit that `depends_on` orders within. The [`depends_on`](/reference/configuration/when-modified/#depends-on-and-stacks) key of a directory may only name directories in the same stack, or in a stack that shares a nested stack with it. Naming a directory in an unrelated stack is a configuration error, and the run reports it instead of planning.
+
+To order two stacks that share no nested stack, use the `plan_after` and `apply_after` rules above. To let directories in two stacks depend on each other, put both stacks inside one nested stack.
+
 ## Examples
 
 ### Basic Environment Stacks

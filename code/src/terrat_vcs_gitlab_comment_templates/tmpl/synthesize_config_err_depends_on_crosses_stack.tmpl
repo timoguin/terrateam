@@ -1,0 +1,15 @@
+## `depends_on` crosses a stack boundary
+
+### What is this?
+
+The directory `{{ dir }}` in workspace `{{ workspace }}` is in the stack `{{ stack }}`.  Its `depends_on` names the directory `{{ depends_on_dir }}` in workspace `{{ depends_on_workspace }}`, which is in the stack `{{ depends_on_stack }}`.
+
+A `depends_on` gives the order inside one stack.  It cannot order two stacks, because the two stacks above have no stack in common, not even a nested stack that holds them both.
+
+### What to do?
+
+Pick one of these:
+
+- Change the `depends_on` so that it only names directories in the same stack.
+- Put both stacks inside one nested stack, and the `depends_on` becomes legal.
+- Order the two stacks with the `plan_after` or `apply_after` rule of the `stacks` section instead.

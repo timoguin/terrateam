@@ -850,6 +850,75 @@ let test_plan_complete2_mixed_keeps_apply =
       Oth.Assert.str_contains ~haystack:body ~needle:apply_footer;
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:no_changes_layer)
 
+(* The payload [Terrat_vcs_service_github_provider] builds for a [depends_on] that
+   reaches out of its stack.  The message is only useful if it names both
+   directories AND both stacks: the directory alone does not say which stack it
+   is in, and the stack alone does not say which line declares the
+   dependency. *)
+let test_depends_on_crosses_stack =
+  Oth.test ~name:"depends_on crosses a stack boundary" (fun _ ->
+      let body =
+        render
+          Tmpl.synthesize_config_err_depends_on_crosses_stack
+          (`Assoc
+             [
+               ("dir", `String "dev/database");
+               ("workspace", `String "default");
+               ("stack", `String "dev");
+               ("depends_on_dir", `String "prod/networking");
+               ("depends_on_workspace", `String "default");
+               ("depends_on_stack", `String "prod");
+             ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            "`depends_on` crosses a stack boundary";
+            "dev/database";
+            "dev";
+            "prod/networking";
+            "prod";
+          ])
+
+(* A cycle that mixes a [depends_on] with a stack rule.  Naming only the
+   dirspaces leaves the user to guess which of the two configuration sections
+   made each edge, so every line has to carry its rule. *)
+let test_cycle_names_the_rule =
+  Oth.test ~name:"the cycle message names the rule of each edge" (fun _ ->
+      let edge ~dependent ~dependency ~rule =
+        `Assoc
+          [
+            ("dependent_dir", `String dependent);
+            ("dependent_workspace", `String "default");
+            ("dependency_dir", `String dependency);
+            ("dependency_workspace", `String "default");
+            ("rule", `String rule);
+          ]
+      in
+      let body =
+        render
+          Tmpl.synthesize_config_err_cycle
+          (`Assoc
+             [
+               ( "cycle",
+                 `List
+                   [
+                     edge ~dependent:"d1" ~dependency:"d2" ~rule:"plan_after";
+                     edge ~dependent:"d2" ~dependency:"d1" ~rule:"depends_on";
+                   ] );
+             ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            (* The heading the system tests match on. *)
+            "## Cycle in dependency graph";
+            "`d1:default` waits for `d2:default` because of `plan_after`";
+            "`d2:default` waits for `d1:default` because of `depends_on`";
+          ])
+
 let test =
   Oth.parallel
     [
@@ -894,6 +963,8 @@ let test =
       test_apply_complete2_details_many_dirspaces_applied;
       test_terrateam_brand_rewrite;
       test_unknown_action_brand;
+      test_depends_on_crosses_stack;
+      test_cycle_names_the_rule;
     ]
 
 let () =

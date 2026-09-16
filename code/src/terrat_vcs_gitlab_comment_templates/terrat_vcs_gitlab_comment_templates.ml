@@ -71,6 +71,9 @@ module Tmpl = struct
 
   let synthesize_config_err_cycle = jinja [%blob "tmpl/synthesize_config_err_cycle.tmpl"]
 
+  let synthesize_config_err_depends_on_crosses_stack =
+    jinja [%blob "tmpl/synthesize_config_err_depends_on_crosses_stack.tmpl"]
+
   let synthesize_config_err_workspace_in_multiple_stacks =
     jinja [%blob "tmpl/synthesize_config_err_workspace_in_multiple_stacks.tmpl"]
 

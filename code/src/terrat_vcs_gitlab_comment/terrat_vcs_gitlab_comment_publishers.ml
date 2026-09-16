@@ -388,7 +388,7 @@ module Publisher_tools = struct
       tier_runs
       config
       is_layered_run
-      remaining_dirspace_configs
+      num_remaining_layers
       by_scope
       gates
       work_manifest =
@@ -418,7 +418,6 @@ module Publisher_tools = struct
           CCList.for_all (fun { O.success; ignore_errors; _ } -> success || ignore_errors) steps)
         by_scope
     in
-    let num_remaining_layers = CCList.length remaining_dirspace_configs in
     (* Resource counts per dirspace, plus totals over the dirspaces that reported them.  All
        "-" when no dirspace's runner emitted a summary (#1929). *)
     let resource_totals =

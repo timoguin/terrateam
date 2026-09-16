@@ -323,7 +323,10 @@ module Msg = struct
         db : 'db;
         config : 'config;
         is_layered_run : bool;
-        remaining_layers : Terrat_change_match3.Dirspace_config.t list list;
+        num_remaining_layers : int;
+            (* How many rounds the run still needs, counted with [apply_after] as an
+               edge.  A plan layering would say something smaller, because
+               [apply_after] holds an apply back without holding the plan back. *)
         repo_config : Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t;
         result : Terrat_api_components_work_manifest_tf_operation_result2.t;
         synthesized_config : Terrat_change_match3.Config.t;

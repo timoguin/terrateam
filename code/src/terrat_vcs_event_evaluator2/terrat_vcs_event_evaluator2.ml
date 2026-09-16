@@ -1,4 +1,5 @@
 module Batch = Terrat_vcs_event_evaluator2_batch
+module Work_set = Terrat_vcs_event_evaluator2_work_set
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Fc = Abbs_future_combinators
 module Irm = Fc.Infix_result_monad

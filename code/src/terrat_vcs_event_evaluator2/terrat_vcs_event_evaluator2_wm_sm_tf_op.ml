@@ -701,6 +701,14 @@ struct
             in
             run
             >>= fun (repo_config, synthesized_config) ->
+            (* The layer counts must be taken against the config that produced
+               [matches].  [synthesized_config] above is a second synthesis, made
+               here for the message; [Terrat_change_match3.apply_layers_of] looks
+               its argument up in the config's dirspace map and raises if it is
+               not there, so pairing the two would turn any drift between them
+               into an exception on the comment path. *)
+            fetch Keys.synthesized_config
+            >>= fun matches_config ->
             (* TODO: HUGE HACK, redo this later *)
             fetch Keys.publish_comment
             >>= fun publish_comment ->
@@ -722,8 +730,17 @@ struct
                            account_status;
                            config = Builder.State.config s;
                            db;
-                           is_layered_run = CCList.length matches.Keys.Matches.all_matches > 1;
-                           remaining_layers = matches.Keys.Matches.all_unapplied_matches;
+                           is_layered_run =
+                             CCList.length
+                               (Terrat_change_match3.apply_layers_of
+                                  matches_config
+                                  (CCList.flatten matches.Keys.Matches.all_matches))
+                             > 1;
+                           num_remaining_layers =
+                             CCList.length
+                               (Terrat_change_match3.apply_layers_of
+                                  matches_config
+                                  (CCList.flatten matches.Keys.Matches.all_unapplied_matches));
                            result;
                            repo_config;
                            synthesized_config;
