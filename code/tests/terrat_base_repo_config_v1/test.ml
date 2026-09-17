@@ -1063,6 +1063,7 @@ let test_batch_runs_merge_steps_each_value =
           ("setup", Ms.Setup);
           ("setup_and_plan", Ms.Setup_and_plan);
           ("all", Ms.All);
+          ("by_phase", Ms.By_phase);
         ];
       ())
 
@@ -1075,6 +1076,19 @@ let test_batch_runs_merge_steps_round_trip =
           match v1.Repo.Version_1.batch_runs with
           | Some { Repo.Batch_runs.merge_steps = `Setup_and_plan; _ } -> ()
           | Some _ | None -> failwith "Round-trip to Version_1 did not produce merge_steps")
+      | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
+
+(* [by_phase] is the one value that is not a rung of the ladder, so it is the one a
+   hand-written conversion is most likely to drop on the way back out. *)
+let test_batch_runs_merge_steps_by_phase_round_trip =
+  Oth.test ~name:"to_version_1: merge_steps by_phase round-trip" (fun _ ->
+      let json = `Assoc [ ("batch_runs", `Assoc [ ("merge_steps", `String "by_phase") ]) ] in
+      match V1.of_version_1_json json with
+      | Ok cfg -> (
+          let v1 = V1.to_version_1 cfg in
+          match v1.Repo.Version_1.batch_runs with
+          | Some { Repo.Batch_runs.merge_steps = `By_phase; _ } -> ()
+          | Some _ | None -> failwith "Round-trip to Version_1 did not produce by_phase")
       | Error err -> failwith ("of_version_1_json failed: " ^ V1.show_of_version_1_json_err err))
 
 let test =
@@ -1129,6 +1143,7 @@ let test =
       test_batch_runs_merge_steps_defaults;
       test_batch_runs_merge_steps_each_value;
       test_batch_runs_merge_steps_round_trip;
+      test_batch_runs_merge_steps_by_phase_round_trip;
     ]
 
 let () =

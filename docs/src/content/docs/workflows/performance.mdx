@@ -442,9 +442,8 @@ batch_runs:
   max_workspaces_per_batch: 50
 ```
 
-With `batch_runs` enabled, tree builder, config builder, and the indexer each get
-their own run, and workspaces beyond `max_workspaces_per_batch` spill into
-additional runs.
+With `batch_runs` enabled, workspaces beyond `max_workspaces_per_batch` spill
+into additional runs.
 
 :::caution
 Terrateam does not cap how many action runs it starts concurrently. A change
@@ -455,6 +454,64 @@ that batches amortize their own setup.
 :::
 
 See [`batch_runs`](/reference/configuration/batch-runs).
+
+### `merge_steps`
+
+`max_workspaces_per_batch` splits an operation into more runs. `merge_steps`
+pushes the other way: it packs the steps of one operation into fewer runs,
+because every extra run pays for its own checkout, its own provider download,
+and its own queue wait.
+
+```yaml
+batch_runs:
+  merge_steps: setup_and_plan
+```
+
+`merge_steps` names which steps are allowed to join a run that is already going.
+Anything it does not name always starts a run of its own. Four of its values name
+the highest step that may join.
+
+| Value | Steps that may join a run |
+|-------|---------------------------|
+| `none` | Nothing joins. Every step gets its own run. |
+| `setup` | Tree builder, config builder, and the indexer. The default. |
+| `setup_and_plan` | The above, plus a plan. |
+| `all` | The above, plus an apply, so a stack of layers can share one run. |
+| `by_phase` | Everything, but setup work and layer work never share a run. |
+
+Joining is best effort. A step joins only if the run can take it: same
+environment, same `runs_on`, same checked-out ref, and
+`max_workspaces_per_batch` still holds across the whole run. A step that cannot join gets its own run, so raising
+`merge_steps` never breaks an operation, it only stops saving you a run.
+
+Two things surprise people here:
+
+- `enabled` does not gate `merge_steps`. `enabled` gates
+  `max_workspaces_per_batch` only, so `merge_steps` applies even with
+  `batch_runs` off.
+- Terrateam reads `merge_steps` from the config file in the repository, never
+  from a generated config. The tree builder, config builder, and indexer run
+  before a generated config exists, so a config builder cannot set it.
+
+`all` is the setting to reach for when your operation is a deep stack of layers
+and the per-run overhead, not the plan itself, is what you are paying for. Go
+the other way, to `none`, when you want each step isolated on its own runner,
+for example to read its logs separately.
+
+`by_phase` sits between them, and it is not a point on the ladder. It packs as
+hard as `all` does inside a phase, but it keeps a wall between the two phases: the
+setup phase, which is the tree builder, the config builder, and the indexer, and
+the layer phase, which is a plan and an apply. A run holds one phase, never both.
+Reach for it when you want the stack of layers packed into one run but the setup
+work kept in a run of its own, for example to read the setup logs on their own or
+to keep a slow indexer from holding the plan of the first layer.
+
+A pull request with the three setup steps and three layers, where the first two
+layers come back with no changes, costs six runs under `none`, four under `setup`,
+one under `setup_and_plan` and `all`, and two under `by_phase`.
+
+Whichever value you pick, `merge_steps` changes only how many runs hold the work.
+It never changes what runs, or in what order.
 
 ### Runner size and routing
 
@@ -697,6 +754,7 @@ candidate.
 | `init` dominates the run | [Shared provider cache](#share-a-provider-plugin-cache), committed lock files |
 | Ephemeral runners, high NAT gateway egress | Provider cache on a persistent volume |
 | Directories run one after another | [`parallel_runs`](/reference/configuration/parallel-runs), [`batch_runs`](/reference/configuration/batch-runs) |
+| Every step of one operation queues its own job | [`merge_steps`](#merge_steps), so steps share a run |
 | Runner is saturated | [`runs_on`](/workflows/advanced/runs-on) with a larger pool |
 | Terragrunt is slow before Terraform even starts | `TG_DEPENDENCY_FETCH_OUTPUT_FROM_STATE`, `create_and_select_workspace: false` |
 | `plan` dominates and setup is already small | The state is too large: [splitting buys time, Stategraph removes the refactor](#when-the-plan-itself-is-the-cost) |

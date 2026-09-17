@@ -10,7 +10,7 @@ struct
   let src = Logs.Src.create ("vcs_event_evaluator2_wm_sm." ^ S.name)
 
   module Logs = (val Logs.src_log src : Logs.LOG)
-  module Merge_steps = Terrat_vcs_event_evaluator2_merge_steps
+  module Compute_node = Terrat_vcs_event_evaluator2_compute_node
   module Wm = Terrat_work_manifest3
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
   module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
@@ -164,23 +164,12 @@ struct
      is [queued], and the first poll of the run fills the row.  The database
      chooses the id of the node, so it has nothing to do with the id of the work
      manifest. *)
-  (* The workspaces a work manifest asks a run to do.  A step that prepares a job
-     has none, so it never spends the budget of a node. *)
-  let workspaces_of { Wm.changes; _ } = CCList.length changes
-
-  (* The capabilities of a node made for one work manifest.  The node has taken
-     that work manifest, so it is charged for it here.  A charge is made when the
-     work manifest is given to the node, and not when it runs. *)
-  let capabilities_of ~max_workspaces ({ Wm.branch_ref; environment; runs_on; _ } as work_manifest)
-      =
-    {
-      Tjc.Compute_node.Capabilities.flags = [];
-      sha = branch_ref;
-      environment;
-      runs_on;
-      max_workspaces;
-      used_workspaces = workspaces_of work_manifest;
-    }
+  (* [Compute_node] holds the two rules that need no VCS: what a node made for
+     one work manifest can do, and whether a node that is going can take one
+     more.  They sit outside this functor so that a test can ask them without
+     standing up a provider. *)
+  let workspaces_of = Compute_node.workspaces_of
+  let capabilities_of = Compute_node.capabilities_of
 
   let create_compute_node ~max_workspaces s ({ Wm.id; _ } as work_manifest) db =
     time_it
@@ -208,44 +197,7 @@ struct
     let module V1 = Terrat_base_repo_config_v1 in
     (V1.batch_runs repo_config).V1.Batch_runs.merge_steps
 
-  (* Whether a compute node can run a work manifest.
-
-     A node is one action run.  [environment] and [runs_on] are inputs of the
-     workflow dispatch, so the VCS fixes them when it schedules the job, and a
-     work manifest that joins the run takes the values of the run.  They must
-     therefore agree.  [Run_params] already names this pair for a batch, and it
-     names the same thing here.
-
-     The budget is the cap of a batch, held for the whole run.  A batch caps one
-     work manifest, so a node that ran several would pass that cap.
-
-     The refs must agree as well.  One job evaluation covers the working branch
-     and the destination branch, and the action of a node has one of them checked
-     out.
-
-     The three steps that prepare a job pass this test without a special case.
-     They carry no environment, no runs_on and no dirspace, so they agree with
-     each other and spend nothing.
-
-     The configuration answers first.  [merge_steps] gives the highest step that
-     may join a run, and a step above that limit always takes a run of its own. *)
-  let can_run ~merge_steps ~max_workspaces compute_node work_manifest =
-    let module C = Tjc.Compute_node in
-    let module Cap = C.Capabilities in
-    let module Rp = Terrat_vcs_event_evaluator2_batch.Run_params in
-    let { Cap.environment; runs_on; used_workspaces; _ } = compute_node.C.capabilities in
-    Merge_steps.permits merge_steps work_manifest.Wm.steps
-    && compute_node.C.state = C.State.Starting
-    && CCString.equal compute_node.C.capabilities.Cap.sha work_manifest.Wm.branch_ref
-    && Rp.equal (environment, runs_on) (work_manifest.Wm.environment, work_manifest.Wm.runs_on)
-    &&
-    (* The budget is the cap the repo config gives now, and not one the node
-       carries.  A node that the steps preparing a job made has no cap, because
-       those steps run before there is a config to read, and a plan that joined
-       it would then have no bound at all. *)
-    match max_workspaces with
-    | Some max_workspaces -> used_workspaces + workspaces_of work_manifest <= max_workspaces
-    | None -> true
+  let can_run = Compute_node.can_run
 
   (* Give a compute node a second work manifest.  Only
      [node_that_can_take_it] may answer for this, because it is what proves the
@@ -287,18 +239,16 @@ struct
             Cap.max_workspaces;
             used_workspaces =
               compute_node.C.capabilities.Cap.used_workspaces + workspaces_of work_manifest;
+            used_work_manifests = compute_node.C.capabilities.Cap.used_work_manifests + 1;
           })
 
   (* The compute node of this evaluation, when that node can take this work
      manifest as well.
 
      Ask the database, and not the node in the store.  That node is a snapshot of
-     the transaction that read it, and an evaluation that commits something
-     durable runs again in a transaction of its own, so by the time it makes the
-     next work manifest the snapshot is a transaction old.  The action polls in
-     that gap, and a poll that finds the node owes nothing and its work manifest
-     is over ends the node.  A work manifest that joined on the snapshot would
-     join a run that has gone, and nothing would ever perform it.
+     the transaction that put it there.  The chain of layers evaluates the next
+     layer in a transaction of its own, so the snapshot is one transaction old:
+     the node may have taken work since, and its budget may have moved.
 
      A node owes one work manifest at a time.  The index
      [compute_node_work_wm_state_idx] permits one row in the state [created] for

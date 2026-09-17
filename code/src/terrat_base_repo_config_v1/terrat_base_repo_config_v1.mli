@@ -367,22 +367,34 @@ module Automerge : sig
 end
 
 module Batch_runs : sig
-  (** The highest step that may join an action run that is already going.
+  (** Which steps may join an action run that is already going.
 
       The server puts the steps of a job into as few action runs as it can, because many runs are
-      slower than one run. This value is the limit the user gives it. [None] stops each join, so
+      slower than one run. This value is the limit the user gives it. It changes how many action
+      runs hold the work of a job, and it changes nothing else: it cannot make work that the rest of
+      the configuration does not permit, and it cannot stop work that the rest of the configuration
+      permits.
+
+      Four of the values make a ladder of the highest step that may join. [None] stops each join, so
       each step gets a run of its own. [Setup] permits the tree builder, the config builder and the
       indexer. [Setup_and_plan] also permits a plan. [All] also permits an apply, so a chain of
-      layers shares one run. *)
+      layers shares one run.
+
+      [By_phase] is not a point on that ladder. It permits every step, as [All] does, but it holds a
+      wall between two phases: the setup phase, which is the tree builder, the config builder and
+      the indexer, and the layer phase, which is a plan and an apply. A run holds one phase only.
+      Take it when the setup work must keep an action run of its own and the layers of a job must
+      still share one. *)
   module Merge_steps : sig
     type t =
       | All
+      | By_phase
       | None
       | Setup
       | Setup_and_plan
     [@@deriving show, yojson, eq]
 
-    val make : [< `All | `None | `Setup | `Setup_and_plan ] -> t
+    val make : [< `All | `By_phase | `None | `Setup | `Setup_and_plan ] -> t
   end
 
   type t = {

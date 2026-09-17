@@ -671,6 +671,7 @@ module Batch_runs = struct
   module Merge_steps = struct
     type t =
       | All
+      | By_phase
       | None
       | Setup
       | Setup_and_plan
@@ -678,6 +679,7 @@ module Batch_runs = struct
 
     let make = function
       | `All -> All
+      | `By_phase -> By_phase
       | `None -> None
       | `Setup -> Setup
       | `Setup_and_plan -> Setup_and_plan
@@ -3180,6 +3182,7 @@ let to_version_1_batch_runs batch_runs =
   let merge_steps =
     match merge_steps with
     | Ms.All -> `All
+    | Ms.By_phase -> `By_phase
     | Ms.None -> `None
     | Ms.Setup -> `Setup
     | Ms.Setup_and_plan -> `Setup_and_plan

@@ -84,12 +84,33 @@ module Compute_node = struct
      manifest today; a node that ran several would pass that cap, so the budget
      holds for the whole run instead.
 
+     [used_work_manifests] is how many work manifests the node has performed.
+     The action stops after a fixed number of turns of its loop, so a node that
+     gave out more work than that would leave a work manifest on a run that has
+     gone.
+
+     [merge_phase] is the phase of the work the node was made for, and it never
+     changes after that.  [batch_runs.merge_steps] of [by_phase] holds a wall
+     between the setup phase and the layer phase, and this is the side of the
+     wall the node is on.  [None] is a node that has no phase: a node a version
+     before this field made, or a node made for a work manifest of no step or of
+     several.  No work manifest joins such a node under [by_phase].
+
      Every field but [sha] carries a default.  The column is jsonb, so a row
-     written before these fields existed must still decode: [to_capabilities]
-     turns a decode error into [None] and would drop the node without a word. *)
+     written before these fields existed must still decode.  [to_capabilities] in
+     each provider turns a decode error into [None], and [Ret.u] turns that into
+     [`Bad_result], which fails the whole query.  Every read of the node then
+     fails, and the work manifest of that node waits for ever. *)
   module Capabilities = struct
     module Flags = struct
       type t = One_shot [@@deriving yojson, show, eq]
+    end
+
+    module Merge_phase = struct
+      type t =
+        | Layer
+        | Setup
+      [@@deriving yojson, show, eq]
     end
 
     type t = {
@@ -99,6 +120,8 @@ module Compute_node = struct
       runs_on : Yojson.Safe.t option; [@default None]
       max_workspaces : int option; [@default None]
       used_workspaces : int; [@default 0]
+      used_work_manifests : int; [@default 0]
+      merge_phase : Merge_phase.t option; [@default None]
     }
     [@@deriving yojson, show, eq]
   end

@@ -4,6 +4,7 @@ module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module Msg = Terrat_vcs_provider2.Msg
 module Work_set = Terrat_vcs_event_evaluator2_work_set
+module Merge_steps = Terrat_vcs_event_evaluator2_merge_steps
 
 module Make
     (S : Terrat_vcs_provider2.S)
@@ -2231,11 +2232,15 @@ struct
        The new node takes the capabilities of the old one, because the two run the
        same work in the same way.  It takes the charge of this work manifest
        alone.  The old node carried what every work manifest it performed had
-       spent, and none of that is the charge of this one. *)
+       spent, and none of that is the charge of this one.
+
+       The phase comes from this work manifest, and not from the old node.  The
+       phase of a node is the phase of the work the node was made for, and this
+       node is made for this work manifest alone. *)
     let move_work_manifest_to_its_own_node s compute_node work_manifest =
       let module C = Tjc.Compute_node in
       let module Wm = Terrat_work_manifest3 in
-      let { Wm.id = work_manifest_id; changes; _ } = work_manifest in
+      let { Wm.id = work_manifest_id; changes; steps; _ } = work_manifest in
       let open Irm in
       Builder.run_db s ~f:(fun db ->
           time_it
@@ -2256,6 +2261,8 @@ struct
                   {
                     compute_node.C.capabilities with
                     C.Capabilities.used_workspaces = CCList.length changes;
+                    used_work_manifests = 1;
+                    merge_phase = Merge_steps.phase_of steps;
                   }
                 db
               >>= fun { C.id = compute_node_id; _ } ->

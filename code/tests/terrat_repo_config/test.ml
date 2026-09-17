@@ -236,6 +236,22 @@ let test_batch_runs_merge_steps_default =
       | Ok t -> Oth.Assert.true_ ~fail_msg:"t.Br.merge_steps = `Setup" (t.Br.merge_steps = `Setup)
       | Error msg -> failwith msg)
 
+(* [by_phase] joined the enum after the four rungs of the ladder.  The decoder of the
+   enum is generated, so this pins that the schema and the generated module agree. *)
+let test_batch_runs_merge_steps_by_phase_round_trip =
+  Oth.test ~name:"Batch_runs: merge_steps by_phase round-trip" (fun _ ->
+      let json = `Assoc [ ("merge_steps", `String "by_phase") ] in
+      match Br.of_yojson json with
+      | Ok t -> (
+          Oth.Assert.true_ ~fail_msg:"t.Br.merge_steps = `By_phase" (t.Br.merge_steps = `By_phase);
+          match Br.of_yojson (Br.to_yojson t) with
+          | Ok t' ->
+              Oth.Assert.true_
+                ~fail_msg:"t'.Br.merge_steps = `By_phase"
+                (t'.Br.merge_steps = `By_phase)
+          | Error msg -> failwith msg)
+      | Error msg -> failwith msg)
+
 let test_batch_runs_rejects_unknown_merge_steps =
   Oth.test ~name:"Batch_runs: unknown merge_steps rejected" (fun _ ->
       let json = `Assoc [ ("merge_steps", `String "everything") ] in
@@ -265,6 +281,7 @@ let test =
       test_notifications_summary_rejects_unknown_mode;
       test_batch_runs_merge_steps_round_trip;
       test_batch_runs_merge_steps_default;
+      test_batch_runs_merge_steps_by_phase_round_trip;
       test_batch_runs_rejects_unknown_merge_steps;
     ]
 

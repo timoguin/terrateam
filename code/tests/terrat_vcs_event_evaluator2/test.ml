@@ -18,6 +18,10 @@ module Merge_steps = Terrat_vcs_event_evaluator2.Merge_steps
 module Step = Terrat_work_manifest3.Step
 module V1 = Terrat_base_repo_config_v1
 module Ms = V1.Batch_runs.Merge_steps
+module Phase = Terrat_job_context.Compute_node.Capabilities.Merge_phase
+module Compute_node = Terrat_vcs_event_evaluator2.Compute_node
+module Tjc = Terrat_job_context
+module Wm = Terrat_work_manifest3
 module We = V1.Workflows.Entry
 
 let dsf ?environment ?runs_on ~dir ~workspace () =
@@ -223,14 +227,20 @@ let test_every_dirspace_appears_exactly_once =
 
 (* The ladder of [batch_runs.merge_steps]: each value permits the steps of the value before
    it, and one step more.  The table pins every pair.  A wrong answer either loses an action
-   run or gives a step the environment of a run that it must not join. *)
+   run or gives a step the environment of a run that it must not join.
+
+   Every pair is asked once for each phase a run can be in, because a rung of the ladder
+   must give the same answer whatever the run has done.  Only [by_phase] reads the phase. *)
 let test_merge_steps_ladder =
   Oth.test ~name:"merge_steps: the step ladder" (fun _ ->
       CCList.iter
         (fun (merge_steps, step, expected) ->
-          Oth.Assert.true_
-            ~fail_msg:(Ms.show merge_steps ^ " " ^ Step.to_string step)
-            (Merge_steps.permits merge_steps [ step ] = expected))
+          CCList.iter
+            (fun node_phase ->
+              Oth.Assert.true_
+                ~fail_msg:(Ms.show merge_steps ^ " " ^ Step.to_string step)
+                (Merge_steps.permits merge_steps ~node_phase [ step ] = expected))
+            [ None; Some Phase.Setup; Some Phase.Layer ])
         [
           (Ms.None, Step.Build_tree, false);
           (Ms.None, Step.Build_config, false);
@@ -263,10 +273,214 @@ let test_merge_steps_ladder =
    answers for one step. *)
 let test_merge_steps_only_one_step_joins =
   Oth.test ~name:"merge_steps: only one step joins" (fun _ ->
-      Oth.Assert.true_ ~fail_msg:"no step" (not (Merge_steps.permits Ms.All []));
+      CCList.iter
+        (fun merge_steps ->
+          Oth.Assert.true_
+            ~fail_msg:("no step: " ^ Ms.show merge_steps)
+            (not (Merge_steps.permits merge_steps ~node_phase:(Some Phase.Setup) []));
+          Oth.Assert.true_
+            ~fail_msg:("two steps: " ^ Ms.show merge_steps)
+            (not
+               (Merge_steps.permits
+                  merge_steps
+                  ~node_phase:(Some Phase.Setup)
+                  [ Step.Build_tree; Step.Plan ])))
+        [ Ms.All; Ms.By_phase ];
+      ())
+
+(* [by_phase] is not a rung of the ladder.  It permits every step, as [all] does, but only
+   into a run of the same phase, so the setup work and the layer work never share a run.
+   The table pins every pair of phase and step.
+
+   This is the whole of the value: a wrong answer here either puts a plan on the run of the
+   config builder, which is what [by_phase] exists to stop, or breaks the chain of layers
+   into a run for each layer, which is what it exists to save. *)
+let test_merge_steps_by_phase =
+  Oth.test ~name:"merge_steps: by_phase holds a wall between the phases" (fun _ ->
+      CCList.iter
+        (fun (node_phase, step, expected) ->
+          Oth.Assert.true_
+            ~fail_msg:(Phase.show node_phase ^ " " ^ Step.to_string step)
+            (Merge_steps.permits Ms.By_phase ~node_phase:(Some node_phase) [ step ] = expected))
+        [
+          (Phase.Setup, Step.Build_tree, true);
+          (Phase.Setup, Step.Build_config, true);
+          (Phase.Setup, Step.Index, true);
+          (Phase.Setup, Step.Plan, false);
+          (Phase.Setup, Step.Apply, false);
+          (Phase.Setup, Step.Unsafe_apply, false);
+          (Phase.Layer, Step.Build_tree, false);
+          (Phase.Layer, Step.Build_config, false);
+          (Phase.Layer, Step.Index, false);
+          (Phase.Layer, Step.Plan, true);
+          (Phase.Layer, Step.Apply, true);
+          (Phase.Layer, Step.Unsafe_apply, true);
+        ];
+      ())
+
+(* A run that has no phase takes nothing under [by_phase].  A row an earlier version of the
+   server wrote has no phase, and so has a run made for a work manifest of no step or of
+   several.  The safe answer is a run of its own, and not a guess. *)
+let test_merge_steps_by_phase_needs_a_phase =
+  Oth.test ~name:"merge_steps: by_phase gives nothing to a run with no phase" (fun _ ->
+      CCList.iter
+        (fun step ->
+          Oth.Assert.true_
+            ~fail_msg:(Step.to_string step)
+            (not (Merge_steps.permits Ms.By_phase ~node_phase:None [ step ])))
+        [ Step.Build_tree; Step.Build_config; Step.Index; Step.Plan; Step.Apply; Step.Unsafe_apply ];
+      ())
+
+(* [phase_of] is what writes the phase of a run when the run is made, so it must agree with
+   the wall that [permits] holds.  A work manifest of no step, or of several, has no phase,
+   which is what makes such a run take nothing. *)
+let test_phase_of =
+  Oth.test ~name:"merge_steps: the phase of a work manifest" (fun _ ->
+      CCList.iter
+        (fun (steps, expected) ->
+          Oth.Assert.true_
+            ~fail_msg:(CCString.concat "," (CCList.map Step.to_string steps))
+            (Merge_steps.phase_of steps = expected))
+        [
+          ([ Step.Build_tree ], Some Phase.Setup);
+          ([ Step.Build_config ], Some Phase.Setup);
+          ([ Step.Index ], Some Phase.Setup);
+          ([ Step.Plan ], Some Phase.Layer);
+          ([ Step.Apply ], Some Phase.Layer);
+          ([ Step.Unsafe_apply ], Some Phase.Layer);
+          ([], None);
+          ([ Step.Build_tree; Step.Plan ], None);
+        ];
+      ())
+
+(* A work manifest, with only the fields these two rules read given a value that
+   matters.  [dirspaceflows] is what the node is charged for. *)
+let wm ?(branch_ref = "deadbeef") ?(environment = None) ?(dirspaceflows = []) steps =
+  {
+    Wm.account = ();
+    base_ref = "base";
+    branch = None;
+    branch_ref;
+    changes = dirspaceflows;
+    completed_at = None;
+    created_at = "";
+    denied_dirspaces = [];
+    environment;
+    id = Uuidm.nil;
+    initiator = Wm.Initiator.System;
+    run_id = None;
+    runs_on = None;
+    state = Wm.State.Queued;
+    steps;
+    tag_query = Terrat_tag_query.any;
+    target = ();
+  }
+
+(* A node that is going, made from the capabilities of the work manifest it was
+   made for.  [Starting] is the one state that can take more work. *)
+let node ?(max_workspaces = None) work_manifest =
+  {
+    Tjc.Compute_node.id = Uuidm.nil;
+    state = Tjc.Compute_node.State.Starting;
+    capabilities = Compute_node.capabilities_of ~max_workspaces work_manifest;
+    created_at = "";
+    updated_at = "";
+  }
+
+(* The wiring of [by_phase]: [capabilities_of] must write the phase of the work
+   manifest the node is made for.  A node with no phase takes nothing under
+   [by_phase], so a regression here turns [by_phase] into [none] without a word,
+   and the count of action runs is the only thing that would show it. *)
+let test_capabilities_of_writes_the_phase =
+  Oth.test ~name:"compute_node: the capabilities carry the phase of the work" (fun _ ->
+      CCList.iter
+        (fun (steps, expected) ->
+          let { Tjc.Compute_node.Capabilities.merge_phase; _ } =
+            Compute_node.capabilities_of ~max_workspaces:None (wm steps)
+          in
+          Oth.Assert.true_
+            ~fail_msg:(CCString.concat "," (CCList.map Step.to_string steps))
+            (merge_phase = expected))
+        [
+          ([ Step.Build_tree ], Some Phase.Setup);
+          ([ Step.Build_config ], Some Phase.Setup);
+          ([ Step.Index ], Some Phase.Setup);
+          ([ Step.Plan ], Some Phase.Layer);
+          ([ Step.Apply ], Some Phase.Layer);
+          ([ Step.Unsafe_apply ], Some Phase.Layer);
+          ([], None);
+          ([ Step.Build_tree; Step.Plan ], None);
+        ];
+      ())
+
+(* The other half of the wiring: [can_run] must read the phase the node carries.
+   This is the rule of [by_phase] asked of a node and a work manifest, and not of
+   a phase written by hand, so it fails if either end of the wire breaks.
+
+   [setup_and_plan] is asked the same pairs to show what the wall is worth: it
+   lets the plan join the run of the setup steps, and [by_phase] does not. *)
+let test_can_run_reads_the_phase_of_the_node =
+  Oth.test ~name:"compute_node: can_run holds the wall of by_phase" (fun _ ->
+      let setup_node = node (wm [ Step.Build_tree ]) in
+      let layer_node = node (wm [ Step.Plan ]) in
+      CCList.iter
+        (fun (merge_steps, node, steps, expected) ->
+          Oth.Assert.true_
+            ~fail_msg:
+              (Ms.show merge_steps ^ " " ^ CCString.concat "," (CCList.map Step.to_string steps))
+            (Compute_node.can_run ~merge_steps ~max_workspaces:None node (wm steps) = expected))
+        [
+          (Ms.By_phase, setup_node, [ Step.Build_config ], true);
+          (Ms.By_phase, setup_node, [ Step.Index ], true);
+          (Ms.By_phase, setup_node, [ Step.Plan ], false);
+          (Ms.By_phase, setup_node, [ Step.Apply ], false);
+          (Ms.By_phase, layer_node, [ Step.Plan ], true);
+          (Ms.By_phase, layer_node, [ Step.Apply ], true);
+          (Ms.By_phase, layer_node, [ Step.Build_config ], false);
+          (* The same pairs under the rung that has no wall. *)
+          (Ms.Setup_and_plan, setup_node, [ Step.Build_config ], true);
+          (Ms.Setup_and_plan, setup_node, [ Step.Plan ], true);
+          (Ms.Setup_and_plan, setup_node, [ Step.Apply ], false);
+        ];
+      ())
+
+(* The wall is the only thing [by_phase] adds.  Every other test a node must pass
+   still holds, so a work manifest of the right phase that disagrees on the ref
+   still takes a run of its own. *)
+let test_by_phase_keeps_the_other_tests =
+  Oth.test ~name:"compute_node: by_phase does not lift the other tests" (fun _ ->
+      let layer_node = node (wm [ Step.Plan ]) in
       Oth.Assert.true_
-        ~fail_msg:"two steps"
-        (not (Merge_steps.permits Ms.All [ Step.Build_tree; Step.Plan ]));
+        ~fail_msg:"a plan of the same phase and the same ref joins"
+        (Compute_node.can_run
+           ~merge_steps:Ms.By_phase
+           ~max_workspaces:None
+           layer_node
+           (wm [ Step.Plan ]));
+      Oth.Assert.true_
+        ~fail_msg:"a plan of the same phase but another ref takes a run of its own"
+        (not
+           (Compute_node.can_run
+              ~merge_steps:Ms.By_phase
+              ~max_workspaces:None
+              layer_node
+              (wm ~branch_ref:"cafebabe" [ Step.Plan ])));
+      Oth.Assert.true_
+        ~fail_msg:"a plan of the same phase but another environment takes a run of its own"
+        (not
+           (Compute_node.can_run
+              ~merge_steps:Ms.By_phase
+              ~max_workspaces:None
+              layer_node
+              (wm ~environment:(Some "production") [ Step.Plan ])));
+      Oth.Assert.true_
+        ~fail_msg:"a node that is not Starting takes nothing"
+        (not
+           (Compute_node.can_run
+              ~merge_steps:Ms.By_phase
+              ~max_workspaces:None
+              { layer_node with Tjc.Compute_node.state = Tjc.Compute_node.State.Running }
+              (wm [ Step.Plan ])));
       ())
 
 let test =
@@ -283,6 +497,12 @@ let test =
       test_every_dirspace_appears_exactly_once;
       test_merge_steps_ladder;
       test_merge_steps_only_one_step_joins;
+      test_merge_steps_by_phase;
+      test_merge_steps_by_phase_needs_a_phase;
+      test_phase_of;
+      test_capabilities_of_writes_the_phase;
+      test_can_run_reads_the_phase_of_the_node;
+      test_by_phase_keeps_the_other_tests;
     ]
 
 let () =
