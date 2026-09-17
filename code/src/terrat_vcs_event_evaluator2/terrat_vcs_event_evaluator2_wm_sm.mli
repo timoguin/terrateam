@@ -1,6 +1,8 @@
+(* The implementation reads the store of an evaluation through [Keys], but
+   nothing in this signature names it, so the parameter is anonymous here. *)
 module Make
     (S : Terrat_vcs_provider2.S)
-    (Keys : module type of Terrat_vcs_event_evaluator2_targets.Make (S)) : sig
+    (_ : module type of Terrat_vcs_event_evaluator2_targets.Make (S)) : sig
   module Builder : module type of Terrat_vcs_event_evaluator2_builder.Make (S)
 
   type existing_wm =
@@ -35,26 +37,6 @@ module Make
       [> Str_template.err ] )
     result
 
-  (** Whether the compute node of an evaluation may perform a new work manifest as well, instead of
-      that work manifest getting its own node. Asked for one work manifest at a time, from the
-      compute node and the work manifest event of the evaluation that makes it. *)
-  type reuse_compute_node =
-    Terrat_job_context.Compute_node.t option ->
-    Keys.Work_manifest_event.t option ->
-    existing_wm ->
-    Terrat_job_context.Compute_node.t option
-
-  (** Answers no: a new work manifest gets its own compute node, thus its own action run. This is
-      the answer for a plan and for an apply, which declare an [environment] and a [runs_on] of
-      their own. *)
-  val no_compute_node_reuse : reuse_compute_node
-
-  (** Answers yes when the step that just finished on the compute node of this evaluation prepares
-      the same job on the same refs, and its run is still going. The steps that prepare a job are
-      the tree builder, the config builder and the indexer: each waits for the one before it, they
-      read the same checkout, and none of them declares an [environment] or a [runs_on]. *)
-  val reuse_after_preparation_step : reuse_compute_node
-
   val run :
     name:string ->
     eq:(existing_wm -> bool) ->
@@ -68,11 +50,11 @@ module Make
       Builder.B.State.t ->
       Builder.Bs.Fetcher.t ->
       (existing_wm list, Builder.err) result Abb.Future.t) ->
-    (* A step that prepares a job passes [reuse_after_preparation_step].  A plan
-       and an apply pass [no_compute_node_reuse].  The configuration answers
-       first: with [Batch_runs.Merge_steps.None] no work manifest joins a run,
-       whatever this function says. *)
-    reuse_compute_node:reuse_compute_node ->
+    (* The workspaces one action run may do, which is the cap of a batch held for
+       the whole run. Asked for only when a work manifest is made, because a step
+       that prepares a job runs before there is a repo config to read it from.
+       [None] means the run has no budget. *)
+    max_workspaces:(unit -> (int option, Builder.err) result Abb.Future.t) ->
     initiate:
       (existing_wm ->
       Builder.B.State.t ->

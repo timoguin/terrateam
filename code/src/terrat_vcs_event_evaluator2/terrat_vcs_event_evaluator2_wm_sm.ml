@@ -10,6 +10,7 @@ struct
   let src = Logs.Src.create ("vcs_event_evaluator2_wm_sm." ^ S.name)
 
   module Logs = (val Logs.src_log src : Logs.LOG)
+  module Merge_steps = Terrat_vcs_event_evaluator2_merge_steps
   module Wm = Terrat_work_manifest3
   module Builder = Terrat_vcs_event_evaluator2_builder.Make (S)
   module Tasks_base = Terrat_vcs_event_evaluator2_tasks_base.Make (S) (Keys)
@@ -163,7 +164,25 @@ struct
      is [queued], and the first poll of the run fills the row.  The database
      chooses the id of the node, so it has nothing to do with the id of the work
      manifest. *)
-  let create_compute_node s { Wm.id; branch_ref; _ } db =
+  (* The workspaces a work manifest asks a run to do.  A step that prepares a job
+     has none, so it never spends the budget of a node. *)
+  let workspaces_of { Wm.changes; _ } = CCList.length changes
+
+  (* The capabilities of a node made for one work manifest.  The node has taken
+     that work manifest, so it is charged for it here.  A charge is made when the
+     work manifest is given to the node, and not when it runs. *)
+  let capabilities_of ~max_workspaces ({ Wm.branch_ref; environment; runs_on; _ } as work_manifest)
+      =
+    {
+      Tjc.Compute_node.Capabilities.flags = [];
+      sha = branch_ref;
+      environment;
+      runs_on;
+      max_workspaces;
+      used_workspaces = workspaces_of work_manifest;
+    }
+
+  let create_compute_node ~max_workspaces s ({ Wm.id; _ } as work_manifest) db =
     time_it
       s
       (fun m log_id time ->
@@ -172,7 +191,7 @@ struct
         let open Irm in
         S.Job_context.Compute_node.create
           ~request_id:(Builder.log_id s)
-          ~capabilities:{ Tjc.Compute_node.Capabilities.flags = []; sha = branch_ref }
+          ~capabilities:(capabilities_of ~max_workspaces work_manifest)
           db
         >>= fun { Tjc.Compute_node.id = compute_node_id; _ } ->
         S.Job_context.Compute_node.add_work
@@ -181,83 +200,65 @@ struct
           ~work_manifest:id
           db)
 
-  type reuse_compute_node =
-    Tjc.Compute_node.t option ->
-    Keys.Work_manifest_event.t option ->
-    existing_wm ->
-    Tjc.Compute_node.t option
-
-  (* The answer for a plan and for an apply: a new work manifest gets its own
-     compute node, thus its own action run. *)
-  let no_compute_node_reuse : reuse_compute_node = fun _ _ _ -> None
-
-  (* The configuration answers before the compute node does.  With
-     [Merge_steps.None] no work manifest joins a run, so each step gets an action
-     run of its own.  Each other value leaves the answer to [reuse]. *)
-  let reuse_permitted repo_config (reuse : reuse_compute_node) : reuse_compute_node =
+  (* The configuration that the repository holds gives the limit.  A step that
+     prepares a job runs before a built configuration exists, thus the built
+     configuration cannot give it, and the limit must be the same for each step
+     of a job. *)
+  let merge_steps_of repo_config =
     let module V1 = Terrat_base_repo_config_v1 in
-    let module Ms = V1.Batch_runs.Merge_steps in
-    match (V1.batch_runs repo_config).V1.Batch_runs.merge_steps with
-    | Ms.None -> no_compute_node_reuse
-    | Ms.All | Ms.Setup | Ms.Setup_and_plan -> reuse
+    (V1.batch_runs repo_config).V1.Batch_runs.merge_steps
 
-  (* The steps that may share one compute node, and so one action run.
+  (* Whether a compute node can run a work manifest.
 
-     These are the steps that prepare a job.  They build the tree, then the
-     configuration, then the index, each waiting for the one before it, and all
-     three read the same checkout of the same refs.  They are also the steps that
-     declare no [environment] and no [runs_on].
+     A node is one action run.  [environment] and [runs_on] are inputs of the
+     workflow dispatch, so the VCS fixes them when it schedules the job, and a
+     work manifest that joins the run takes the values of the run.  They must
+     therefore agree.  [Run_params] already names this pair for a batch, and it
+     names the same thing here.
 
-     That second fact is what makes sharing safe, and it is why a plan and an
-     apply are not in this list.  Those two declare both, and a work manifest
-     that runs inside the action run of another one takes the [environment] and
-     the [runs_on] of that run, not its own.  [environment] selects the
-     protection rules of the VCS, so a plan in a builder run would ask the wrong
-     rules. *)
-  let prepares_a_job = function
-    | [ step ] -> (
-        match step with
-        | Wm.Step.Build_tree | Wm.Step.Build_config | Wm.Step.Index -> true
-        | Wm.Step.Apply | Wm.Step.Plan | Wm.Step.Unsafe_apply -> false)
-    | [] | _ :: _ :: _ -> false
+     The budget is the cap of a batch, held for the whole run.  A batch caps one
+     work manifest, so a node that ran several would pass that cap.
 
-  (* Join the compute node of this evaluation when the step that just finished on
-     it prepares the same job on the same refs, and its run is still going.
+     The refs must agree as well.  One job evaluation covers the working branch
+     and the destination branch, and the action of a node has one of them checked
+     out.
 
-     One job evaluation covers the working branch and the destination branch, and
-     the action of a node has one of them checked out, so the refs must agree.
-     The node must be [starting], because the whole reason a node can take
-     another step is that its run has not ended. *)
-  let reuse_after_preparation_step : reuse_compute_node =
-   fun compute_node work_manifest_event work_manifest ->
+     The three steps that prepare a job pass this test without a special case.
+     They carry no environment, no runs_on and no dirspace, so they agree with
+     each other and spend nothing.
+
+     The configuration answers first.  [merge_steps] gives the highest step that
+     may join a run, and a step above that limit always takes a run of its own. *)
+  let can_run ~merge_steps ~max_workspaces compute_node work_manifest =
     let module C = Tjc.Compute_node in
-    let module E = Keys.Work_manifest_event in
-    match (compute_node, work_manifest_event) with
-    | ( Some ({ C.state = C.State.Starting; _ } as compute_node),
-        Some (E.Result { work_manifest = previous; _ }) )
-      when prepares_a_job previous.Wm.steps
-           && prepares_a_job work_manifest.Wm.steps
-           && CCString.equal previous.Wm.base_ref work_manifest.Wm.base_ref
-           && CCString.equal previous.Wm.branch_ref work_manifest.Wm.branch_ref -> Some compute_node
-    | (Some _ | None), _ -> None
+    let module Cap = C.Capabilities in
+    let module Rp = Terrat_vcs_event_evaluator2_batch.Run_params in
+    let { Cap.environment; runs_on; used_workspaces; _ } = compute_node.C.capabilities in
+    Merge_steps.permits merge_steps work_manifest.Wm.steps
+    && compute_node.C.state = C.State.Starting
+    && CCString.equal compute_node.C.capabilities.Cap.sha work_manifest.Wm.branch_ref
+    && Rp.equal (environment, runs_on) (work_manifest.Wm.environment, work_manifest.Wm.runs_on)
+    &&
+    (* The budget is the cap the repo config gives now, and not one the node
+       carries.  A node that the steps preparing a job made has no cap, because
+       those steps run before there is a config to read, and a plan that joined
+       it would then have no bound at all. *)
+    match max_workspaces with
+    | Some max_workspaces -> used_workspaces + workspaces_of work_manifest <= max_workspaces
+    | None -> true
 
-  (* Give a compute node a second work manifest.
+  (* Give a compute node a second work manifest.  Only
+     [node_that_can_take_it] may answer for this, because it is what proves the
+     node owes nothing.
 
-     This is safe only because of an order.  The index
-     [compute_node_work_wm_state_idx] permits one row in the state [created] per
-     node, and [upsert_compute_node_work.sql] conflicts on
-     (compute_node, work_manifest), which is a different index, so a breach here
-     raises a raw unique violation and fails the whole results transaction.
-
-     The order that keeps it safe: the [Result] branch of [run] calls
-     [update_state_completed] for the step that just finished before the
-     evaluation can reach the [create] branch of the step after it, and that
-     write fires the trigger [work_manifest_compute_node_work_state_trigger],
-     which takes the finished row out of [created].  The node therefore owes
-     nothing when this row goes in.  The step after it is behind a data
-     dependency on the one before, so the two cannot be created together. *)
-  let attach_to_compute_node s compute_node { Wm.id; _ } db =
+     The work manifest that ran before this one leaves the state [created] on its
+     own.  The [Result] branch of [run] calls [update_state_completed] for it,
+     and that write fires the trigger
+     [work_manifest_compute_node_work_state_trigger], which moves the row of the
+     node out of [created]. *)
+  let attach_to_compute_node ~max_workspaces s compute_node ({ Wm.id; _ } as work_manifest) db =
     let module C = Tjc.Compute_node in
+    let module Cap = C.Capabilities in
     time_it
       s
       (fun m log_id time ->
@@ -270,23 +271,69 @@ struct
           id
           time)
       (fun () ->
+        let open Irm in
         S.Job_context.Compute_node.add_work
           ~request_id:(Builder.log_id s)
           ~compute_node_id:compute_node.C.id
           ~work_manifest:id
-          db)
+          db
+        >>= fun () ->
+        S.Job_context.Compute_node.update_capabilities
+          ~request_id:(Builder.log_id s)
+          ~compute_node_id:compute_node.C.id
+          db
+          {
+            compute_node.C.capabilities with
+            Cap.max_workspaces;
+            used_workspaces =
+              compute_node.C.capabilities.Cap.used_workspaces + workspaces_of work_manifest;
+          })
 
-  (* Give each new work manifest a compute node.  [reuse] answers, for one work
-     manifest, whether the compute node of this evaluation may perform it as
-     well.  A step that prepares a job says yes for the node that just finished
-     the step before it on the same refs, which is what makes those steps one
-     action run.  A plan and an apply always say no. *)
-  let make_compute_nodes ~reuse s wms db =
+  (* The compute node of this evaluation, when that node can take this work
+     manifest as well.
+
+     Ask the database, and not the node in the store.  That node is a snapshot of
+     the transaction that read it, and an evaluation that commits something
+     durable runs again in a transaction of its own, so by the time it makes the
+     next work manifest the snapshot is a transaction old.  The action polls in
+     that gap, and a poll that finds the node owes nothing and its work manifest
+     is over ends the node.  A work manifest that joined on the snapshot would
+     join a run that has gone, and nothing would ever perform it.
+
+     A node owes one work manifest at a time.  The index
+     [compute_node_work_wm_state_idx] permits one row in the state [created] for
+     each node, so a second row raises a unique violation and fails the whole
+     transaction.  The read of the outstanding row is what keeps that from
+     happening.  It sees the rows of this transaction as well, so one create that
+     makes a work manifest for each batch also gives at most one of them to the
+     node. *)
+  let node_that_can_take_it ~merge_steps ~max_workspaces s compute_node work_manifest db =
+    let module C = Tjc.Compute_node in
+    let open Irm in
+    match compute_node with
+    | Some { C.id = compute_node_id; _ } -> (
+        S.Job_context.Compute_node.query ~request_id:(Builder.log_id s) ~compute_node_id db
+        >>= function
+        | Some compute_node when can_run ~merge_steps ~max_workspaces compute_node work_manifest
+          -> (
+            S.Job_context.Compute_node.query_work ~request_id:(Builder.log_id s) ~compute_node_id db
+            >>| function
+            | Some _ -> None
+            | None -> Some compute_node)
+        | Some _ | None -> Abbs_future_combinators.return_ok None)
+    | None -> Abbs_future_combinators.return_ok None
+
+  (* Give each new work manifest a compute node.  A work manifest joins the
+     compute node of this evaluation when that node can take it, and gets a node
+     of its own when it cannot. *)
+  let make_compute_nodes ~compute_node ~merge_steps ~max_workspaces s wms db =
+    let open Irm in
     Abbs_future_combinators.List_result.iter
       ~f:(fun wm ->
-        match reuse wm with
-        | Some compute_node -> attach_to_compute_node s compute_node wm db
-        | None -> create_compute_node s wm db)
+        node_that_can_take_it ~merge_steps ~max_workspaces s compute_node wm db
+        >>= function
+        | Some compute_node -> attach_to_compute_node ~max_workspaces s compute_node wm db
+        | None -> create_compute_node ~max_workspaces s wm db)
       wms
 
   let update_state_completed s name work_manifest_id db =
@@ -377,7 +424,7 @@ struct
       ~branch_ref
       ~branch
       ~create
-      ~reuse_compute_node
+      ~max_workspaces
       ~initiate
       ~fail
       ~result
@@ -494,25 +541,26 @@ struct
                     (* Read [Keys.compute_node], and not [Keys.compute_node_id].
                        The server makes these work manifests while it reads the
                        results of a run, and the results entry point adds the
-                       node to the store, not its id. *)
+                       node to the store, not its id.
+
+                       Never read the work manifest event here.  The chain of
+                       layers evaluates the next layer with no event, and the
+                       node of that evaluation must still be able to take it. *)
                     fetch Keys.compute_node
                     >>= fun compute_node ->
-                    fetch Keys.work_manifest_event
-                    >>= fun work_manifest_event ->
-                    (* Read the configuration that the repository holds, and not
-                       the one that the config builder makes.  A step that
-                       prepares a job runs before a built configuration exists,
-                       and this value must be the same for each step of a job. *)
+                    (* Read the configuration that the repository holds, and
+                       not the one that the config builder makes.  A step that
+                       prepares a job runs before a built configuration
+                       exists. *)
                     fetch Keys.repo_config_raw'
                     >>= fun (_, repo_config_raw) ->
-                    let reuse =
-                      reuse_permitted
-                        repo_config_raw
-                        reuse_compute_node
-                        compute_node
-                        work_manifest_event
-                    in
-                    Builder.run_db s ~f:(fun db -> make_compute_nodes ~reuse s wms db)
+                    (* Ask for the budget only here.  A step that prepares a job
+                       runs before there is a repo config to read it from. *)
+                    max_workspaces ()
+                    >>= fun max_workspaces ->
+                    let merge_steps = merge_steps_of repo_config_raw in
+                    Builder.run_db s ~f:(fun db ->
+                        make_compute_nodes ~compute_node ~merge_steps ~max_workspaces s wms db)
                     >>? fun () -> Error (`Suspend_eval name))
             | wms when all_wms_completed wms ->
                 Logs.info (fun m ->

@@ -2223,6 +2223,48 @@ struct
                   Builder.eval s' Keys.maybe_complete_job)
           | None -> assert false)
 
+    (* Give a work manifest a node of its own, and move its row of
+       [compute_node_work] to that node.  Move the row, and never write a second
+       one: the index [compute_node_work_work_manifest_idx] is unique, so a work
+       manifest has one node and one row.
+
+       The new node takes the capabilities of the old one, because the two run the
+       same work in the same way.  It takes the charge of this work manifest
+       alone.  The old node carried what every work manifest it performed had
+       spent, and none of that is the charge of this one. *)
+    let move_work_manifest_to_its_own_node s compute_node work_manifest =
+      let module C = Tjc.Compute_node in
+      let module Wm = Terrat_work_manifest3 in
+      let { Wm.id = work_manifest_id; changes; _ } = work_manifest in
+      let open Irm in
+      Builder.run_db s ~f:(fun db ->
+          time_it
+            s
+            (fun m log_id time ->
+              m
+                "%s : COMPUTE_NODE : MOVE_WORK : from = %a : work_manifest_id = %a : time=%f"
+                log_id
+                Uuidm.pp
+                compute_node.C.id
+                Uuidm.pp
+                work_manifest_id
+                time)
+            (fun () ->
+              S.Job_context.Compute_node.create
+                ~request_id:(Builder.log_id s)
+                ~capabilities:
+                  {
+                    compute_node.C.capabilities with
+                    C.Capabilities.used_workspaces = CCList.length changes;
+                  }
+                db
+              >>= fun { C.id = compute_node_id; _ } ->
+              S.Job_context.Compute_node.move_work
+                ~request_id:(Builder.log_id s)
+                ~compute_node_id
+                ~work_manifest:work_manifest_id
+                db))
+
     let terminate_compute_node s compute_node =
       let module C = Tjc.Compute_node in
       Builder.run_db s ~f:(fun db ->
@@ -2455,23 +2497,53 @@ struct
                   terminate_compute_node s compute_node
                   >>| fun () -> Wmc.Work_manifest_done { Wmd.type_ = `Done }
               | Some { Cw.work_manifest = work_manifest_id; work; _ } -> (
-                  Builder.run_db s ~f:(fun db ->
-                      time_it
-                        s
-                        (fun m log_id time ->
-                          m
-                            "%s : WORK_MANIFEST : QUERY : id = %a : time=%f"
-                            log_id
-                            Uuidm.pp
-                            work_manifest_id
-                            time)
-                        (fun () ->
-                          S.Work_manifest.query ~request_id:(Builder.log_id s) db work_manifest_id))
+                  Builder.run_db s ~f:(fun db -> query_work_manifest s db work_manifest_id)
+                  >>= fun work_manifest ->
+                  (* A work manifest that joined this node never reached the
+                     dispatcher, so the dispatcher cannot hold it back.  Ask the
+                     dispatcher's own question here instead: may this work
+                     manifest run now?  A plan waits for an apply that runs on
+                     its dirspaces, and two applies never run on one dirspace at
+                     once.
+
+                     Ask it of a work manifest in the state [queued] only.  That
+                     state is what tells the two apart.  The dispatcher moves a
+                     work manifest it starts to [running] before the action of the
+                     node can poll, and it asked these questions itself to pick
+                     it.  A work manifest that joined a node stays [queued] until
+                     [make_work_manifest_response] below makes its response.
+
+                     A node never waits.  When the answer is no, give the work
+                     manifest a node of its own in the state [queued], end this
+                     node, and answer done.  The dispatcher then starts it in the
+                     usual way once it is free. *)
+                  (match work_manifest with
+                    | Some ({ Wm.state = Wm.State.Queued; _ } as work_manifest) ->
+                        Builder.run_db s ~f:(fun db ->
+                            S.Db.work_manifest_can_run
+                              ~request_id:(Builder.log_id s)
+                              ~work_manifest_id
+                              db)
+                        >>| fun can_run -> if can_run then `Can_run else `Blocked work_manifest
+                    | Some _ | None -> Abbs_future_combinators.return_ok `Can_run)
                   >>= function
-                  | Some work_manifest ->
-                      fetch Keys.compute_node_offering
-                      >>= fun offering ->
-                      (* Compare the sha that the runner is offering vs the sha that
+                  | `Blocked work_manifest ->
+                      Logs.info (fun m ->
+                          m
+                            "%s : COMPUTE_NODE : WORK_MANIFEST_BLOCKED : work_manifest_id = %a"
+                            (Builder.log_id s)
+                            Uuidm.pp
+                            work_manifest_id);
+                      move_work_manifest_to_its_own_node s compute_node work_manifest
+                      >>= fun () ->
+                      terminate_compute_node s compute_node
+                      >>| fun () -> Wmc.Work_manifest_done { Wmd.type_ = `Done }
+                  | `Can_run -> (
+                      match work_manifest with
+                      | Some work_manifest ->
+                          fetch Keys.compute_node_offering
+                          >>= fun offering ->
+                          (* Compare the sha that the runner is offering vs the sha that
                          the compute node is capable of operating against.
 
                          These should match, however it is possible they don't because:
@@ -2514,16 +2586,16 @@ struct
                          manifest, if the base_ref and branch_ref are the same, we
                          will assume we are in (2) and run.
                        *)
-                      if
-                        compute_node.C.capabilities.C.Capabilities.sha = offering.Offering.sha
-                        || CCString.equal work_manifest.Wm.base_ref work_manifest.Wm.branch_ref
-                      then handle_sha_match s compute_node work_manifest work offering
-                      else handle_sha_mismatch s compute_node work_manifest_id offering
-                  | None ->
-                      (* If anything failed, be sure to return to the querying node to give up. *)
-                      Logs.info (fun m -> m "%s : UNKNOWN_WORK_MANIFEST" (Builder.log_id s));
-                      Abbs_future_combinators.return_ok
-                        (Wmc.Work_manifest_done { Wmd.type_ = `Done }))))
+                          if
+                            compute_node.C.capabilities.C.Capabilities.sha = offering.Offering.sha
+                            || CCString.equal work_manifest.Wm.base_ref work_manifest.Wm.branch_ref
+                          then handle_sha_match s compute_node work_manifest work offering
+                          else handle_sha_mismatch s compute_node work_manifest_id offering
+                      | None ->
+                          (* If anything failed, be sure to return to the querying node to give up. *)
+                          Logs.info (fun m -> m "%s : UNKNOWN_WORK_MANIFEST" (Builder.log_id s));
+                          Abbs_future_combinators.return_ok
+                            (Wmc.Work_manifest_done { Wmd.type_ = `Done })))))
 
     let work_manifest_event_job =
       run ~name:"work_manifest_event_job" (fun s { Bs.Fetcher.fetch } ->

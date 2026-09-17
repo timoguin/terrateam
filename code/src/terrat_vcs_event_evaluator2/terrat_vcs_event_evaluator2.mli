@@ -1,6 +1,7 @@
 module Batch : module type of Terrat_vcs_event_evaluator2_batch
 module Work_set : module type of Terrat_vcs_event_evaluator2_work_set
 module Ee2_fc : module type of Terrat_vcs_event_evaluator2_fc
+module Merge_steps : module type of Terrat_vcs_event_evaluator2_merge_steps
 module Exec : module type of Abb_bounded_suspendable_executor.Make (Abb) (CCString)
 
 val create_exec : slots:int -> unit -> Exec.t Abb.Future.t

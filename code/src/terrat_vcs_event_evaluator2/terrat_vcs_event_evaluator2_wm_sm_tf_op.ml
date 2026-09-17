@@ -481,6 +481,19 @@ struct
       commit_checks
     >>| fun () -> work_manifests
 
+  (* The workspaces one action run may do.  A batch caps one work manifest, and a
+     node that ran several would pass that cap, so the cap holds for the whole
+     run.  Read the config here and not in [Wm_sm], because a step that prepares
+     a job runs before there is a config to read. *)
+  let max_workspaces { Bs.Fetcher.fetch } () =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let open Irm in
+    fetch Keys.repo_config
+    >>| fun repo_config ->
+    let batch_runs = V1.batch_runs repo_config in
+    if batch_runs.V1.Batch_runs.enabled then Some batch_runs.V1.Batch_runs.max_workspaces_per_batch
+    else None
+
   module Plan = struct
     let eq base_ref' branch_ref' { Wm.base_ref; branch_ref; steps; _ } =
       base_ref = S.Api.Ref.to_string base_ref'
@@ -793,7 +806,7 @@ struct
       | Wmr.Work_manifest_build_result_failure _ -> assert false
       | Wmr.Work_manifest_build_tree_result _ -> assert false
 
-    let run ~dest_branch_ref ~branch_ref ~branch ~name =
+    let run ~dest_branch_ref ~branch_ref ~branch ~name s fetcher =
       Wm_sm.run
         ~name
         ~eq:(eq dest_branch_ref branch_ref)
@@ -801,10 +814,12 @@ struct
         ~branch_ref
         ~branch
         ~create
-        ~reuse_compute_node:Wm_sm.no_compute_node_reuse
+        ~max_workspaces:(max_workspaces fetcher)
         ~initiate
         ~fail
         ~result
+        s
+        fetcher
   end
 
   module Apply = struct
@@ -1012,7 +1027,7 @@ struct
 
     let result = Plan.result
 
-    let run ~dest_branch_ref ~branch_ref ~branch ~name =
+    let run ~dest_branch_ref ~branch_ref ~branch ~name s fetcher =
       Wm_sm.run
         ~name
         ~eq:(eq dest_branch_ref branch_ref)
@@ -1020,9 +1035,11 @@ struct
         ~branch_ref
         ~branch
         ~create
-        ~reuse_compute_node:Wm_sm.no_compute_node_reuse
+        ~max_workspaces:(max_workspaces fetcher)
         ~initiate
         ~fail
         ~result
+        s
+        fetcher
   end
 end
