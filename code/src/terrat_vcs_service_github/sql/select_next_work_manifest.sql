@@ -142,6 +142,18 @@ rejected_work_manifests as (
 -- work_manifest, and compute_nodes joins on its primary key.  Every work
 -- manifest therefore still contributes one row, and the ranking of the others
 -- does not move.
+--
+-- $work_manifest_id gives the query a second mode.  When it is null the query
+-- answers the dispatcher: which work manifest starts the next action run.  When
+-- it is set the query answers the poll of a compute node: may this one work
+-- manifest run now.  The two modes share every rule above, which is the point.
+-- A rule written twice would drift, and the rules here decide whether two
+-- applies can touch one dirspace at the same time.
+--
+-- The second mode drops two conditions of the first, and only those two.  It
+-- does not rank, because it asks about one work manifest and not about the next
+-- one of a repository.  It does not ask the state of the compute node, because
+-- the node that asks is running by definition.
 next_work_manifests as (
     select
         wms.id,
@@ -153,12 +165,15 @@ next_work_manifests as (
     left join compute_nodes as cn on cn.id = cnw.compute_node
     where wms.state = 'queued'
           and rwm.id is null
-          and (cn.id is null or cn.state = 'queued')
+          and ($work_manifest_id is not null
+               or cn.id is null
+               or cn.state = 'queued')
+          and ($work_manifest_id is null or wms.id = $work_manifest_id)
 )
 select wm.id, nwm.compute_node from work_manifests as wm
 inner join next_work_manifests as nwm on nwm.id = wm.id
 left join flow_states
   on flow_states.id = wm.id
-where nwm.rn = 1 and wm.state = 'queued' and ((flow_states.id is null and $new_age) or (flow_states.id is not null and not $new_age))
+where ($work_manifest_id is not null or nwm.rn = 1) and wm.state = 'queued' and ((flow_states.id is null and $new_age) or (flow_states.id is not null and not $new_age))
 for update of wm skip locked
 limit 1

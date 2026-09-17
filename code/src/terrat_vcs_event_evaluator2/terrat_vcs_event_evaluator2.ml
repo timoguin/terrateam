@@ -3,6 +3,7 @@ module Work_set = Terrat_vcs_event_evaluator2_work_set
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Fc = Abbs_future_combinators
 module Irm = Fc.Infix_result_monad
+module Merge_steps = Terrat_vcs_event_evaluator2_merge_steps
 module Tjc = Terrat_job_context
 module Exec = Abb_bounded_suspendable_executor.Make (Abb) (CCString)
 
@@ -209,7 +210,18 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                           S.Job_context.Compute_node.create
                             ~request_id
                             ~capabilities:
-                              { Tjc.Compute_node.Capabilities.flags = []; sha = wm.Wm.branch_ref }
+                              {
+                                Tjc.Compute_node.Capabilities.flags = [];
+                                sha = wm.Wm.branch_ref;
+                                environment = wm.Wm.environment;
+                                runs_on = wm.Wm.runs_on;
+                                (* This node is for one work manifest that was
+                                   made before the server made a node with each
+                                   one.  It takes no more work, so it needs no
+                                   budget. *)
+                                max_workspaces = None;
+                                used_workspaces = CCList.length wm.Wm.changes;
+                              }
                             db
                           >>= fun { Tjc.Compute_node.id = compute_node_id; _ } ->
                           S.Job_context.Compute_node.add_work
@@ -738,6 +750,51 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Terrat_vcs_provider2.Target.Drift { repo; _ } ->
           store |> Keys.Key.add Keys.account account |> Keys.Key.add Keys.repo repo
     in
+    (* The action asks for work again as soon as it has the answer to a result,
+       and an ask with no work ends its node.  Work for the next layer is of no
+       use to that node after the ask.  In the background it cannot come before
+       the ask either: it reads the repo config and writes commit checks first,
+       and the ask is one round trip away.
+
+       So run it before the answer while a node is still able to take it, and put
+       it in the background when none is, which is what every run did before
+       this. *)
+    let a_node_waits_for_work s =
+      let module C = Tjc.Compute_node in
+      match Hmap.find Keys.compute_node (Builder.State.orig_store s) with
+      | Some (Ok (Some { C.state = C.State.Starting; _ })) -> true
+      | Some (Ok (Some { C.state = C.State.(Queued | Running | Terminated); _ }))
+      | Some (Ok None)
+      | Some (Error _)
+      | None -> false
+    in
+    let run_next_layer_eval s t =
+      let open Abb.Future.Infix_monad in
+      if a_node_waits_for_work s then
+        (* Wait for the next layer, but take its outcome away.  A background
+           evaluation could not change the answer of this result, because nothing
+           awaited it, and this one must not change the answer either.  A failure
+           of the next layer is a failure of that layer alone. *)
+        Abb.Future.await_bind
+          (function
+            | `Det _ -> Abb.Future.return ()
+            | `Exn (exn, bt) ->
+                Logs.err (fun m -> m "%s : RUN_NEXT_LAYER : %s" request_id (Printexc.to_string exn));
+                CCOption.iter
+                  (fun bt ->
+                    Logs.err (fun m ->
+                        m
+                          "%s : RUN_NEXT_LAYER : BACKTRACE: %s"
+                          request_id
+                          (Printexc.raw_backtrace_to_string bt)))
+                  bt;
+                Abb.Future.return ()
+            | `Aborted ->
+                Logs.err (fun m -> m "%s : RUN_NEXT_LAYER : ABORTED" request_id);
+                Abb.Future.return ())
+          t
+      else Abb.Future.fork t >>| CCFun.const ()
+    in
     let run =
       let open Irm in
       Logs.info (fun m ->
@@ -829,10 +886,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               eval_with_reruns [])
           >>= function
           | Ok (s, work_manifest, job, `Ok _) ->
-              (* We've calculated the API response, so background running the next
-             layer to not holdup giving the response back *)
               let open Abb.Future.Infix_monad in
-              Abb.Future.fork
+              run_next_layer_eval
+                s
                 (Fc.with_finally
                    (fun () ->
                      with_conn storage ~f:(fun db ->
@@ -867,7 +923,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>= fun _ -> Abbs_future_combinators.return_ok (`Ok ())
           | Ok (s, work_manifest, job, `Suspend_eval _) ->
               let open Abb.Future.Infix_monad in
-              Abb.Future.fork
+              run_next_layer_eval
+                s
                 (Fc.with_finally
                    (fun () ->
                      with_conn storage ~f:(fun db ->

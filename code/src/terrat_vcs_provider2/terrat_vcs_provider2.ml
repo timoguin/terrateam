@@ -527,6 +527,14 @@ module type S = sig
       result
       Abb.Future.t
 
+    (* Whether a work manifest may run now, by the rules the dispatcher applies:
+       a plan waits for an apply that runs on its dirspaces, and two applies
+       never run on one dirspace at once.  A compute node asks this before it
+       takes work, because work that a node performs never reaches the
+       dispatcher. *)
+    val work_manifest_can_run :
+      request_id:string -> work_manifest_id:Uuidm.t -> t -> (bool, [> `Error ]) result Abb.Future.t
+
     val query_flow_state :
       request_id:string -> t -> Uuidm.t -> (string option, [> `Error ]) result Abb.Future.t
 
@@ -1067,10 +1075,30 @@ module type S = sig
         Terrat_job_context.Compute_node.State.t ->
         (unit, [> `Error ]) result Abb.Future.t
 
+      (* What the run of this node was started with, and what it has spent of its
+         budget.  The server writes it when it makes the node, and again when a
+         work manifest joins. *)
+      val update_capabilities :
+        request_id:string ->
+        compute_node_id:Uuidm.t ->
+        Db.t ->
+        Terrat_job_context.Compute_node.Capabilities.t ->
+        (unit, [> `Error ]) result Abb.Future.t
+
       (* Link a work manifest to a compute node before the response for the
          action exists.  The row is written with no work.  [set_work] fills it
          on the first poll. *)
       val add_work :
+        request_id:string ->
+        compute_node_id:Uuidm.t ->
+        work_manifest:Uuidm.t ->
+        Db.t ->
+        (unit, [> `Error ]) result Abb.Future.t
+
+      (* Move a work manifest to another compute node.  The index on
+         [work_manifest] is unique, so a work manifest has one node and one row.
+         The row moves; it is never copied. *)
+      val move_work :
         request_id:string ->
         compute_node_id:Uuidm.t ->
         work_manifest:Uuidm.t ->

@@ -14,7 +14,10 @@
 
 module Batch = Terrat_vcs_event_evaluator2.Batch
 module Dsf = Terrat_change.Dirspaceflow
+module Merge_steps = Terrat_vcs_event_evaluator2.Merge_steps
+module Step = Terrat_work_manifest3.Step
 module V1 = Terrat_base_repo_config_v1
+module Ms = V1.Batch_runs.Merge_steps
 module We = V1.Workflows.Entry
 
 let dsf ?environment ?runs_on ~dir ~workspace () =
@@ -218,6 +221,54 @@ let test_every_dirspace_appears_exactly_once =
       if dirspaces_of batches <> expected then
         failwith "batches did not contain exactly the input dirspaces")
 
+(* The ladder of [batch_runs.merge_steps]: each value permits the steps of the value before
+   it, and one step more.  The table pins every pair.  A wrong answer either loses an action
+   run or gives a step the environment of a run that it must not join. *)
+let test_merge_steps_ladder =
+  Oth.test ~name:"merge_steps: the step ladder" (fun _ ->
+      CCList.iter
+        (fun (merge_steps, step, expected) ->
+          Oth.Assert.true_
+            ~fail_msg:(Ms.show merge_steps ^ " " ^ Step.to_string step)
+            (Merge_steps.permits merge_steps [ step ] = expected))
+        [
+          (Ms.None, Step.Build_tree, false);
+          (Ms.None, Step.Build_config, false);
+          (Ms.None, Step.Index, false);
+          (Ms.None, Step.Plan, false);
+          (Ms.None, Step.Apply, false);
+          (Ms.None, Step.Unsafe_apply, false);
+          (Ms.Setup, Step.Build_tree, true);
+          (Ms.Setup, Step.Build_config, true);
+          (Ms.Setup, Step.Index, true);
+          (Ms.Setup, Step.Plan, false);
+          (Ms.Setup, Step.Apply, false);
+          (Ms.Setup, Step.Unsafe_apply, false);
+          (Ms.Setup_and_plan, Step.Build_tree, true);
+          (Ms.Setup_and_plan, Step.Build_config, true);
+          (Ms.Setup_and_plan, Step.Index, true);
+          (Ms.Setup_and_plan, Step.Plan, true);
+          (Ms.Setup_and_plan, Step.Apply, false);
+          (Ms.Setup_and_plan, Step.Unsafe_apply, false);
+          (Ms.All, Step.Build_tree, true);
+          (Ms.All, Step.Build_config, true);
+          (Ms.All, Step.Index, true);
+          (Ms.All, Step.Plan, true);
+          (Ms.All, Step.Apply, true);
+          (Ms.All, Step.Unsafe_apply, true);
+        ];
+      ())
+
+(* A work manifest of no step, or of more than one, takes an action run of its own.  The rule
+   answers for one step. *)
+let test_merge_steps_only_one_step_joins =
+  Oth.test ~name:"merge_steps: only one step joins" (fun _ ->
+      Oth.Assert.true_ ~fail_msg:"no step" (not (Merge_steps.permits Ms.All []));
+      Oth.Assert.true_
+        ~fail_msg:"two steps"
+        (not (Merge_steps.permits Ms.All [ Step.Build_tree; Step.Plan ]));
+      ())
+
 let test =
   Oth.parallel
     [
@@ -230,6 +281,8 @@ let test =
       test_single_dir_gets_one_workspace_per_batch;
       test_partition_is_deterministic;
       test_every_dirspace_appears_exactly_once;
+      test_merge_steps_ladder;
+      test_merge_steps_only_one_step_joins;
     ]
 
 let () =

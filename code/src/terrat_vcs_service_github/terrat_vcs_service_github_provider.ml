@@ -482,7 +482,29 @@ module Db = struct
         (* compute_node *)
         Ret.(option uuid)
         /^ read [%blob "sql/select_next_work_manifest.sql"]
-        /% Var.boolean "new_age")
+        /% Var.boolean "new_age"
+        /% Var.(option (uuid "work_manifest_id")))
+
+    (* The same query, asked about one work manifest.
+
+       Keep it a binding of its own, and do not "simplify" it away.  A
+       [Typed_sql] value carries the row of errors that its uses give it, so two
+       call sites of one binding must agree on that row.  The dispatcher's call
+       handles [Pgsql_pool.err] and this one does not, so sharing the binding
+       fails to compile at the dispatcher's call, which is code this RFD did not
+       touch. *)
+    let select_work_manifest_can_run =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* id *)
+        Ret.uuid
+        //
+        (* compute_node *)
+        Ret.(option uuid)
+        /^ read [%blob "sql/select_next_work_manifest.sql"]
+        /% Var.boolean "new_age"
+        /% Var.(option (uuid "work_manifest_id")))
 
     let select_flow_state_query = read [%blob "sql/select_flow_data.sql"]
 
@@ -1744,7 +1766,8 @@ module Db = struct
                 db
                 ~f:(fun id compute_node -> (id, compute_node))
                 Sql.select_next_work_manifest
-                new_age))
+                new_age
+                None))
       >>= function
       | [] -> Abbs_future_combinators.return_ok None
       | [ (id, compute_node) ] ->
@@ -1771,6 +1794,24 @@ module Db = struct
         Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s: ERROR : %a" request_id Pgsql_pool.pp_err err);
+        Abbs_future_combinators.return_err `Error
+    | Error `Error -> Abbs_future_combinators.return_err `Error
+
+  (* The same query as the dispatcher, asked about one work manifest.  The rules
+     that decide it live in that one file, so the two cannot drift. *)
+  let work_manifest_can_run ~request_id ~work_manifest_id db =
+    let open Abb.Future.Infix_monad in
+    Pgsql_io.Prepared_stmt.fetch
+      db
+      ~f:(fun id compute_node -> (id, compute_node))
+      Sql.select_work_manifest_can_run
+      true
+      (Some work_manifest_id)
+    >>= function
+    | Ok [] -> Abbs_future_combinators.return_ok false
+    | Ok (_ :: _) -> Abbs_future_combinators.return_ok true
+    | Error (#Pgsql_io.err as err) ->
+        Logs.err (fun m -> m "%s : WORK_MANIFEST_CAN_RUN : %a" request_id Pgsql_io.pp_err err);
         Abbs_future_combinators.return_err `Error
     | Error `Error -> Abbs_future_combinators.return_err `Error
 
@@ -6017,6 +6058,20 @@ module Job_context = struct
         /% Var.uuid "compute_node_id"
         /% Var.(ud (text "state") string_of_state))
 
+    let move_compute_node_work =
+      Pgsql_io.Typed_sql.(
+        sql
+        /^ read [%blob "sql/move_compute_node_work.sql"]
+        /% Var.uuid "compute_node_id"
+        /% Var.uuid "work_manifest")
+
+    let update_compute_node_capabilities =
+      Pgsql_io.Typed_sql.(
+        sql
+        /^ read [%blob "sql/update_compute_node_capabilities.sql"]
+        /% Var.uuid "compute_node_id"
+        /% Var.(ud (json "capabilities") Tjc.Compute_node.Capabilities.to_yojson))
+
     let upsert_compute_node_work =
       Pgsql_io.Typed_sql.(
         sql
@@ -6353,6 +6408,20 @@ module Job_context = struct
               m "%s : COMPUTE_NODE : UPDATE_STATE : %a" request_id Pgsql_io.pp_err err);
           Abbs_future_combinators.return_err `Error
 
+    let update_capabilities ~request_id ~compute_node_id db capabilities =
+      let open Abb.Future.Infix_monad in
+      Pgsql_io.Prepared_stmt.execute
+        db
+        Sql.update_compute_node_capabilities
+        compute_node_id
+        capabilities
+      >>= function
+      | Ok () -> Abbs_future_combinators.return_ok ()
+      | Error (#Pgsql_io.err as err) ->
+          Logs.err (fun m ->
+              m "%s : COMPUTE_NODE : UPDATE_CAPABILITIES : %a" request_id Pgsql_io.pp_err err);
+          Abbs_future_combinators.return_err `Error
+
     let write_work ~request_id ~compute_node_id ~work_manifest db work =
       let open Abb.Future.Infix_monad in
       Pgsql_io.Prepared_stmt.execute
@@ -6365,6 +6434,15 @@ module Job_context = struct
       | Ok () -> Abbs_future_combinators.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : COMPUTE_NODE : WRITE_WORK : %a" request_id Pgsql_io.pp_err err);
+          Abbs_future_combinators.return_err `Error
+
+    let move_work ~request_id ~compute_node_id ~work_manifest db =
+      let open Abb.Future.Infix_monad in
+      Pgsql_io.Prepared_stmt.execute db Sql.move_compute_node_work compute_node_id work_manifest
+      >>= function
+      | Ok () -> Abbs_future_combinators.return_ok ()
+      | Error (#Pgsql_io.err as err) ->
+          Logs.err (fun m -> m "%s : COMPUTE_NODE : MOVE_WORK : %a" request_id Pgsql_io.pp_err err);
           Abbs_future_combinators.return_err `Error
 
     let add_work ~request_id ~compute_node_id ~work_manifest db =

@@ -40,6 +40,7 @@ module Db = struct
   let query_repo_config_json ~request_id db account ref_ = raise (Failure "nyi")
   let query_repo_tree ?base_ref ~request_id db accoutn ref_ = raise (Failure "nyi")
   let query_next_pending_work_manifest ?new_age ~request_id db = raise (Failure "nyi")
+  let work_manifest_can_run ~request_id ~work_manifest_id db = raise (Failure "nyi")
   let query_flow_state ~request_id db work_manifest_id = raise (Failure "nyi")
   let delete_flow_state ~request_id db work_manifest_id = raise (Failure "nyi")
   let query_pull_request_out_of_change_applies ~request_id db pull_request = raise (Failure "nyi")
@@ -215,6 +216,8 @@ module Job_context = struct
     let query_by_work_manifest ~request_id ~work_manifest_id db = raise (Failure "nyi")
     let query_work ~request_id ~compute_node_id db = raise (Failure "nyi")
     let update_state ~request_id ~compute_node_id db state = raise (Failure "nyi")
+    let update_capabilities ~request_id ~compute_node_id db capabilities = raise (Failure "nyi")
+    let move_work ~request_id ~compute_node_id ~work_manifest db = raise (Failure "nyi")
     let add_work ~request_id ~compute_node_id ~work_manifest db = raise (Failure "nyi")
     let set_work ~request_id ~compute_node_id ~work_manifest db work = raise (Failure "nyi")
   end

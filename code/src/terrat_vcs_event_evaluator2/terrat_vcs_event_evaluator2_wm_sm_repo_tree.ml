@@ -339,14 +339,8 @@ struct
       ~dest_branch_ref
       ~branch_ref
       ~branch
-      ~create
-        (* The tree builder is the first step that prepares a job, so no step of the
-         same refs can have finished before it and this answers no today.  The
-         refs are what decide it: an evaluation can carry the result of the tree
-         builder of the other branch, and that node is not this branch's.  It
-         takes the same rule as the steps after it, so the rule lives in one
-         place. *)
-      ~reuse_compute_node:Wm_sm.reuse_after_preparation_step
+      ~create (* A step that prepares a job has no dirspace, so it spends no budget. *)
+      ~max_workspaces:(fun () -> Abbs_future_combinators.return_ok None)
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~branch ~branch_ref)

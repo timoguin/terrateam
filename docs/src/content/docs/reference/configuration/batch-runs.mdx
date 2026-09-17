@@ -10,6 +10,7 @@ In a large repository, it may not be possible to run all workspaces in a single 
 batch_runs:
   enabled: false
   max_workspaces_per_batch: 1
+  merge_steps: setup
 ```
 
 ## Keys
@@ -17,12 +18,29 @@ batch_runs:
 |-----|------|-------------|
 | enabled | Boolean | Specifies whether the batch runs is enabled. Default is false. |
 | max_workspaces_per_batch | Integer | Maximum number of workspaces that each run can contain. Default is 1. |
+| merge_steps | String | The highest step that can join an action run that is already running. One of `none`, `setup`, `setup_and_plan` or `all`. Default is `setup`. |
 
 ## Functionality
 If batch runs is enabled, the following happens:
 
-1. Tree builder, config builder, and indexer all will be executed in their own action run.
-2. If the number of workspaces that can be run in a single action run is greater than `max_workspaces_per_batch`, additional action runs will be created with the additional workspaces.
+1. If the number of workspaces that can be run in a single action run is greater than `max_workspaces_per_batch`, additional action runs will be created with the additional workspaces.
+
+## Merging steps
+
+Terrateam puts the steps of a job into as few action runs as it can.  Many runs are slower than one run.  The `merge_steps` key gives the highest step that can join an action run that is already running.  A step above that value always starts an action run of its own.
+
+| Value | The steps that can join a run |
+|-------|-------------------------------|
+| `none` | None.  Each step gets an action run of its own. |
+| `setup` | The tree builder, the config builder and the indexer. |
+| `setup_and_plan` | The steps above, and a plan. |
+| `all` | The steps above, and an apply.  A run of many layers then uses one action run. |
+
+A step joins a run only if the run can take it.  The run must have the same environment, the same `runs_on` and the same refs, and the cap `max_workspaces_per_batch` holds for the full run.  A step that cannot join gets an action run of its own.
+
+The `enabled` key does not control `merge_steps`.  The `enabled` key controls `max_workspaces_per_batch` only.
+
+Terrateam reads `merge_steps` from the configuration file in the repository.  A configuration that the config builder makes cannot set it, because the tree builder, the config builder and the indexer run before that configuration exists.
 
 ## Considerations
 

@@ -3469,14 +3469,38 @@ let test_layers_of_contraction_is_not_quadratic =
    more.
 
    The assertion is the RATIO of the two, not a wall clock bound on either, so a
-   loaded machine moves both numbers together and the test does not become
-   flaky. *)
+   machine that is uniformly slower moves both numbers together and the ratio
+   stays where it is.
+
+   A pause does not move them together.  A pause only ever ADDS time, and the two
+   measurements are not the same size: the cheap one is about 0.005 seconds, so
+   0.010 seconds of pause triples it, while the same 0.010 seconds disappears
+   into a measurement of one second.  That is what failed this test on CI once,
+   with the cheap shape at 0.018 seconds against an expensive shape of 0.736
+   seconds -- a ratio of 40, which is below the 50 asserted here.
+
+   The pause is a major collection, and its arrival is not chance.  The expensive
+   shape runs first and leaves a large heap of garbage, so the collection of that
+   garbage falls due during the cheap shape that follows it.  Measured with
+   [Gc.quick_stat], a cheap sample that contains a major collection costs 0.0085
+   to 0.0160 seconds and one that does not costs 0.0054 to 0.0080 seconds.
+
+   Two things hold the measurement still.  [time_synthesize] collects the whole
+   heap BEFORE it starts the clock, so a sample does not pay for the garbage of
+   the sample before it; that alone took every one of 30 cheap samples to zero
+   major collections.  Then the cheap shape is measured [samples] times and the
+   FASTEST run is the one that counts, so an OS level pause, which no
+   [Gc.full_major] can prevent, has to hit every sample to survive the minimum.
+
+   The expensive shape needs no minimum.  A pause can only inflate it, and
+   inflating it only raises the ratio, which is the safe direction. *)
 let test_synthesize_config_skips_dirspaces_that_declare_nothing =
   Oth.test
     ~name:"synthesize_config skips the pair scan for a dirspace that declares nothing"
     (fun _ ->
       let module R = Terrat_base_repo_config_v1 in
       let dirspaces = 2000 in
+      let samples = 5 in
       let name i = Printf.sprintf "d%04d" i in
       let depends_on_previous i =
         if i = 0 then R.Dirs.Dir.make ()
@@ -3495,15 +3519,18 @@ let test_synthesize_config_skips_dirspaces_that_declare_nothing =
                  ])
             ()
       in
-      let time_synthesize make_dir =
+      let repo_config_of make_dir =
         let dirs = CCList.map (fun i -> (name i, make_dir i)) (CCList.range' 0 dirspaces) in
-        let repo_config =
-          derive
-            ~ctx
-            ~index:R.Index.empty
-            ~file_list:(CCList.map (fun (d, _) -> d ^ "/main.tf") dirs)
-            (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ()))
-        in
+        derive
+          ~ctx
+          ~index:R.Index.empty
+          ~file_list:(CCList.map (fun (d, _) -> d ^ "/main.tf") dirs)
+          (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ()))
+      in
+      let time_synthesize repo_config =
+        (* Before the clock, not during it: this pays off the garbage of whatever
+           ran before, so the collection of it cannot land inside the window. *)
+        Gc.full_major ();
         let start = Unix.gettimeofday () in
         let config =
           CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
@@ -3512,18 +3539,27 @@ let test_synthesize_config_skips_dirspaces_that_declare_nothing =
         ignore config;
         elapsed
       in
-      let every_dir_declares = time_synthesize depends_on_previous in
-      let no_dir_declares = time_synthesize (fun _ -> R.Dirs.Dir.make ()) in
-      (* Both shapes are measured in this one run on this one machine, so load
-         moves them together and the ratio between them is what stays put.  With
-         the skip the ratio is about 330; without it, when both shapes walk every
-         pair, it is about 20.  Fifty sits between the two with room on each
+      (* [synthesize_config] is a function of its arguments and holds no state
+         between calls, so each sample repeats the same work on the same input and
+         the samples differ only in what the machine did to them. *)
+      let fastest_synthesize repo_config =
+        CCList.fold_left
+          (fun fastest _ -> CCFloat.min fastest (time_synthesize repo_config))
+          infinity
+          (CCList.range' 0 samples)
+      in
+      let every_dir_declares = time_synthesize (repo_config_of depends_on_previous) in
+      let no_dir_declares = fastest_synthesize (repo_config_of (fun _ -> R.Dirs.Dir.make ())) in
+      (* With the skip the ratio is about 250; without it, when both shapes walk
+         every pair, it is about 20.  Fifty sits between the two with room on each
          side. *)
       Oth.Assert.true_
         ~fail_msg:
           (Printf.sprintf
-             "declaring nothing (%f s) must be far cheaper than declaring everything (%f s)"
+             "declaring nothing (%f s, fastest of %d) must be far cheaper than declaring \
+              everything (%f s)"
              no_dir_declares
+             samples
              every_dir_declares)
         (no_dir_declares *. 50.0 < every_dir_declares);
       ())

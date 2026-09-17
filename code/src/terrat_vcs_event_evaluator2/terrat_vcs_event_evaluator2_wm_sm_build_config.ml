@@ -324,7 +324,8 @@ struct
       ~branch_ref
       ~branch
       ~create:(create ~cache_ref)
-      ~reuse_compute_node:Wm_sm.reuse_after_preparation_step
+        (* A step that prepares a job has no dirspace, so it spends no budget. *)
+      ~max_workspaces:(fun () -> Abbs_future_combinators.return_ok None)
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~cache_ref ~branch_ref ~branch)

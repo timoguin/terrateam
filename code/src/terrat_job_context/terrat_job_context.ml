@@ -72,6 +72,21 @@ module Compute_node = struct
       | Terminated
   end
 
+  (* What the action run of a node was started with.  A work manifest can join a
+     node only when the node can run it, and this is what the server asks.
+
+     [environment] and [runs_on] are inputs of the workflow dispatch, and the VCS
+     reads them when it schedules the job, so they hold for the life of the run.
+     A work manifest that joins a run takes the values of that run, not its own.
+
+     [max_workspaces] is the budget of the run, from [batch_runs], and
+     [used_workspaces] is what the node has taken of it.  A batch caps one work
+     manifest today; a node that ran several would pass that cap, so the budget
+     holds for the whole run instead.
+
+     Every field but [sha] carries a default.  The column is jsonb, so a row
+     written before these fields existed must still decode: [to_capabilities]
+     turns a decode error into [None] and would drop the node without a word. *)
   module Capabilities = struct
     module Flags = struct
       type t = One_shot [@@deriving yojson, show, eq]
@@ -80,6 +95,10 @@ module Compute_node = struct
     type t = {
       flags : Flags.t list; [@default [ Flags.One_shot ]]
       sha : string;
+      environment : string option; [@default None]
+      runs_on : Yojson.Safe.t option; [@default None]
+      max_workspaces : int option; [@default None]
+      used_workspaces : int; [@default 0]
     }
     [@@deriving yojson, show, eq]
   end
