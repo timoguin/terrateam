@@ -1,0 +1,10 @@
+(library
+ (name sg_caps_legacy_conversion)
+ (libraries
+  containers
+  sg_capabilities_ops
+  sg_caps
+  sg_caps_match
+  sg_caps_trie
+  sgs_session_caps
+  sln))

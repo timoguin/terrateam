@@ -1,0 +1,6 @@
+(library
+ (name sg_caps)
+ (wrapped false)
+ (libraries containers sg_caps_trie)
+ (preprocess
+  (pps ppx_deriving.show)))
