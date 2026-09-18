@@ -26,7 +26,7 @@ latest_completed_plan as (
 -- which case if it is the most recent run for the exact same head and base sha
 -- as the current work manifest.
          and ((wm.pull_number is not null and gwm.pull_number = wm.pull_number)
-              or (wm.pull_number is null and gwm.pull_number is null and wm.base_sha = gwm.base_sha and wm.sha = wm.sha))
+              or (wm.pull_number is null and gwm.pull_number is null and wm.base_sha = gwm.base_sha and wm.sha = gwm.sha))
    order by gwm.created_at desc
    limit 1
 ),

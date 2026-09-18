@@ -16,7 +16,29 @@ latest_dirspace_work_manifests as (
         gwm.pull_number,
         wmr.path,
         wmr.workspace,
-        wmr.success
+        wmr.success,
+-- Whether this row is a run of this pull request at the refs the pull request
+-- has now.  A run of this pull request at older refs is still a run of this
+-- pull request, so it takes part in the ranking below and only this flag says
+-- that its refs moved.  Holding such a row out of the ranking instead, which is
+-- what this query did before, let any other pull request that ever touched the
+-- dirspace outrank it, and a moved ref was then reported as that pull request
+-- superseding the plan.
+        (gpr.pull_number is not null
+         and gpr.pull_number = $pull_number
+         and gwm.base_sha = $base_ref
+         and gwm.base_sha = gpr.base_sha
+         and (
+-- If the PR is not merged then we expect the branch ref to match the ref in the PR
+              (gpr.merged_at is null
+               and gpr.sha = $branch_ref
+               and gwm.sha = gpr.sha)
+-- If this pr is merged, then we expect the branch ref to match the latest pull request merged sha.
+              or
+              (gpr.merged_at is not null
+               and (gwm.sha = lprms.merged_sha
+                    or (gwm.sha = gpr.sha and gpr.merged_sha = lprms.merged_sha)))
+         )) as refs_match
     from dirspaces as ds
     inner join work_manifest_results as wmr
         on wmr.path = ds.path and wmr.workspace = ds.workspace
@@ -32,28 +54,6 @@ latest_dirspace_work_manifests as (
           and (gwm.pull_number is not distinct from $pull_number
                or gwm.run_type in ('autoapply', 'apply')
                or gpr.merged_at is not null)
-          and (
--- If this the PR is not merged then we expect the base and branch refs to match
--- the refs in the PR
-              (gpr.pull_number is not null
-               and gpr.pull_number = $pull_number
-               and gpr.merged_at is null
-               and gwm.base_sha = $base_ref
-               and gwm.base_sha = gpr.base_sha
-               and gpr.sha = $branch_ref
-               and gwm.sha = gpr.sha)
--- If this pr is merged, then we expect the branch ref to match the latest pull request merged sha.
-              or
-              (gpr.pull_number is not null
-               and gpr.pull_number = $pull_number
-               and gpr.merged_at is not null
-               and gwm.base_sha = $base_ref
-               and gwm.base_sha = gpr.base_sha
-               and (gwm.sha = lprms.merged_sha
-                    or (gwm.sha = gpr.sha and gpr.merged_sha = lprms.merged_sha)))
--- This row is for a PR but not ours, so we just want applies (which is validated through the test above)
-              or gpr.pull_number is distinct from $pull_number
-          )
 -- A work manifest affects the base branch when it runs or, for a merged pull
 -- request, when it is merged.  Rank by whichever happened later so that an
 -- overlapping dirspace applied or merged by another pull request after this
@@ -64,12 +64,16 @@ latest_dirspace_work_manifests as (
 select
     ds.path,
     ds.workspace,
--- The three arms below are the three arms of the where clause, in the same
--- order, so the reason reported is the one that actually excluded the row.
+-- The four arms below are the four arms of the where clause, in the same order,
+-- so the reason reported is the one that actually excluded the row.  The last
+-- arm is a successful run of this pull request whose refs moved: a plan exists,
+-- but not for the commit the pull request points at now.  That is the only arm
+-- the intra-PR hash rule can clear, and the caller is what applies it.
     case
         when ldswm.id is null then 'never_planned'
         when ldswm.pull_number is distinct from $pull_number then 'invalidated'
-        else 'last_run_failed'
+        when not ldswm.success then 'last_run_failed'
+        else 'never_planned'
     end,
     ldswm.pull_number
 from dirspaces as ds
@@ -83,3 +87,4 @@ left join plans
 where ldswm.id is null
       or ldswm.pull_number is distinct from $pull_number
       or not ldswm.success
+      or not ldswm.refs_match

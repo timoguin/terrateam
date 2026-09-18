@@ -34,6 +34,10 @@ module Metrics = struct
     let help = "Number of calls remaining in the rate limit window." in
     Rate_limit_remaining_histograph.v ~help ~namespace ~subsystem "rate_limit_remaining_count"
 
+  let rate_limit_err_total =
+    let help = "Number of calls abandoned because the rate limit wait exceeded the call timeout" in
+    Prmths.Counter.v ~help ~namespace ~subsystem "rate_limit_err_total"
+
   let fn_call_total =
     let help = "Number of calls of a function" in
     Prmths.Counter.v_label ~label_name:"fn" ~help ~namespace ~subsystem "fn_call_total"
@@ -174,6 +178,16 @@ type get_team_membership_in_org_err = Githubc2_abb.call_err [@@deriving show]
 type get_repo_collaborator_permission_err = Githubc2_abb.call_err [@@deriving show]
 type get_org_membership_err = Githubc2_abb.call_err [@@deriving show]
 
+(* [id] is the git blob sha, which is the same idea as the id the tree builder script gives, thus
+   the two fill the same column. *)
+module Tree_entry = struct
+  type t = {
+    path : string;
+    id : string;
+  }
+  [@@deriving show]
+end
+
 let max_get_tree_chunks = 20
 
 let is_secondary_rate_limit_error resp =
@@ -185,30 +199,37 @@ let is_secondary_rate_limit_error resp =
   | Some _, _, _ | None, Some "0", Some _ -> true
   | _, _, _ -> false
 
-let rate_limit_wait resp =
-  let headers = Openapi.Response.headers resp in
+let rate_limit_decision ~headers ~status ~now ~max_wait =
   let get k = CCList.Assoc.get ~eq:CCString.equal_caseless k headers in
-  if Openapi.Response.status resp = 403 then
+  let decide wait =
+    (* The reset instant can already have passed, which is a wait of zero rather
+       than a negative sleep. *)
+    let wait = CCFloat.max 0.0 wait in
+    if wait > max_wait then `Fail wait else `Wait wait
+  in
+  if status = 403 then
     match (get "retry-after", get "x-ratelimit-remaining", get "x-ratelimit-reset") with
-    | (Some ra as retry_after), _, _ ->
-        Logs.debug (fun m -> m "RATE_LIMIT : RETRY_AFTER : %s" ra);
-        Abb.Future.return
-          (CCOption.map_or
-             ~default:(Some thirty_seconds)
-             CCFun.(CCInt.of_string %> CCOption.map CCFloat.of_int)
-             retry_after)
-    | None, Some "0", Some retry_time -> (
-        Logs.debug (fun m -> m "RATE_LIMIT : RETRY_TIME : %s" retry_time);
-        match CCFloat.of_string_opt retry_time with
-        | Some retry_time ->
-            let open Abb.Future.Infix_monad in
-            Abb.Sys.time ()
-            >>= fun now ->
-            (* Make sure we wait at least one minute before retrying *)
-            Abb.Future.return (Some (retry_time -. now))
-        | None -> Abb.Future.return (Some thirty_seconds))
-    | _, _, _ -> Abb.Future.return None
-  else Abb.Future.return None
+    | Some retry_after, _, _ ->
+        decide
+        @@ CCOption.map_or ~default:thirty_seconds CCFloat.of_int (CCInt.of_string retry_after)
+    | None, Some "0", Some retry_time ->
+        decide
+        @@ CCOption.map_or
+             ~default:thirty_seconds
+             (fun reset -> reset -. now)
+             (CCFloat.of_string_opt retry_time)
+    | _, _, _ -> `No_wait
+  else `No_wait
+
+(* The rate limit headers, whichever shape the response arrived in.  A status the
+   generated client has no binding for comes back as [`Missing_response], so a
+   403 from an endpoint whose spec declares no 403 never arrives as [Ok] and
+   reading only that case would miss it. *)
+let rate_limit_headers = function
+  | Ok resp -> Some (Openapi.Response.headers resp, Openapi.Response.status resp)
+  | Error (`Missing_response resp) ->
+      Some (Openapi.Response.headers resp, Openapi.Response.status resp)
+  | Error _ -> None
 
 let get_rate_limit_remaining resp =
   let headers = Openapi.Response.headers resp in
@@ -226,50 +247,66 @@ let with_client config auth f =
   let client = create config auth in
   f client
 
-let retry_wait default_wait resp =
+(* [`Fail] cannot reach here: [call] turns it into [`Rate_limit_err] before the
+   loop gets as far as sleeping. *)
+let retry_wait ~max_wait default_wait res =
   let open Abb.Future.Infix_monad in
-  (* Get the retry determined by the header *)
-  rate_limit_wait resp
-  >>= function
-  | Some retry_after ->
-      Metrics.Call_retry_wait_histograph.observe Metrics.rate_limit_retry_wait_seconds retry_after;
-      (* But, we don't want to wait forever, so even though [retry_limit_wait]
-         gives us back whatever the API says, we want to put a cap on how long
-         we will wait so that we don't hold the system up forever.  If we have
-         to wait an hour for the rate limit, then this operation is done
-         anyways, so just move on. *)
-      Abb.Future.return (CCFloat.min thirty_seconds retry_after)
-  | None -> Abb.Future.return default_wait
+  CCOption.map_or
+    ~default:(Abb.Future.return default_wait)
+    (fun (headers, status) ->
+      Abb.Sys.time ()
+      >>= fun now ->
+      match rate_limit_decision ~headers ~status ~now ~max_wait with
+      | `Wait wait ->
+          Logs.debug (fun m -> m "RATE_LIMIT : WAIT : wait=%0.2f : max_wait=%0.2f" wait max_wait);
+          Metrics.Call_retry_wait_histograph.observe Metrics.rate_limit_retry_wait_seconds wait;
+          Abb.Future.return wait
+      | `Fail _ | `No_wait -> Abb.Future.return default_wait)
+    (rate_limit_headers res)
 
 let call ?(tries = 3) t req =
+  let max_wait = CCOption.get_or ~default:thirty_seconds (Githubc2_abb.call_timeout t) in
   Abbs_future_combinators.retry
     ~f:(fun () ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abb.Future.Infix_monad in
       Githubc2_abb.call t req
-      >>| fun resp ->
-      CCOption.iter (fun remaining ->
-          Metrics.Rate_limit_remaining_histograph.observe
-            Metrics.rate_limit_remaining_count
-            remaining)
-      @@ get_rate_limit_remaining resp;
-      resp)
+      >>= fun res ->
+      (match res with
+      | Ok resp ->
+          CCOption.iter
+            (fun remaining ->
+              Metrics.Rate_limit_remaining_histograph.observe
+                Metrics.rate_limit_remaining_count
+                remaining)
+            (get_rate_limit_remaining resp)
+      | Error _ -> ());
+      CCOption.map_or
+        ~default:(Abb.Future.return res)
+        (fun (headers, status) ->
+          Abb.Sys.time ()
+          >>= fun now ->
+          match rate_limit_decision ~headers ~status ~now ~max_wait with
+          | `Fail wait ->
+              (* [max_wait] is the time budget the caller gave this call.  A back
+                 off longer than the budget cannot be honoured without overrunning
+                 it, thus give up now rather than sleep and overrun. *)
+              Logs.warn (fun m -> m "RATE_LIMIT : ERR : wait=%0.2f : max_wait=%0.2f" wait max_wait);
+              Prmths.Counter.inc_one Metrics.rate_limit_err_total;
+              Abbs_future_combinators.return_err `Rate_limit_err
+          | `Wait _ | `No_wait -> Abb.Future.return res)
+        (rate_limit_headers res))
     ~while_:
       (Abbs_future_combinators.finite_tries tries (function
+        (* Must precede the [Error _] arm: [`Rate_limit_err] is a member of
+           [Githubc2_abb.call_err], and retrying it would sleep for nothing. *)
+        | Error `Rate_limit_err -> false
         | Error _ -> true
         | Ok resp -> Openapi.Response.status resp >= 500 || is_secondary_rate_limit_error resp))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n resp ->
+      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
-           (* If it's a rate limit error, sleep until GitHub says we can try
-              again *)
-           match resp with
-           | Error (`Missing_response resp) ->
-               let open Abb.Future.Infix_monad in
-               retry_wait n resp >>= Abb.Sys.sleep
-           | Ok resp ->
-               let open Abb.Future.Infix_monad in
-               retry_wait n resp >>= Abb.Sys.sleep
-           | Error _ -> Abb.Sys.sleep n))
+           let open Abb.Future.Infix_monad in
+           retry_wait ~max_wait n res >>= Abb.Sys.sleep))
 
 let user ~config ~access_token () =
   let open Abbs_future_combinators.Infix_result_monad in
@@ -729,6 +766,13 @@ let react_to_comment ?(content = `Rocket) ~owner ~repo ~comment_id client =
   | `OK _ | `Created _ -> Ok ()
   | `Unprocessable_entity _ as err -> Error err
 
+(* The tree of a directory comes back with the paths of that directory only, thus the caller must
+   put the path of the directory in front of each one. *)
+let prefix_entries path entries =
+  CCList.map
+    (fun { Tree_entry.path = p; id } -> { Tree_entry.path = Filename.concat path p; id })
+    entries
+
 let rec get_tree ~owner ~repo ~sha client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_tree");
   let open Abbs_future_combinators.Infix_result_monad in
@@ -767,13 +811,14 @@ let rec get_tree ~owner ~repo ~sha client =
                   match item.Items.primary.Items.Primary.type_ with
                   | "tree" ->
                       get_tree ~owner ~repo ~sha:item.Items.primary.Items.Primary.sha client
-                      >>| fun fs ->
-                      let path = item.Items.primary.Items.Primary.path in
-                      let fs = CCList.map (Filename.concat path) fs in
-                      files @ fs
+                      >>| fun fs -> files @ prefix_entries item.Items.primary.Items.Primary.path fs
                   | "blob" ->
                       Abbs_future_combinators.return_ok
-                        (item.Items.primary.Items.Primary.path :: files)
+                        ({
+                           Tree_entry.path = item.Items.primary.Items.Primary.path;
+                           id = item.Items.primary.Items.Primary.sha;
+                         }
+                        :: files)
                   | typ ->
                       Logs.err (fun m -> m "GET_TREE : UNKNOWN_TYPE : %s" typ);
                       Abbs_future_combinators.return_ok files)
@@ -792,7 +837,12 @@ let rec get_tree ~owner ~repo ~sha client =
         |> CCList.filter_map (fun item ->
             let module Items = Githubc2_components_git_tree.Primary.Tree.Items in
             match item.Items.primary.Items.Primary.type_ with
-            | "blob" -> Some item.Items.primary.Items.Primary.path
+            | "blob" ->
+                Some
+                  {
+                    Tree_entry.path = item.Items.primary.Items.Primary.path;
+                    id = item.Items.primary.Items.Primary.sha;
+                  }
             | _ -> None)
       in
       Abbs_future_combinators.return_ok files

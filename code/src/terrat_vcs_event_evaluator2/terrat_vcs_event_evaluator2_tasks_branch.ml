@@ -145,10 +145,20 @@ struct
           Logs.info (fun m -> m "%s : CHANGES : %d" (Builder.log_id s) (CCList.length diff));
           diff)
 
-    let missing_autoplan_matches =
-      run ~name:"missing_autoplan_matches" (fun _ _ ->
-          Abbs_future_combinators.return_ok (fun matches ->
-              Abbs_future_combinators.return_ok matches))
+    (* A branch run, which is what a drift run is, has no push to a pull request to compare
+       against, thus it makes no selection: every dirspace runs and the applied state comes from
+       [Keys.applied_dirspaces], the same as before. *)
+    let intra_pr_selection =
+      run ~name:"intra_pr_selection" (fun _s { Bs.Fetcher.fetch } ->
+          let open Irm in
+          fetch Keys.applied_dirspaces
+          >>| fun applied_dirspaces ->
+          fun ~layers ~force:_ ->
+           Abbs_future_combinators.return_ok
+             {
+               Terrat_intra_pr_hash.Selection.to_run = CCList.flatten layers;
+               applied = applied_dirspaces;
+             })
 
     let is_draft_pr =
       run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } ->
@@ -275,7 +285,7 @@ struct
     |> Hmap.add (coerce Keys.dest_branch_ref) Tasks.dest_branch_ref
     |> Hmap.add (coerce Keys.is_draft_pr) Tasks.is_draft_pr
     |> Hmap.add (coerce Keys.maybe_automerge) Tasks.maybe_automerge
-    |> Hmap.add (coerce Keys.missing_autoplan_matches) Tasks.missing_autoplan_matches
+    |> Hmap.add (coerce Keys.intra_pr_selection) Tasks.intra_pr_selection
     |> Hmap.add (coerce Keys.out_of_change_applies) Tasks.out_of_change_applies
     |> Hmap.add (coerce Keys.publish_comment) Tasks.publish_comment
     |> Hmap.add (coerce Keys.working_branch_name) Tasks.working_branch_name

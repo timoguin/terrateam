@@ -17,12 +17,14 @@ module Op : sig
             -- a dirspace whose last plan was clean can have drifted since -- with one exception: a
             run in which nothing at all is unapplied runs nothing. *)
     | Explicit_plan
-        (** A plan whose tag query names what the user wants. It selects from the first layer plus
+        (** A plan whose tag query names dirspaces, which is what
+            {!Terrat_tag_query.selects_dirspaces_only} answers. It selects from the first layer plus
             every applied dirspace of the run, so it reaches a dirspace that a layer selection would
             have dropped. Note this is every applied dirspace and not only the applied members of
             the first layer: an applied dirspace cannot break the order wherever it sits. *)
     | Layer_plan
-        (** An autoplan, or a plan with no tag query. It takes the layer that runs next. *)
+        (** An autoplan, or a plan whose tag query does not name dirspaces, which includes the empty
+            query. It takes the layer that runs next. *)
 end
 
 type t = {

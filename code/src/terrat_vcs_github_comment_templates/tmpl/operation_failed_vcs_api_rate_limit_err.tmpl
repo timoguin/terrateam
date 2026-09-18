@@ -1,0 +1,5 @@
+GitHub is rate limiting the `{{ operation }}` API call, and the wait it asked for is longer than a request is allowed to take, so Stategraph could not finish this operation.
+
+This is GitHub throttling, not a failure inside Stategraph.  Nothing was left half done: the operation stopped before it changed anything.
+
+Request id `{{ request_id }}`.  Once the rate limit window resets, run the command again.

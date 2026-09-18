@@ -17,6 +17,7 @@
   terrat_github
   terrat_github_webhooks
   terrat_github_webhooks_decoder
+  terrat_intra_pr_hash
   terrat_metrics
   terrat_plan_diff
   terrat_scope

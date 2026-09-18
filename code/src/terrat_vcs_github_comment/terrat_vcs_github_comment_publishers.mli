@@ -23,6 +23,9 @@ val dirspace_compare :
   Terrat_dirspace.t * Terrat_api_components.Workflow_step_output.t list ->
   int
 
+(** Publishing a comment. A rate limit refusal is reported as [`Vcs_api_rate_limit_err] rather than
+    [`Error]: the caller has to be able to tell a comment that could not land because the VCS is
+    throttling us from an operation that actually failed. *)
 module Comment_api : sig
   val comment_on_pull_request :
     request_id:string ->
@@ -30,7 +33,9 @@ module Comment_api : sig
     'a Api.Pull_request.t ->
     string ->
     string ->
-    (Api.Comment.Id.t, [> `Error ]) Abbs_future_combinators.Infix_result_monad.t
+    ( Api.Comment.Id.t,
+      [> `Error | `Vcs_api_rate_limit_err of string ] )
+    Abbs_future_combinators.Infix_result_monad.t
 
   val apply_template_and_publish :
     request_id:string ->
@@ -39,7 +44,9 @@ module Comment_api : sig
     string ->
     Snabela.t ->
     Snabela.Kv.t Snabela.Kv.Map.t ->
-    (Api.Comment.Id.t, [> `Error ]) Abbs_future_combinators.Infix_result_monad.t
+    ( Api.Comment.Id.t,
+      [> `Error | `Vcs_api_rate_limit_err of string ] )
+    Abbs_future_combinators.Infix_result_monad.t
 
   val apply_template_and_publish_jinja :
     request_id:string ->
@@ -48,7 +55,9 @@ module Comment_api : sig
     string ->
     string ->
     Yojson.Safe.t ->
-    (Api.Comment.Id.t, [> `Error ]) Abbs_future_combinators.Infix_result_monad.t
+    ( Api.Comment.Id.t,
+      [> `Error | `Vcs_api_rate_limit_err of string ] )
+    Abbs_future_combinators.Infix_result_monad.t
 end
 
 module Publisher_tools : sig

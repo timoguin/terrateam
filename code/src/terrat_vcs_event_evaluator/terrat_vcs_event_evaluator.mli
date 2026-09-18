@@ -158,6 +158,7 @@ module Make (S : Terrat_vcs_provider2.S) : sig
 
   val run_scheduled_drift : Terrat_storage.t Ctx.t -> (unit, [> `Error ]) result Abb.Future.t
   val run_plan_cleanup : Terrat_storage.t Ctx.t -> (unit, [> `Error ]) result Abb.Future.t
+  val run_repo_tree_cleanup : Terrat_storage.t Ctx.t -> (unit, [> `Error ]) result Abb.Future.t
   val run_flow_state_cleanup : Terrat_storage.t Ctx.t -> (unit, [> `Error ]) result Abb.Future.t
   val run_repo_config_cleanup : Terrat_storage.t Ctx.t -> (unit, [> `Error ]) result Abb.Future.t
 end

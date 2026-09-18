@@ -17,6 +17,7 @@
   terrat_commit_check
   terrat_config
   terrat_gate
+  terrat_intra_pr_hash
   terrat_job_context
   terrat_pull_request
   terrat_tag_query

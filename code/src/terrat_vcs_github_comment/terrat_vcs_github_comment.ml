@@ -334,9 +334,11 @@ module S = struct
     Api.comment_on_pull_request ~request_id t.client t.pull_request body
     >>= function
     | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
-    (* A body the VCS never answered for is not a body that is too big, so
-       rendering a smaller one buys nothing but another call timeout. *)
-    | Error (`Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
+    (* A body the VCS never answered for, or refused for a rate limit, is not a
+       body that is too big, so rendering a smaller one buys nothing but another
+       call timeout or another refusal. *)
+    | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+        Abbs_future_combinators.return_err `Error
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
@@ -364,7 +366,8 @@ module S = struct
         Api.comment_on_pull_request ~request_id t.client t.pull_request body
         >>= function
         | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
-        | Error (`Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
+        | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+            Abbs_future_combinators.return_err `Error
         | Error `Error ->
             let by_scope = [] in
             let body =

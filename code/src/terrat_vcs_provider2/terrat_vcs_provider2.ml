@@ -269,6 +269,8 @@ module Msg = struct
     | `Db_err
     | `Internal_err of string  (** Short tag naming the invariant that broke *)
     | `Vcs_api_err of string  (** Short tag naming the API call that failed *)
+    | `Vcs_api_rate_limit_err of string
+      (** Short tag naming the API call the VCS refused for a rate limit *)
     | `Vcs_api_timeout_err of string
       (** Short tag naming the API call the VCS did not answer in time *)
     | `Work_manifest_start_err
@@ -303,6 +305,7 @@ module Msg = struct
     | Missing_plans of Missing_plan.t list
     | Operation_failed of operation_failed_reason
     | Plan_all_changes_applied
+    | Plan_already_planned of Terrat_change.Dirspace.t list
     | Plan_no_matching_dirspaces of Terrat_tag_query.t
     | Premium_feature_err of premium_features
     | Pull_request_not_appliable of ('pull_request * 'apply_requirements)
@@ -583,6 +586,42 @@ module type S = sig
       (Terrat_api_components.Work_manifest_build_tree_result.Files.t option, [> `Error ]) result
       Abb.Future.t
 
+    (** Whether a tree is stored for this ref. It tells a tree which was built and is empty apart
+        from a tree which was never built, which the rows alone cannot. *)
+    val query_repo_tree_built :
+      request_id:string ->
+      t ->
+      Api.Account.t ->
+      Api.Ref.t ->
+      (bool, [> `Error ]) result Abb.Future.t
+
+    (** The paths whose contents are not the same at [base_ref] as they are at the given ref. A path
+        which only one of the two trees holds is one of them, and so is a path whose id is not
+        known, because a tree which is not there must mean "run it" and never "skip it".
+
+        The cost follows the number of paths which changed, and not the number of files of the
+        repository, thus this is what makes the intra-pull-request hash check cheap. *)
+    val query_repo_tree_changes :
+      request_id:string ->
+      base_ref:Api.Ref.t ->
+      t ->
+      Api.Account.t ->
+      Api.Ref.t ->
+      (string list, [> `Error ]) result Abb.Future.t
+
+    (** The most recent successful plan and the most recent successful apply of each given dirspace
+        of the context, each with the sha it ran at and the time of its work manifest.
+
+        This does not test the sha against the sha of the branch, which
+        {!query_applied_dirspaces_for_context} does. Whether a run still counts is a question about
+        the hashes of the files of that dirspace, thus the caller decides it. *)
+    val query_dirspace_runs_for_context :
+      request_id:string ->
+      t ->
+      (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
+      Terrat_change.Dirspace.t list ->
+      (Terrat_intra_pr_hash.Dirspace_state.t list, [> `Error ]) result Abb.Future.t
+
     (* The next work manifest to start an action run for, with the compute node
        it belongs to.  A work manifest whose node already runs is not returned,
        because that node picks it up on its next poll.  The node is [None] for a
@@ -711,6 +750,7 @@ module type S = sig
     val cleanup_repo_configs : request_id:string -> t -> (unit, [> `Error ]) result Abb.Future.t
     val cleanup_flow_states : request_id:string -> t -> (unit, [> `Error ]) result Abb.Future.t
     val cleanup_plans : request_id:string -> t -> (unit, [> `Error ]) result Abb.Future.t
+    val cleanup_repo_trees : request_id:string -> t -> (unit, [> `Error ]) result Abb.Future.t
 
     val unlock :
       request_id:string -> t -> Api.Repo.t -> Unlock_id.t -> (unit, [> `Error ]) result Abb.Future.t

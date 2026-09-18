@@ -355,6 +355,7 @@ module Comment_api = struct
     Api.comment_on_pull_request ~request_id client pull_request body
     >>= function
     | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+    | Error (`Vcs_api_rate_limit_err _ as err) -> Abbs_future_combinators.return_err err
     | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
 
   let apply_template_and_publish ~request_id client pull_request msg_type template kv =

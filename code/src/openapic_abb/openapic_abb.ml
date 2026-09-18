@@ -42,6 +42,7 @@ type call_err =
   | `Missing_response of string Openapi.Response.t
   | `Io_err of Http.request_err
   | `Timeout
+  | `Rate_limit_err
   ]
 [@@deriving show]
 
@@ -132,6 +133,8 @@ let create ?(user_agent = "Openapic_abb") ?call_timeout ~base_url auth =
       ];
     call_timeout;
   }
+
+let call_timeout t = t.call_timeout
 
 let maybe_with_base_url base_url req =
   (* As a heuristic, we will use if the URL has a scheme to decide if we should

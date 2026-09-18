@@ -686,6 +686,10 @@ let drain ~request_id ~fetch_brand config storage work_manifest_id =
   | Error (`Vcs_api_timeout_err operation) ->
       Logs.err (fun m -> m "%s : DRAIN_UNIFIED_COMMENT : VCS_API_TIMEOUT : %s" request_id operation);
       Abb.Future.return ()
+  | Error (`Vcs_api_rate_limit_err operation) ->
+      Logs.err (fun m ->
+          m "%s : DRAIN_UNIFIED_COMMENT : VCS_API_RATE_LIMIT : %s" request_id operation);
+      Abb.Future.return ()
   | Error (#Pgsql_pool.err as err) ->
       Logs.err (fun m -> m "%s : DRAIN_UNIFIED_COMMENT : %a" request_id Pgsql_pool.pp_err err);
       Abb.Future.return ()
