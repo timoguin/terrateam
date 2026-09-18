@@ -44,6 +44,7 @@ type call_err =
   | `Missing_response of string Openapi.Response.t
   | `Io_err of Http.request_err
   | `Timeout
+  | `Rate_limit_err
   ]
 [@@deriving show]
 
@@ -79,6 +80,8 @@ let create ?(user_agent = "Githubc2_abb") ?(base_url = base_url) ?call_timeout a
       ];
     call_timeout;
   }
+
+let call_timeout t = t.call_timeout
 
 let call t req =
   match t.call_timeout with

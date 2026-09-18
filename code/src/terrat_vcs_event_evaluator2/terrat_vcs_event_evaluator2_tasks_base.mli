@@ -26,7 +26,13 @@ module Make
     (unit, Terrat_vcs_api.call_err) result Abb.Future.t) ->
     S.Api.Ref.t ->
     Terrat_commit_check.t list ->
-    (unit, [> `Vcs_api_err of string | `Vcs_api_timeout_err of string ]) result Abb.Future.t
+    ( unit,
+      [> `Vcs_api_err of string
+      | `Vcs_api_rate_limit_err of string
+      | `Vcs_api_timeout_err of string
+      ] )
+    result
+    Abb.Future.t
 
   (** The comment, if any, to publish for an evaluation error. [None] means publish nothing: either
       nothing went wrong or the user has already been told. *)

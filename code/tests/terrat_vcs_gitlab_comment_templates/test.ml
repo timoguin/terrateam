@@ -99,6 +99,20 @@ let test_apply_complete2_details_few_dirspaces_compact_view =
 (* A call the VCS never answered is a separate comment from a call that failed,
    so that the reader is told GitLab is unresponsive rather than that Stategraph
    broke. *)
+(* A call the VCS refused for a rate limit is a separate comment from one it
+   never answered: the reader is told to wait, not that GitLab is down. *)
+let test_operation_failed_vcs_api_rate_limit_err =
+  Oth.test ~name:"Operation failed vcs api rate limit err" (fun _ ->
+      let body =
+        render
+          Tmpl.operation_failed_vcs_api_rate_limit_err
+          (`Assoc [ ("request_id", `String "req-123"); ("operation", `String "FETCH_PULL_REQUEST") ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:[ "req-123"; "FETCH_PULL_REQUEST"; "GitLab"; "rate limit" ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"UNKNOWN")
+
 let test_operation_failed_vcs_api_timeout_err =
   Oth.test ~name:"Operation failed vcs api timeout err" (fun _ ->
       let body =
@@ -376,6 +390,7 @@ let test =
       test_plan_complete2_resource_summary_missing;
       test_plan_complete2_changes_keep_apply;
       test_plan_complete2_mixed_keeps_apply;
+      test_operation_failed_vcs_api_rate_limit_err;
       test_operation_failed_vcs_api_timeout_err;
       test_apply_complete2_details_many_dirspaces;
       test_apply_complete2_details_few_dirspaces;

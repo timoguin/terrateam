@@ -5,11 +5,16 @@ module Authorization : sig
     ]
 end
 
+(** How a call can fail. [`Rate_limit_err] is the odd one out: [call] below never returns it. It is
+    declared here so that every error type already built on [call_err] admits it without change, and
+    it is produced by the retry wrappers that sit on top of [call] -- a wrapper that refuses to
+    sleep longer than [call_timeout] has to say so somehow. *)
 type call_err =
   [ `Conversion_err of string * string Openapi.Response.t
   | `Missing_response of string Openapi.Response.t
   | `Io_err of Abb_curl.Make(Abb).request_err
   | `Timeout
+  | `Rate_limit_err
   ]
 [@@deriving show]
 
@@ -26,6 +31,11 @@ end
 type t
 
 val create : ?user_agent:string -> ?call_timeout:float -> base_url:Uri.t -> Authorization.t -> t
+
+(** The per-request timeout [call] enforces, if one was configured. Exposed so that a caller
+    deciding how long to back off before retrying can refuse to wait longer than the call itself
+    would have been allowed to run. *)
+val call_timeout : t -> float option
 
 val call :
   ?log:'a log ->

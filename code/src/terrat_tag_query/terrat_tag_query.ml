@@ -31,6 +31,7 @@ let equal { s = s1; _ } { s = s2; _ } = CCString.equal s1 s2
 let dir_in_prefix = "dir~"
 let dir_in_prefix_len = CCString.length dir_in_prefix
 let dir_prefix = "dir:"
+let workspace_prefix = "workspace:"
 
 let escape_glob s =
   let b = Buffer.create (CCString.length s) in
@@ -132,6 +133,18 @@ let warning_of_ast ast =
         | Some ([] | [ _ ]) | None -> None
       in
       Some (Implicit_and { suggestion })
+
+(* [Q.Tag] keeps the text the user wrote, thus the prefix is still there to test.  [Q.Dir_glob]
+   does not: both [in dir <glob>] and [dir~<glob>] become that node, and neither one is a [dir:]
+   tag.  A [Q.Not] answers false wherever it sits, thus one negation takes the whole query out. *)
+let rec selects_dirspaces_only' = function
+  | Q.Tag tag ->
+      CCString.starts_with ~prefix:dir_prefix tag
+      || CCString.starts_with ~prefix:workspace_prefix tag
+  | Q.And (l, r) | Q.Or (l, r) -> selects_dirspaces_only' l && selects_dirspaces_only' r
+  | Q.Dir_glob _ | Q.Not _ | Q.Any -> false
+
+let selects_dirspaces_only t = selects_dirspaces_only' t.q
 
 let of_string s =
   match Terrat_tag_query_ast.of_string s with

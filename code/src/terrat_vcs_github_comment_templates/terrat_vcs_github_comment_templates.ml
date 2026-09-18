@@ -100,6 +100,9 @@ module Tmpl = struct
   let operation_failed_internal_err = jinja [%blob "tmpl/operation_failed_internal_err.tmpl"]
   let operation_failed_vcs_api_err = jinja [%blob "tmpl/operation_failed_vcs_api_err.tmpl"]
 
+  let operation_failed_vcs_api_rate_limit_err =
+    jinja [%blob "tmpl/operation_failed_vcs_api_rate_limit_err.tmpl"]
+
   let operation_failed_vcs_api_timeout_err =
     jinja [%blob "tmpl/operation_failed_vcs_api_timeout_err.tmpl"]
 
@@ -115,6 +118,7 @@ module Tmpl = struct
   let apply_no_matching_dirspaces = jinja [%blob "tmpl/apply_no_matching_dirspaces.tmpl"]
   let plan_no_matching_dirspaces = jinja [%blob "tmpl/plan_no_matching_dirspaces.tmpl"]
   let plan_all_changes_applied = read [%blob "tmpl/plan_all_changes_applied.tmpl"]
+  let plan_already_planned = jinja [%blob "tmpl/plan_already_planned.tmpl"]
   let matches_in_later_layer = jinja [%blob "tmpl/matches_in_later_layer.tmpl"]
   let tag_query_dropped_dirspaces = jinja [%blob "tmpl/tag_query_dropped_dirspaces.tmpl"]
   let base_branch_not_default_branch = read [%blob "tmpl/dest_branch_no_match.tmpl"]

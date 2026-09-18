@@ -209,7 +209,27 @@ val with_client :
   (Githubc2_abb.t -> 'a Abb.Future.t) ->
   'a Abb.Future.t
 
-(** Perform a call but with a retry *)
+(** What a response that may be a rate limit rejection warrants. [`No_wait] if it is not one,
+    [`Wait secs] to back off for [secs] and try again, and [`Fail secs] when [secs] is longer than
+    [max_wait]. [max_wait] is the time budget the call was given: a back off longer than the budget
+    cannot be honoured without overrunning it, thus the call gives up rather than sleeps.
+
+    The clock comes in as [now] rather than being read here, so the policy can be exercised without
+    a scheduler.
+
+    {v
+      headers:[ ("retry-after", "5") ] ~status:403 ~max_wait:20.0  ->  `Wait 5.0
+      headers:[ ("retry-after", "3600") ] ~status:403 ~max_wait:20.0  ->  `Fail 3600.0
+    v} *)
+val rate_limit_decision :
+  headers:(string * string) list ->
+  status:int ->
+  now:float ->
+  max_wait:float ->
+  [ `Fail of float | `Wait of float | `No_wait ]
+
+(** Perform a call but with a retry. Fails with [`Rate_limit_err] rather than sleeping when the rate
+    limit headers ask for a wait longer than the client's configured call timeout. *)
 val call :
   ?tries:int ->
   Githubc2_abb.t ->
@@ -355,12 +375,24 @@ val react_to_comment :
   Githubc2_abb.t ->
   (unit, [> publish_reaction_err ]) result Abb.Future.t
 
+(** One file of a tree. [id] names the contents of the file: two files with the same contents carry
+    the same id, and a file whose contents change gets a new one. *)
+module Tree_entry : sig
+  type t = {
+    path : string;
+    id : string;
+  }
+  [@@deriving show]
+end
+
+(** Every file of the tree at [sha], with the path relative to the root of the repository. A
+    directory is not in the result; its files are, with the path of the directory in front. *)
 val get_tree :
   owner:string ->
   repo:string ->
   sha:string ->
   Githubc2_abb.t ->
-  (string list, [> get_tree_err ]) result Abb.Future.t
+  (Tree_entry.t list, [> get_tree_err ]) result Abb.Future.t
 
 val get_team_membership_in_org :
   org:string ->

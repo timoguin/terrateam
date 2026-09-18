@@ -374,6 +374,9 @@ module Provider :
       | Error (`Vcs_api_timeout_err operation) ->
           Logs.err (fun m -> m "%s : VCS_API_TIMEOUT : %s" request_id operation);
           Abbs_future_combinators.return_err `Error
+      | Error (`Vcs_api_rate_limit_err operation) ->
+          Logs.err (fun m -> m "%s : VCS_API_RATE_LIMIT : %s" request_id operation);
+          Abbs_future_combinators.return_err `Error
       | Error `Error ->
           Logs.err (fun m -> m "%s" request_id);
           Abbs_future_combinators.return_err `Error

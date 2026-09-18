@@ -1,0 +1,15 @@
+## Nothing to Plan :white_check_mark:
+
+Everything matching your request already has a plan for the files as they are now:
+
+| Dir | Workspace |
+| --- | --------- |
+{%- for d in dirspaces %}
+| `{{ d.dir }}` | `{{ d.workspace }}` |
+{%- endfor %}
+
+A directory and workspace runs again when one of the files it uses changes.  To run one of these anyway, name it:
+
+```
+stategraph plan dir:<path>
+```

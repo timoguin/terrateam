@@ -45,10 +45,20 @@ module Assert = struct
   end
 end
 
+(* The slot count a suite computed for itself, when it did.  It WINS over [OTH_PARALLEL]: a suite
+   that sets this owns a resource the operator cannot see -- sg_ost_system_tests owns one remote
+   repository per running test -- so a larger [OTH_PARALLEL] would buy no concurrency, only a queue.
+   Such a suite is expected to read [OTH_PARALLEL] itself and fold it into the value it sets. *)
+let default_slots_override = ref None
+let set_default_slots n = default_slots_override := Some n
+
 let default_slots () =
-  Sys.getenv_opt "OTH_PARALLEL"
-  |> CCOption.flat_map CCFun.(CCString.trim %> CCInt.of_string)
-  |> CCOption.get_or ~default:1
+  CCOption.get_lazy
+    (fun () ->
+      Sys.getenv_opt "OTH_PARALLEL"
+      |> CCOption.flat_map CCFun.(CCString.trim %> CCInt.of_string)
+      |> CCOption.get_or ~default:1)
+    !default_slots_override
 
 module Make (Abb : Abb_intf.S) = struct
   module Fut_comb = Abb_future_combinators.Make (Abb.Future)
@@ -113,5 +123,6 @@ module Make (Abb : Abb_intf.S) = struct
      the toplevel module; re-exporting means both spellings resolve. *)
   module Assert = Assert
 
+  let set_default_slots = set_default_slots
   let to_sync_test = CCFun.id
 end

@@ -564,6 +564,33 @@ let test_implicit_and_binds_like_and =
         ~expected:(matching_tag_sets "c or a and b" tag_sets)
         ~actual:(matching_tag_sets "c or a b" tag_sets))
 
+(* The force mode of a plan comment.  A query which names dirspaces runs them although the file
+   hashes say they need no new plan, thus the shapes which do and do not count are worth pinning
+   one by one. *)
+let test_selects_dirspaces_only =
+  Oth.test ~name:"Selects dirspaces only" (fun _ ->
+      let selects q = Terrat_tag_query.selects_dirspaces_only (of_string_exn q) in
+      CCList.iter
+        (fun q -> Oth.Assert.true_ (selects q))
+        [ "dir:foo"; "workspace:prod"; "dir:foo or workspace:prod"; "dir:foo dir:bar" ];
+      CCList.iter
+        (fun q -> Oth.Assert.not_true (selects q))
+        [
+          "";
+          "dev";
+          "dir:foo dev";
+          "dir:foo or dev";
+          (* A glob chooses directories rather than naming them. *)
+          "modules/* in dir";
+          "dir~modules/*";
+          (* A negation says what must not run, thus it cannot say what to force. *)
+          "not dir:foo";
+          "dir:foo and not workspace:prod";
+          (* The prefix test must be a prefix of the whole tag and not of a part of it. *)
+          "relative_dir:foo";
+        ];
+      Oth.Assert.not_true (Terrat_tag_query.selects_dirspaces_only Terrat_tag_query.any))
+
 let test =
   Oth.parallel
     [
@@ -631,6 +658,7 @@ let test =
       test_warning_on_query;
       test_implicit_and_still_matches;
       test_implicit_and_binds_like_and;
+      test_selects_dirspaces_only;
     ]
 
 let () =

@@ -123,6 +123,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           (* The all dirspaces configs in current layer, where "current" is
                defined as the first layer that does not have all of its
                dirspaces applied. *)
+      already_planned_matches : Terrat_change_match3.Dirspace_config.t list;
+          (* The dirspaces this evaluation would have run, and does not run
+               because the files they use have the same hashes as they had at
+               their last plan.  Nothing else removes a dirspace from
+               [working_set_matches], thus this is why the run is empty when it
+               is empty and neither the tag query nor the layers explain it. *)
     }
     [@@deriving show]
   end
@@ -199,15 +205,24 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let working_layer : Terrat_change_match3.Dirspace_config.t list Key.t =
     Hmap.Key.create "working_layer"
 
+  let already_planned_matches : Terrat_change_match3.Dirspace_config.t list Key.t =
+    Hmap.Key.create "already_planned_matches"
+
   let out_of_change_applies : Terrat_dirspace.t list Key.t = Hmap.Key.create "out_of_change_applies"
   let applied_dirspaces : Terrat_dirspace.t list Key.t = Hmap.Key.create "applied_dirspaces"
   let changes : Terrat_change.Diff.t list Key.t = Hmap.Key.create "changes"
 
-  let missing_autoplan_matches :
-      (Terrat_change_match3.Dirspace_config.t list ->
-      (Terrat_change_match3.Dirspace_config.t list, err) result Abb.Future.t)
+  (* Which dirspaces a push must run again, and which dirspaces keep the applied state of an
+     earlier run, from the hashes of the files each dirspace uses.
+
+     This is a function and not a value because the layers are known only inside the computation of
+     the matches, which is where the answer is needed. *)
+  let intra_pr_selection :
+      (layers:Terrat_dirspace.t list list ->
+      force:Terrat_data.Dirspace_set.t ->
+      (Terrat_intra_pr_hash.Selection.t, err) result Abb.Future.t)
       Key.t =
-    Hmap.Key.create "missing_autoplan_matches"
+    Hmap.Key.create "intra_pr_selection"
 
   (* Work manifest state machine *)
   let work_manifest_event : Work_manifest_event.t option Key.t =

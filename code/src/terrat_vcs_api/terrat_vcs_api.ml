@@ -1,9 +1,12 @@
 (* How a VCS API call can fail.  A call that ran out of time is kept apart from
    [`Error] so the user is told that their VCS did not answer, rather than that
-   something inside Terrateam broke.  The payload names the call.  See
+   something inside Terrateam broke.  A call the VCS refused for a rate limit is
+   kept apart from both: the VCS did answer, and what it said was "not yet", so
+   the user is told to wait.  The payload names the call.  See
    [Terrat_vcs_provider2.Msg.operation_failed_reason]. *)
 type call_err =
   [ `Error
+  | `Vcs_api_rate_limit_err of string
   | `Vcs_api_timeout_err of string
   ]
 [@@deriving show]
@@ -17,7 +20,8 @@ let collapse_call_err f =
   f ()
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error (`Error | `Vcs_api_timeout_err _) -> Abb.Future.return (Error `Error)
+  | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+      Abbs_future_combinators.return_err `Error
 
 (* The centralized configuration repository of an owner.  The first repository
    in [names] that holds a configuration file on its default branch is selected
@@ -183,12 +187,17 @@ module type S = sig
     string ->
     (Remote_repo.t option, [> call_err ]) result Abb.Future.t
 
+  (** Every file of the tree at the given ref, each with the id of its contents. The id is what
+      makes an intra-pull-request hash check possible: a file whose contents did not change keeps
+      the same id, thus a comparison of two trees names the files which changed. It is the same id
+      the tree builder script gives, thus the two fill the same column of [repo_trees]. *)
   val fetch_tree :
     request_id:string ->
     Client.t ->
     Repo.t ->
     Ref.t ->
-    (string list, [> call_err ]) result Abb.Future.t
+    (Terrat_api_components.Work_manifest_build_tree_result.Files.t, [> call_err ]) result
+    Abb.Future.t
 
   (** Publishes [body] closed with {!Terrat_comment.add_self_marker}, so that the comment is
       recognized and ignored when the VCS sends it back as an event. *)

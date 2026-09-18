@@ -28,5 +28,18 @@ val warning : t -> warning option
 (** [dirspace] is used in tests against the [dir] and [workspace] and [in dir] tests. *)
 val match_ : ctx:Ctx.t -> tag_set:Terrat_tag_set.t -> t -> bool
 
+(** Whether the query names dirspaces and nothing else, thus every tag in it starts with [dir:] or
+    with [workspace:] and the query holds no negation.
+
+    This is the test for the force mode of a [stategraph plan] comment: such a query names the work
+    the user wants run, thus that work runs although the file hashes say it needs no new plan. Any
+    other query keeps the defaults of the algorithm and plans the work which has no current plan.
+
+    An [in dir <glob>] selector, and the [dir~<glob>] form of it, answer false: they choose
+    directories by a glob rather than naming them. A negation answers false wherever it sits,
+    because a negation says what must not run, and a force must say what must run. The empty query,
+    which matches everything, answers false. *)
+val selects_dirspaces_only : t -> bool
+
 (** A pre-defined matcher that matches anything, equivalent to [of_string ""] *)
 val any : t

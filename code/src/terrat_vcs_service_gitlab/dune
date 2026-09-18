@@ -12,6 +12,7 @@
   terrat_brand
   terrat_code_idx
   terrat_comment
+  terrat_intra_pr_hash
   terrat_metrics
   terrat_plan_diff
   terrat_session

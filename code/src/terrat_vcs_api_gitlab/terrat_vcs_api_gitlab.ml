@@ -27,10 +27,15 @@ module Metrics = struct
   let rate_limit_remaining_count =
     let help = "Number of calls remaining in the rate limit window." in
     Rate_limit_remaining_histograph.v ~help ~namespace ~subsystem "rate_limit_remaining_count"
+
+  let rate_limit_err_total =
+    let help = "Number of calls abandoned because the rate limit wait exceeded the call timeout" in
+    Prmths.Counter.v ~help ~namespace ~subsystem "rate_limit_err_total"
 end
 
 let fetch_pull_request_tries = 6
 let one_minute = Duration.(to_f (of_min 1))
+let thirty_seconds = Duration.(to_f (of_sec 30))
 
 (* let log_call = function *)
 (*   | `Req req -> *)
@@ -50,77 +55,125 @@ let vcs_api_timeout_err ~request_id operation =
   Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
   Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
 
-let rate_limit_wait resp =
+(* A call GitLab refused for a rate limit, where the wait it asked for is longer
+   than the call timeout.  It is reported apart from [`Error] so that the user is
+   told to wait, and apart from [`Vcs_api_timeout_err] because GitLab did answer:
+   what it said was "not yet".  [operation] names the call and is printed in the
+   comment the user sees. *)
+let vcs_api_rate_limit_err ~request_id operation =
+  Logs.err (fun m -> m "%s : %s : RATE_LIMIT" request_id operation);
+  Abbs_future_combinators.return_err (`Vcs_api_rate_limit_err operation)
+
+let is_rate_limit_status status = status = 403 || status = 429
+
+(* GitLab has no equivalent of GitHub's secondary rate limit, but it does reject
+   an over-limit request with the RateLimit-* headers, unprefixed.  Without this
+   the retry loop below never treats a rate limit reply as retryable at all. *)
+let is_rate_limit_error resp =
   let headers = Openapi.Response.headers resp in
   let get k = CCList.Assoc.get ~eq:CCString.equal_caseless k headers in
-  if Openapi.Response.status resp = 403 then
+  is_rate_limit_status (Openapi.Response.status resp)
+  &&
+  match (get "retry-after", get "ratelimit-remaining", get "ratelimit-reset") with
+  | Some _, _, _ | None, Some "0", Some _ -> true
+  | _, _, _ -> false
+
+let rate_limit_decision ~headers ~status ~now ~max_wait =
+  let get k = CCList.Assoc.get ~eq:CCString.equal_caseless k headers in
+  let decide wait =
+    (* The reset instant can already have passed, which is a wait of zero rather
+       than a negative sleep. *)
+    let wait = CCFloat.max 0.0 wait in
+    if wait > max_wait then `Fail wait else `Wait wait
+  in
+  if is_rate_limit_status status then
     match (get "retry-after", get "ratelimit-remaining", get "ratelimit-reset") with
-    | (Some ra as retry_after), _, _ ->
-        Logs.debug (fun m -> m "RATE_LIMIT : RETRY_AFTER : %s" ra);
-        Abb.Future.return
-          (CCOption.map_or
-             ~default:(Some one_minute)
-             CCFun.(CCInt.of_string %> CCOption.map CCFloat.of_int)
-             retry_after)
-    | None, Some "0", Some retry_time -> (
-        Logs.debug (fun m -> m "RATE_LIMIT : RETRY_TIME : %s" retry_time);
-        match CCFloat.of_string_opt retry_time with
-        | Some retry_time ->
-            let open Abb.Future.Infix_monad in
-            Abb.Sys.time ()
-            >>= fun now ->
-            (* Make sure we wait at least one minute before retrying *)
-            Abb.Future.return (Some (CCFloat.max one_minute (retry_time -. now)))
-        | None -> Abb.Future.return (Some one_minute))
-    | _, _, _ -> Abb.Future.return None
-  else Abb.Future.return None
+    | Some retry_after, _, _ ->
+        decide @@ CCOption.map_or ~default:one_minute CCFloat.of_int (CCInt.of_string retry_after)
+    | None, Some "0", Some retry_time ->
+        decide
+        @@ CCOption.map_or
+             ~default:one_minute
+             (fun reset -> reset -. now)
+             (CCFloat.of_string_opt retry_time)
+    | _, _, _ -> `No_wait
+  else `No_wait
+
+(* The rate limit headers, whichever shape the response arrived in.  A status the
+   generated client has no binding for comes back as [`Missing_response], so a
+   403 from an endpoint whose spec declares no 403 never arrives as [Ok] and
+   reading only that case would miss it. *)
+let rate_limit_headers = function
+  | Ok resp -> Some (Openapi.Response.headers resp, Openapi.Response.status resp)
+  | Error (`Missing_response resp) ->
+      Some (Openapi.Response.headers resp, Openapi.Response.status resp)
+  | Error _ -> None
 
 let get_rate_limit_remaining resp =
   let headers = Openapi.Response.headers resp in
   let get k = CCList.Assoc.get ~eq:CCString.equal_caseless k headers in
   CCOption.map CCFloat.of_int @@ CCOption.flat_map CCInt.of_string @@ get "ratelimit-remaining"
 
-let retry_wait default_wait resp =
+(* [`Fail] cannot reach here: [call] turns it into [`Rate_limit_err] before the
+   loop gets as far as sleeping. *)
+let retry_wait ~max_wait default_wait res =
   let open Abb.Future.Infix_monad in
-  rate_limit_wait resp
-  >>= function
-  | Some retry_after ->
-      Logs.debug (fun m -> m "RATE_LIMIT : wait=%f" retry_after);
-      Metrics.Call_retry_wait_histograph.observe Metrics.rate_limit_retry_wait_seconds retry_after;
-      Abb.Future.return retry_after
-  | None ->
-      Logs.debug (fun m -> m "RATE_LIMIT : wait=%f" default_wait);
-      Abb.Future.return default_wait
+  CCOption.map_or
+    ~default:(Abb.Future.return default_wait)
+    (fun (headers, status) ->
+      Abb.Sys.time ()
+      >>= fun now ->
+      match rate_limit_decision ~headers ~status ~now ~max_wait with
+      | `Wait wait ->
+          Logs.debug (fun m -> m "RATE_LIMIT : WAIT : wait=%0.2f : max_wait=%0.2f" wait max_wait);
+          Metrics.Call_retry_wait_histograph.observe Metrics.rate_limit_retry_wait_seconds wait;
+          Abb.Future.return wait
+      | `Fail _ | `No_wait -> Abb.Future.return default_wait)
+    (rate_limit_headers res)
 
 let call ?(tries = 3) t req =
+  let max_wait = CCOption.get_or ~default:thirty_seconds (Openapic_abb.call_timeout t) in
   Abbs_future_combinators.retry
     ~f:(fun () ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abb.Future.Infix_monad in
       Openapic_abb.call t req
-      >>| fun resp ->
-      CCOption.iter (fun remaining ->
-          Metrics.Rate_limit_remaining_histograph.observe
-            Metrics.rate_limit_remaining_count
-            remaining)
-      @@ get_rate_limit_remaining resp;
-      resp)
+      >>= fun res ->
+      (match res with
+      | Ok resp ->
+          CCOption.iter
+            (fun remaining ->
+              Metrics.Rate_limit_remaining_histograph.observe
+                Metrics.rate_limit_remaining_count
+                remaining)
+            (get_rate_limit_remaining resp)
+      | Error _ -> ());
+      CCOption.map_or
+        ~default:(Abb.Future.return res)
+        (fun (headers, status) ->
+          Abb.Sys.time ()
+          >>= fun now ->
+          match rate_limit_decision ~headers ~status ~now ~max_wait with
+          | `Fail wait ->
+              (* [max_wait] is the time budget the caller gave this call.  A back
+                 off longer than the budget cannot be honoured without overrunning
+                 it, thus give up now rather than sleep and overrun. *)
+              Logs.warn (fun m -> m "RATE_LIMIT : ERR : wait=%0.2f : max_wait=%0.2f" wait max_wait);
+              Prmths.Counter.inc_one Metrics.rate_limit_err_total;
+              Abbs_future_combinators.return_err `Rate_limit_err
+          | `Wait _ | `No_wait -> Abb.Future.return res)
+        (rate_limit_headers res))
     ~while_:
       (Abbs_future_combinators.finite_tries tries (function
+        (* Must precede the [Error _] arm: [`Rate_limit_err] is a member of
+           [Openapic_abb.call_err], and retrying it would sleep for nothing. *)
+        | Error `Rate_limit_err -> false
         | Error _ -> true
-        | Ok resp -> Openapi.Response.status resp >= 500))
+        | Ok resp -> Openapi.Response.status resp >= 500 || is_rate_limit_error resp))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n resp ->
+      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
-           (* If it's a rate limit error, sleep until GitHub says we can try
-              again *)
-           match resp with
-           | Error (`Missing_response resp) ->
-               let open Abb.Future.Infix_monad in
-               retry_wait n resp >>= Abb.Sys.sleep
-           | Ok resp ->
-               let open Abb.Future.Infix_monad in
-               retry_wait n resp >>= Abb.Sys.sleep
-           | Error _ -> Abb.Sys.sleep n))
+           let open Abb.Future.Infix_monad in
+           retry_wait ~max_wait n res >>= Abb.Sys.sleep))
 
 module Config = struct
   type t = {
@@ -266,6 +319,7 @@ let fetch_branch_sha ~request_id client repo ref_ =
   run
   >>= function
   | Ok _ as ret -> Abb.Future.return ret
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_BRANCH_SHA"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_BRANCH_SHA : %a" request_id Openapic_abb.pp_call_err err);
@@ -290,6 +344,7 @@ let fetch_file ~request_id client repo ref_ path =
   run
   >>= function
   | Ok _ as ret -> Abb.Future.return ret
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_FILE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_FILE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_FILE : %a" request_id Openapic_abb.pp_call_err err);
@@ -314,6 +369,7 @@ let fetch_remote_repo ~request_id client repo =
       Logs.err (fun m ->
           m "%s : FETCH_REMOTE_REPO : repo=%s : `Not_found" request_id (Repo.to_string repo));
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_REMOTE_REPO"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_REMOTE_REPO"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
@@ -372,6 +428,7 @@ let fetch_centralized_repo ~request_id client owner =
     run
     >>= function
     | Ok _ as r -> Abb.Future.return r
+    | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_CENTRALIZED_REPO"
     | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_CENTRALIZED_REPO"
     | Error (#Openapic_abb.call_err as err) ->
         Logs.err (fun m ->
@@ -415,6 +472,7 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES" request_id);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_DIFF_FILES"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF_FILES"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES : %a" request_id Openapic_abb.pp_call_err err);
@@ -471,9 +529,13 @@ let fetch_tree ~request_id client repo ref_ =
              ()))
     >>| fun tree ->
     let module T = Gitlabc_components_api_entities_treeobject in
+    let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
+    (* [changed] stays empty.  Whether a file changed is a question about two trees, and this call
+       knows one of them. *)
     CCList.filter_map
       (function
-        | { T.path; type_ = "blob"; _ } -> Some path
+        | { T.path; type_ = "blob"; id; _ } ->
+            Some { Files.Items.changed = None; id = Some id; path }
         | _ -> None)
       tree
   in
@@ -516,6 +578,7 @@ let comment_on_pull_request ~request_id client pull_request body =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
@@ -656,7 +719,9 @@ let fetch_pull_request ~request_id _account client repo merge_request_iid =
   | Error `Not_found ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : `Not_found" request_id);
       Abbs_future_combinators.return_err `Error
-  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
+      Abbs_future_combinators.return_err err
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
@@ -690,6 +755,7 @@ let react_to_comment ~request_id client pull_request comment_id =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "REACT_TO_COMMENT"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "REACT_TO_COMMENT"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Openapic_abb.pp_call_err err);
@@ -827,6 +893,7 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
@@ -924,6 +991,8 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
                    [ "mergeable"; "ci_still_running"; "ci_must_pass" ])
                detailed_merge_status)
       | `Not_found -> Abbs_future_combinators.return_err `Error)
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
   | Error _ ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_MERGEABLE" request_id);
       Abbs_future_combinators.return_err `Error
@@ -957,6 +1026,7 @@ let fetch_pull_request_approvals' ~request_id repo pull_number client =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_APPROVALS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_APPROVALS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_APPROVALS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
@@ -996,6 +1066,7 @@ let fetch_pull_request_reviews' ~request_id repo pull_number client =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_REVIEWS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
@@ -1013,7 +1084,8 @@ let fetch_pull_request_reviews ~request_id repo pull_number client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error (`Vcs_api_timeout_err _ as err) -> Abbs_future_combinators.return_err err
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
+      Abbs_future_combinators.return_err err
   | Error `Error -> Abbs_future_combinators.return_err `Error
 
 let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
@@ -1046,6 +1118,8 @@ let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err ->
+      vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
@@ -1116,6 +1190,7 @@ let merge_pull_request ~request_id ?(retain_pr_title = false) client pull_reques
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "MERGE_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
@@ -1140,6 +1215,7 @@ let delete_branch ~request_id client repo branch =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Gl.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "DELETE_BRANCH"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "DELETE_BRANCH"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Openapic_abb.pp_call_err err);
@@ -1178,6 +1254,7 @@ let is_member_of_team ~request_id ~team ~user _repo client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "IS_MEMBER_OF_TEAM"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "IS_MEMBER_OF_TEAM"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : IS_MEMBER_OF_TEAM : %a" request_id Openapic_abb.pp_call_err err);
@@ -1224,6 +1301,7 @@ let get_repo_role ~request_id repo user client =
   | Error (#Glp.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Glp.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "GET_REPO_ROLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_REPO_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Openapic_abb.pp_call_err err);
@@ -1262,6 +1340,7 @@ let get_org_role ~request_id ~org user client =
   | Error (#Glg.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Glg.Responses.pp err);
       Abbs_future_combinators.return_err `Error
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "GET_ORG_ROLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_ORG_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Openapic_abb.pp_call_err err);

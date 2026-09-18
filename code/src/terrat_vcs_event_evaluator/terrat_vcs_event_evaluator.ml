@@ -102,7 +102,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           ~finally:Pgsql_pool.destroy)
     >>= function
     | Ok client -> Abbs_future_combinators.return_ok client
-    | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
+    | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+        Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
         Abbs_future_combinators.return_err `Error
@@ -164,7 +165,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Ref.to_string ref_)
               time))
       (fun () ->
-        Terrat_vcs_api.collapse_call_err (fun () -> S.Api.fetch_tree ~request_id client repo ref_))
+        let open Abbs_future_combinators.Infix_result_monad in
+        let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
+        (* This evaluator asks which files the tree holds, and not what is in them, thus it keeps
+           the paths and drops the ids. *)
+        Terrat_vcs_api.collapse_call_err (fun () -> S.Api.fetch_tree ~request_id client repo ref_)
+        >>| CCList.map (fun { Files.Items.changed = _; id = _; path } -> path))
 
   let query_index request_id db account ref_ =
     Abbs_time_it.run
@@ -533,6 +539,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       (fun () -> S.Db.query_plan ~request_id db work_manifest_id dirspace)
 
   let cleanup_plans request_id db = S.Db.cleanup_plans ~request_id db
+  let cleanup_repo_trees request_id db = S.Db.cleanup_repo_trees ~request_id db
 
   let store_plan request_id db work_manifest_id dirspace data has_changes =
     Abbs_time_it.run
@@ -609,7 +616,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         >>= function
         | Ok _ as r -> Abb.Future.return r
         | Error (`Merge_err _) as err -> Abb.Future.return err
-        | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error)
+        | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+            Abbs_future_combinators.return_err `Error)
 
   let delete_branch request_id client repo branch =
     Abbs_time_it.run
@@ -1631,7 +1639,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
              fetch_pull_request state.State.request_id account client repo pull_request_id)
             >>= function
             | Ok _ as r -> Abb.Future.return r
-            | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
+            | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
+                Abbs_future_combinators.return_err `Error
           in
           let open Abb.Future.Infix_monad in
           Abbs_time_it.run
@@ -8235,6 +8244,23 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     | Error `Error -> Abbs_future_combinators.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : PLAN_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
+  let run_repo_tree_cleanup ctx =
+    let open Abb.Future.Infix_monad in
+    Logs.info (fun m -> m "%s : REPO_TREE_CLEANUP : START" (Ctx.request_id ctx));
+    Abbs_time_it.run
+      (fun t ->
+        Logs.info (fun m -> m "%s : REPO_TREE_CLEANUP : END : time=%f" (Ctx.request_id ctx) t))
+      (fun () ->
+        Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
+            cleanup_repo_trees (Ctx.request_id ctx) db))
+    >>= function
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Error (#Pgsql_pool.err as err) ->
+        Logs.err (fun m ->
+            m "%s : REPO_TREE_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
         Abbs_future_combinators.return_err `Error
 
   let run_flow_state_cleanup ctx =

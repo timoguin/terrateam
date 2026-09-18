@@ -292,13 +292,6 @@ struct
     let create_commit_checks' f branch_ref checks =
       Tasks_base.create_commit_checks' f branch_ref checks
 
-    let missing_autoplan_matches' f matches =
-      let open Abb.Future.Infix_monad in
-      f matches
-      >>= function
-      | Ok _ as r -> Abb.Future.return r
-      | Error #Builder.err as err -> Abb.Future.return err
-
     let target =
       run ~name:"target" (fun _s { Bs.Fetcher.fetch } ->
           let module C = Terrat_job_context.Context in
@@ -425,29 +418,63 @@ struct
               ~repo_config:_
               ~tag_query
               ~out_of_change_applies
-              ~applied_dirspaces
               ~diff
               ~repo_tree
               ~index:_
               () =
+            let module Dc = Terrat_change_match3.Dirspace_config in
             let module Dir_set = CCSet.Make (CCString) in
             let open Irm in
             fetch Keys.synthesized_config
             >>= fun config ->
             fetch Keys.job
-            >>| fun job ->
+            >>= fun job ->
+            fetch Keys.intra_pr_selection
+            >>= fun intra_pr_selection ->
             let out_of_change_dirspace_configs =
               CCList.flat_map
                 CCFun.(Terrat_change_match3.of_dirspace config %> CCOption.to_list)
                 out_of_change_applies
             in
-            let applied_dirspaces = Terrat_data.Dirspace_set.of_list applied_dirspaces in
             let all_matches =
               Terrat_change_match3.match_diff_list
                 ~force_matches:out_of_change_dirspace_configs
                 config
                 diff
             in
+            (* A tag query which names dirspaces says what the user wants run, thus that work runs
+               even when the files of those dirspaces did not change.  Any other query, and the
+               empty query of a plain [terrateam plan], forces nothing: the defaults of the
+               algorithm stay.  {!Terrat_tag_query.selects_dirspaces_only} holds that rule, and the
+               same call chooses the operation below, thus the two answers cannot disagree. *)
+            let force =
+              match job.Tjc.Job.type_ with
+              | Tjc.Job.Type_.Plan { tag_query; kind = None }
+                when Terrat_tag_query.selects_dirspaces_only tag_query ->
+                  all_matches
+                  |> CCList.flatten
+                  |> CCList.filter (Terrat_change_match3.match_tag_query ~tag_query)
+                  |> CCList.map (fun { Dc.dirspace; _ } -> dirspace)
+                  |> Terrat_data.Dirspace_set.of_list
+              | Tjc.Job.Type_.Plan _
+              | Tjc.Job.Type_.Apply _
+              | Tjc.Job.Type_.Autoapply
+              | Tjc.Job.Type_.Autoplan
+              | Tjc.Job.Type_.Gate_approval _
+              | Tjc.Job.Type_.Help
+              | Tjc.Job.Type_.Index
+              | Tjc.Job.Type_.Repo_config
+              | Tjc.Job.Type_.Unlock _
+              | Tjc.Job.Type_.Push -> Terrat_data.Dirspace_set.empty
+            in
+            let layers = CCList.map (CCList.map (fun { Dc.dirspace; _ } -> dirspace)) all_matches in
+            intra_pr_selection ~layers ~force
+            >>| fun { Terrat_intra_pr_hash.Selection.to_run; applied } ->
+            (* The files of a dirspace decide whether it is still applied, and no longer the sha of
+               the work manifest.  Thus a push which does not touch a dirspace keeps it applied and
+               the evaluation stays at the layer it reached. *)
+            let applied_dirspaces = Terrat_data.Dirspace_set.of_list applied in
+            let to_run = Terrat_data.Dirspace_set.of_list to_run in
             let dirs =
               all_matches
               |> CCList.flatten
@@ -481,7 +508,10 @@ struct
               | T.Apply _ | T.Autoapply -> Work_set.Op.Apply
               | T.Plan { kind = Some (T.Kind.Drift _); tag_query = _ } -> Work_set.Op.Drift_plan
               | T.Plan { kind = None; tag_query = _ }
-                when not (CCString.is_empty (Terrat_tag_query.to_string tag_query)) ->
+                when Terrat_tag_query.selects_dirspaces_only tag_query ->
+                  (* Only a query which names dirspaces reaches a dirspace which is applied
+                     already.  Any other query takes the layer which runs next, which is what a
+                     plain [terrateam plan] does. *)
                   Work_set.Op.Explicit_plan
               | T.Plan { kind = None; tag_query = _ }
               | T.Autoplan
@@ -501,6 +531,24 @@ struct
                 ~dir_exists:(CCFun.flip Dir_set.mem existing_dirs)
                 ~all_matches
             in
+            (* A dirspace whose files did not change since its last good plan needs no new plan.
+               An apply is not filtered this way: it runs what was planned, and not what
+               changed. *)
+            let working_set_matches, already_planned_matches =
+              match job.Tjc.Job.type_ with
+              | Tjc.Job.Type_.(Autoplan | Plan _) ->
+                  CCList.partition
+                    (fun { Dc.dirspace; _ } -> Terrat_data.Dirspace_set.mem dirspace to_run)
+                    working_set_matches
+              | Tjc.Job.Type_.Apply _
+              | Tjc.Job.Type_.Autoapply
+              | Tjc.Job.Type_.Gate_approval _
+              | Tjc.Job.Type_.Help
+              | Tjc.Job.Type_.Index
+              | Tjc.Job.Type_.Repo_config
+              | Tjc.Job.Type_.Unlock _
+              | Tjc.Job.Type_.Push -> (working_set_matches, [])
+            in
             let all_tag_query_matches =
               CCList.map
                 (CCList.filter (Terrat_change_match3.match_tag_query ~tag_query))
@@ -510,7 +558,8 @@ struct
               all_matches,
               all_tag_query_matches,
               all_unapplied_matches,
-              working_layer )
+              working_layer,
+              already_planned_matches )
           in
           let go () =
             let module Tjc = Terrat_job_context in
@@ -522,8 +571,6 @@ struct
             >>= fun (_repo_config, repo_tree, _repo_index) ->
             fetch Keys.out_of_change_applies
             >>= fun out_of_change_applies ->
-            fetch Keys.applied_dirspaces
-            >>= fun applied_dirspaces ->
             fetch Keys.dest_branch_name
             >>= fun _dest_branch_name ->
             fetch Keys.branch_name
@@ -558,7 +605,6 @@ struct
                   ~repo_config
                   ~tag_query
                   ~out_of_change_applies
-                  ~applied_dirspaces
                   ~diff
                   ~repo_tree
                   ~index
@@ -567,7 +613,8 @@ struct
                       all_matches,
                       all_tag_query_matches,
                       all_unapplied_matches,
-                      working_layer )
+                      working_layer,
+                      already_planned_matches )
                   ->
             let module T = Tjc.Job.Type_ in
             match job.Tjc.Job.type_ with
@@ -588,18 +635,22 @@ struct
                        -> autoplan && ((not is_draft_pr) || autoplan_draft_pr))
                     working_set_matches
                 in
-                let open Irm in
-                fetch Keys.missing_autoplan_matches
-                >>= fun missing_autoplan_matches ->
-                missing_autoplan_matches' missing_autoplan_matches working_set_matches
-                >>| fun working_set_matches ->
-                {
-                  Keys.Matches.working_set_matches;
-                  all_matches;
-                  all_tag_query_matches;
-                  all_unapplied_matches;
-                  working_layer;
-                }
+                (* Which dirspaces still need a plan is the question
+                   [intra_pr_selection] answers, and the filter above this match
+                   has already applied that answer.  A second test of the same
+                   question, against the sha of the newest work manifest, can
+                   only take dirspaces away: a plan which the layers made stale
+                   is a plan at the sha of the pull request, thus that test calls
+                   it valid and the rewind never happens. *)
+                Abbs_future_combinators.return_ok
+                  {
+                    Keys.Matches.working_set_matches;
+                    all_matches;
+                    all_tag_query_matches;
+                    all_unapplied_matches;
+                    working_layer;
+                    already_planned_matches;
+                  }
             | T.Autoapply ->
                 let module V1 = Terrat_base_repo_config_v1 in
                 let module Tcm = Terrat_change_match3 in
@@ -623,6 +674,7 @@ struct
                     all_tag_query_matches;
                     all_unapplied_matches;
                     working_layer;
+                    already_planned_matches;
                   }
             | T.Apply _ | T.Plan _ ->
                 Abbs_future_combinators.return_ok
@@ -632,6 +684,7 @@ struct
                     all_tag_query_matches;
                     all_unapplied_matches;
                     working_layer;
+                    already_planned_matches;
                   }
             | T.Gate_approval _ | T.Help | T.Index | T.Repo_config | T.Unlock _ | T.Push ->
                 assert false
@@ -645,6 +698,7 @@ struct
                      all_unapplied_matches;
                      all_tag_query_matches;
                      working_layer;
+                     already_planned_matches;
                    } as matches)
                 ->
           let sum_layers = CCListLabels.fold_left ~init:0 ~f:(fun acc v -> acc + CCList.length v) in
@@ -669,6 +723,11 @@ struct
               m "%s : MATCHES : working_layer=%d" (Builder.log_id s) (CCList.length working_layer));
           Logs.info (fun m ->
               m "%s : MATCHES : num_layers=%d" (Builder.log_id s) (CCList.length all_matches));
+          Logs.info (fun m ->
+              m
+                "%s : MATCHES : already_planned_matches=%d"
+                (Builder.log_id s)
+                (CCList.length already_planned_matches));
           matches)
 
     let working_set_matches =
@@ -697,6 +756,12 @@ struct
       run ~name:"working_layer" (fun _s { Bs.Fetcher.fetch } ->
           let open Irm in
           fetch Keys.matches >>| fun { Keys.Matches.working_layer; _ } -> working_layer)
+
+    let already_planned_matches =
+      run ~name:"already_planned_matches" (fun _s { Bs.Fetcher.fetch } ->
+          let open Irm in
+          fetch Keys.matches
+          >>| fun { Keys.Matches.already_planned_matches; _ } -> already_planned_matches)
 
     let repo_tree_branch_wm_completed =
       run ~name:"repo_tree_branch_wm_completed" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
@@ -867,6 +932,12 @@ struct
             (CCOption.map_or ~default:0 CCList.length files));
       files
 
+    (* A fetched tree carries an id per file.  A caller which asks only which files the tree holds
+       keeps the paths. *)
+    let paths_of_tree files =
+      let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
+      CCList.map (fun { Files.Items.changed = _; id = _; path } -> path) files
+
     let repo_tree_branch =
       run ~name:"repo_tree_branch" (fun s { Bs.Fetcher.fetch } ->
           let open Irm in
@@ -899,7 +970,17 @@ struct
                   (S.Api.Repo.to_string repo)
                   (S.Api.Ref.to_string branch_ref)
                   time)
-              (fun () -> load_cache_repo_tree ~log_name:"CACHE_REPO_TREE" cache_key s)
+              (fun () ->
+                (* The intra-pull-request hash check compares the tree of an earlier run with the
+                   tree now, and it reads both out of [repo_trees].  The tree builder fills that
+                   table; a fetched tree did not.  Ask the database first, because the cache below
+                   holds the paths and not the ids: when the tree of this sha is not stored yet,
+                   the cache cannot give what the store needs, so skip it and fetch. *)
+                Builder.run_db s ~f:(fun db ->
+                    S.Db.query_repo_tree_built ~request_id:(Builder.log_id s) db account branch_ref)
+                >>= function
+                | true -> load_cache_repo_tree ~log_name:"CACHE_REPO_TREE" cache_key s
+                | false -> Abbs_future_combinators.return_ok None)
             >>= function
             | Some repo_tree -> Abbs_future_combinators.return_ok repo_tree
             | None ->
@@ -913,7 +994,26 @@ struct
                       (S.Api.Ref.to_string branch_ref)
                       time)
                   (fun () -> S.Api.fetch_tree ~request_id:(Builder.log_id s) client repo branch_ref)
-                >>= fun repo_tree ->
+                >>= fun files ->
+                time_it
+                  s
+                  (fun m log_id time ->
+                    m
+                      "%s : STORE_REPO_TREE_DB : repo = %s : branch = %s : time=%f"
+                      log_id
+                      (S.Api.Repo.to_string repo)
+                      (S.Api.Ref.to_string branch_ref)
+                      time)
+                  (fun () ->
+                    Builder.run_db s ~f:(fun db ->
+                        S.Db.store_repo_tree
+                          ~request_id:(Builder.log_id s)
+                          db
+                          account
+                          branch_ref
+                          files))
+                >>= fun () ->
+                let repo_tree = paths_of_tree files in
                 time_it
                   s
                   (fun m log_id time ->
@@ -1083,7 +1183,8 @@ struct
                       time)
                   (fun () ->
                     S.Api.fetch_tree ~request_id:(Builder.log_id s) client repo dest_branch_ref)
-                >>= fun repo_tree ->
+                >>= fun files ->
+                let repo_tree = paths_of_tree files in
                 time_it
                   s
                   (fun m log_id time ->
@@ -2736,6 +2837,7 @@ struct
             | `Branch_not_found_err _
             | `Compute_aborted_err _
             | `Vcs_api_err _
+            | `Vcs_api_rate_limit_err _
             | `Vcs_api_timeout_err _
             | `Closed
             | #Pgsql_io.err
@@ -3152,15 +3254,25 @@ struct
                               Terrat_base_repo_config_v1.
                                 { Drift.enabled = false; schedules = Sln_map.String.empty })
                         >>= fun _ -> Abbs_future_combinators.return_err err)
-                (* The VCS did not answer, so nothing is known about the
-                   repository.  The arm below turns the repository's drift
-                   schedule off, which is the wrong answer for a VCS that was
-                   merely slow for one tick, so leave the schedule alone and let
-                   the next tick try again. *)
+                (* The VCS did not answer, or refused for a rate limit, so nothing
+                   is known about the repository.  The arm below turns the
+                   repository's drift schedule off, which is the wrong answer for
+                   a VCS that was merely slow or throttling for one tick, so
+                   leave the schedule alone and let the next tick try again. *)
                 | Error (`Vcs_api_timeout_err operation) ->
                     Logs.err (fun m ->
                         m
                           "%s : DRIFT : LOAD_REMOTE_REPO : TIMEOUT : %s : account = %s : repo = %s"
+                          (Builder.log_id s)
+                          operation
+                          (S.Api.Account.to_string account)
+                          (S.Api.Repo.to_string repo));
+                    Abbs_future_combinators.return_err `Error
+                | Error (`Vcs_api_rate_limit_err operation) ->
+                    Logs.err (fun m ->
+                        m
+                          "%s : DRIFT : LOAD_REMOTE_REPO : RATE_LIMIT : %s : account = %s : repo = \
+                           %s"
                           (Builder.log_id s)
                           operation
                           (S.Api.Account.to_string account)
@@ -3525,6 +3637,7 @@ struct
     |> Hmap.add (coerce Keys.all_matches) Tasks.all_matches
     |> Hmap.add (coerce Keys.all_tag_query_matches) Tasks.all_tag_query_matches
     |> Hmap.add (coerce Keys.all_unapplied_matches) Tasks.all_unapplied_matches
+    |> Hmap.add (coerce Keys.already_planned_matches) Tasks.already_planned_matches
     |> Hmap.add (coerce Keys.applied_dirspaces) Tasks.applied_dirspaces
     |> Hmap.add (coerce Keys.branch_dirspaces) Tasks.branch_dirspaces
     |> Hmap.add (coerce Keys.built_repo_config_branch) Tasks.built_repo_config_branch

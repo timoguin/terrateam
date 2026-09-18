@@ -472,6 +472,46 @@ module Db = struct
         /% Var.bigint "installation_id"
         /% Var.text "sha")
 
+    let select_repo_tree_changes =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* path *)
+        Ret.text
+        /^ read [%blob "sql/select_repo_tree_changes.sql"]
+        /% Var.bigint "installation_id"
+        /% Var.text "base_sha"
+        /% Var.text "sha")
+
+    let select_dirspace_runs_for_context =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* dir *)
+        Ret.text
+        //
+        (* workspace *)
+        Ret.text
+        //
+        (* sha of the most recent successful plan *)
+        Ret.(option text)
+        //
+        (* time of the most recent successful plan *)
+        Ret.(option text)
+        //
+        (* whether that plan found changes *)
+        Ret.(option boolean)
+        //
+        (* sha of the most recent successful apply *)
+        Ret.(option text)
+        //
+        (* time of the most recent successful apply *)
+        Ret.(option text)
+        /^ read [%blob "sql/select_dirspace_runs_for_context.sql"]
+        /% Var.uuid "context_id"
+        /% Var.(str_array (text "dirs"))
+        /% Var.(str_array (text "workspaces")))
+
     let select_next_work_manifest =
       Pgsql_io.Typed_sql.(
         sql
@@ -760,6 +800,14 @@ module Db = struct
         (* count *)
         Ret.integer
         /^ read [%blob "sql/delete_old_terraform_plans.sql"])
+
+    let delete_old_repo_trees =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* count *)
+        Ret.integer
+        /^ read [%blob "sql/delete_old_repo_trees.sql"])
 
     let insert_pull_request_unlock_query = read [%blob "sql/insert_pull_request_unlock.sql"]
 
@@ -1708,6 +1756,79 @@ module Db = struct
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
         Abbs_future_combinators.return_err `Error
 
+  let query_repo_tree_built ~request_id db account ref_ =
+    let open Abb.Future.Infix_monad in
+    Metrics.Psql_query_time.time (Metrics.psql_query_time "select_repo_tree_build") (fun () ->
+        Pgsql_io.Prepared_stmt.fetch
+          db
+          Sql.select_repo_tree_build
+          ~f:CCFun.id
+          (CCInt64.of_int @@ Api.Account.id account)
+          (Api.Ref.to_string ref_))
+    >>= function
+    | Ok (_ :: _) -> Abbs_future_combinators.return_ok true
+    | Ok [] -> Abbs_future_combinators.return_ok false
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
+  let query_repo_tree_changes ~request_id ~base_ref db account ref_ =
+    let open Abb.Future.Infix_monad in
+    Metrics.Psql_query_time.time (Metrics.psql_query_time "select_repo_tree_changes") (fun () ->
+        Pgsql_io.Prepared_stmt.fetch
+          db
+          Sql.select_repo_tree_changes
+          ~f:CCFun.id
+          (CCInt64.of_int @@ Api.Account.id account)
+          (Api.Ref.to_string base_ref)
+          (Api.Ref.to_string ref_))
+    >>= function
+    | Ok paths -> Abbs_future_combinators.return_ok paths
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
+  let query_dirspace_runs_for_context ~request_id db context dirspaces =
+    let module Ipr = Terrat_intra_pr_hash in
+    let open Abb.Future.Infix_monad in
+    (* A sha and a time come together or not at all: the query gives both of them from one row, or
+       gives neither because there is no such run. *)
+    let run sha created_at =
+      CCOption.map2 (fun sha created_at -> { Ipr.Run.sha; created_at }) sha created_at
+    in
+    let dirs = CCList.map (fun { Terrat_dirspace.dir; workspace = _ } -> dir) dirspaces in
+    let workspaces =
+      CCList.map (fun { Terrat_dirspace.dir = _; workspace } -> workspace) dirspaces
+    in
+    Metrics.Psql_query_time.time
+      (Metrics.psql_query_time "select_dirspace_runs_for_context")
+      (fun () ->
+        Pgsql_io.Prepared_stmt.fetch
+          db
+          Sql.select_dirspace_runs_for_context
+          ~f:(fun
+              dir workspace plan_sha plan_created_at plan_has_changes apply_sha apply_created_at ->
+            {
+              Ipr.Dirspace_state.dirspace = { Terrat_dirspace.dir; workspace };
+              last_plan =
+                CCOption.map
+                  (fun run ->
+                    { Ipr.Plan.run; has_changes = CCOption.get_or ~default:true plan_has_changes })
+                  (run plan_sha plan_created_at);
+              last_apply = run apply_sha apply_created_at;
+            })
+          context.Terrat_job_context.Context.id
+          dirs
+          workspaces)
+    >>= function
+    | Ok states -> Abbs_future_combinators.return_ok states
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
   let query_next_pending_work_manifest ?new_age:(_ = false) ~request_id db =
     let run =
       let open Abbs_future_combinators.Infix_result_monad in
@@ -2190,6 +2311,19 @@ module Db = struct
     | Ok [] -> assert false
     | Ok (count :: _) ->
         Logs.info (fun m -> m "%s : PLAN_CLEANUP : %d" request_id (Int32.to_int count));
+        Abbs_future_combinators.return_ok ()
+    | Error (#Pgsql_io.err as err) ->
+        Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
+        Abbs_future_combinators.return_err `Error
+
+  let cleanup_repo_trees ~request_id db =
+    let open Abb.Future.Infix_monad in
+    Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_old_repo_trees") (fun () ->
+        Pgsql_io.Prepared_stmt.fetch db Sql.delete_old_repo_trees ~f:CCFun.id)
+    >>= function
+    | Ok [] -> assert false
+    | Ok (count :: _) ->
+        Logs.info (fun m -> m "%s : REPO_TREE_CLEANUP : %d" request_id (Int32.to_int count));
         Abbs_future_combinators.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
@@ -3254,7 +3388,7 @@ module Comment = struct
     |> CCList.sort_uniq ~cmp:(fun (a, _) (b, _) -> Key.compare a b)
     |> CCList.map snd
 
-  let publish_comment ~request_id ~brand client user pull_request =
+  let publish_comment' ~request_id ~brand client user pull_request =
     let module Gcm_api = Terrat_vcs_gitlab_comment_publishers.Comment_api in
     let module Msg = Terrat_vcs_provider2.Msg in
     function
@@ -3994,6 +4128,10 @@ module Comment = struct
               ( "OPERATION_FAILED_VCS_API_ERR",
                 Tmpl.operation_failed_vcs_api_err brand,
                 [ ("operation", `String operation) ] )
+          | `Vcs_api_rate_limit_err operation ->
+              ( "OPERATION_FAILED_VCS_API_RATE_LIMIT_ERR",
+                Tmpl.operation_failed_vcs_api_rate_limit_err brand,
+                [ ("operation", `String operation) ] )
           | `Vcs_api_timeout_err operation ->
               ( "OPERATION_FAILED_VCS_API_TIMEOUT_ERR",
                 Tmpl.operation_failed_vcs_api_timeout_err brand,
@@ -4067,6 +4205,26 @@ module Comment = struct
              pull_request
              "MATCHES_IN_LATER_LAYER"
              (Tmpl.matches_in_later_layer brand)
+             kv
+    | Msg.Plan_already_planned dirspaces ->
+        let kv =
+          `Assoc
+            [
+              ( "dirspaces",
+                `List
+                  (CCList.map
+                     (fun { Terrat_dirspace.dir; workspace } ->
+                       `Assoc [ ("dir", `String dir); ("workspace", `String workspace) ])
+                     dirspaces) );
+            ]
+        in
+        Abbs_future_combinators.Result.ignore
+        @@ Gcm_api.apply_template_and_publish_jinja
+             ~request_id
+             client
+             pull_request
+             "PLAN_ALREADY_PLANNED"
+             (Tmpl.plan_already_planned brand)
              kv
     | Msg.Plan_no_matching_dirspaces tag_query ->
         let kv = Msg.no_matching_dirspaces_kv tag_query in
@@ -4418,6 +4576,22 @@ module Comment = struct
              "WORK_MANIFEST_RUN_FAILED"
              (Tmpl.work_manifest_run_failed brand)
              kv
+
+  (* A comment the VCS refused because we are rate limited is not a failed
+     operation.  Being throttled is exactly the state in which the comment
+     reporting it is most likely to be refused too, so treating that refusal as a
+     failure turns one throttled call into a failed run and sends the error
+     handler off to publish yet another comment.  Every other publish failure is
+     still a failure. *)
+  let publish_comment ~request_id ~brand client user pull_request msg =
+    let open Abb.Future.Infix_monad in
+    publish_comment' ~request_id ~brand client user pull_request msg
+    >>= function
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error (`Vcs_api_rate_limit_err operation) ->
+        Logs.info (fun m -> m "%s : PUBLISH_COMMENT : RATE_LIMITED : %s" request_id operation);
+        Abbs_future_combinators.return_ok ()
+    | Error `Error -> Abbs_future_combinators.return_err `Error
 
   (* The unified summary comment is not implemented for GitLab yet. *)
   let drain_unified_comment ~request_id:_ ~fetch_brand:_ _config _storage _work_manifest_id =
