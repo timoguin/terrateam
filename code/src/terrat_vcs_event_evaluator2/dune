@@ -13,6 +13,7 @@
   sln
   terrat_base_repo_config_v1
   terrat_comment
+  terrat_job_context
   terrat_kv_store
   terrat_metrics
   terrat_storage

@@ -10,4 +10,5 @@
   terrat_base_repo_config_v1
   terrat_change
   terrat_change_match3
+  terrat_job_context
   terrat_vcs_event_evaluator2))

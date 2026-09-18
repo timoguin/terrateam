@@ -1,6 +1,7 @@
 module Merge_steps = struct
   let t_of_yojson = function
     | `String "all" -> Ok `All
+    | `String "by_phase" -> Ok `By_phase
     | `String "none" -> Ok `None
     | `String "setup" -> Ok `Setup
     | `String "setup_and_plan" -> Ok `Setup_and_plan
@@ -8,12 +9,14 @@ module Merge_steps = struct
 
   let t_to_yojson = function
     | `All -> `String "all"
+    | `By_phase -> `String "by_phase"
     | `None -> `String "none"
     | `Setup -> `String "setup"
     | `Setup_and_plan -> `String "setup_and_plan"
 
   type t =
     ([ `All
+     | `By_phase
      | `None
      | `Setup
      | `Setup_and_plan

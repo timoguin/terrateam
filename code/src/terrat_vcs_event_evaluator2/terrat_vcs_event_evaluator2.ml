@@ -1,4 +1,5 @@
 module Batch = Terrat_vcs_event_evaluator2_batch
+module Compute_node = Terrat_vcs_event_evaluator2_compute_node
 module Work_set = Terrat_vcs_event_evaluator2_work_set
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Fc = Abbs_future_combinators
@@ -218,9 +219,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                                 (* This node is for one work manifest that was
                                    made before the server made a node with each
                                    one.  It takes no more work, so it needs no
-                                   budget. *)
+                                   budget and no phase. *)
                                 max_workspaces = None;
                                 used_workspaces = CCList.length wm.Wm.changes;
+                                used_work_manifests = 1;
+                                merge_phase = None;
                               }
                             db
                           >>= fun { Tjc.Compute_node.id = compute_node_id; _ } ->
@@ -567,7 +570,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           (fun work_manifest_id ->
             Fc.ignore
               (Abb.Future.fork
-                 (S.Comment.drain_unified_comment ~request_id config storage work_manifest_id)))
+                 (S.Comment.drain_unified_comment
+                    ~request_id
+                    ~fetch_brand:(S.Repo_config.fetch_brand ~request_id)
+                    config
+                    storage
+                    work_manifest_id)))
           work_manifest_id
         >>| fun () -> Ok ()
     | Error _ -> Abbs_future_combinators.return_err `Error
@@ -1037,7 +1045,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       ~finally:(fun () ->
         Fc.ignore
           (Abb.Future.fork
-             (S.Comment.drain_unified_comment ~request_id config storage work_manifest_id))
+             (S.Comment.drain_unified_comment
+                ~request_id
+                ~fetch_brand:(S.Repo_config.fetch_brand ~request_id)
+                config
+                storage
+                work_manifest_id))
         >>= fun () ->
         (* The legacy evaluator resolves its result future while its
            transaction is still open, so the dirty mark may not be visible to
@@ -1046,7 +1059,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           (Abb.Future.fork
              (Abb.Sys.sleep 10.0
              >>= fun () ->
-             S.Comment.drain_unified_comment ~request_id config storage work_manifest_id))
+             S.Comment.drain_unified_comment
+               ~request_id
+               ~fetch_brand:(S.Repo_config.fetch_brand ~request_id)
+               config
+               storage
+               work_manifest_id))
         >>= fun () ->
         Fc.ignore
         @@ Abb.Future.fork
