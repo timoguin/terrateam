@@ -133,6 +133,15 @@ module Assert = struct
           (CCOption.get_or
              ~default:"Expected predicate to hold for at least one element, it holds for none"
              fail_msg)
+
+    let str_mem ?fail_msg s l =
+      if not (CCList.mem ~eq:CCString.equal s l) then
+        false_
+          (Format.asprintf
+             "%sExpected the list to hold %S, got [%s]"
+             (CCOption.map_or ~default:"" (fun m -> m ^ ": ") fail_msg)
+             s
+             (CCString.concat "; " l))
   end
 
   module Eq = struct
