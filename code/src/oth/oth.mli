@@ -87,6 +87,10 @@ module type ASSERT = sig
     (** Asserts that [p] holds for at least one element of the list, otherwise prints [fail_msg] and
         fails the test. There is no failing element to name, so unlike {!all} there is no [pp]. *)
     val exists : ?fail_msg:string -> ('a -> bool) -> 'a list -> unit
+
+    (** Asserts that the string list holds [s], otherwise fails the test. The failure names [s] and
+        the list, and [fail_msg], when given, says why [s] must be there. *)
+    val str_mem : ?fail_msg:string -> string -> string list -> unit
   end
 
   module Eq : sig
