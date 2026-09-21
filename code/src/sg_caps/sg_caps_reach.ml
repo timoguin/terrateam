@@ -20,6 +20,21 @@ let make ~(tenants : Scope.t) ~(states : Scope.t) ~(addresses : Scope.t) =
     (fun reached -> if reached then per_state else no_state)
     (tenants :> bool Sg_caps_trie.t)
 
+let to_rules t =
+  CCList.map
+    (fun (tenant, states) ->
+      (tenant, Sg_caps_trie.to_rules ~equal:Scope.equal ~default:Scope.empty states))
+    (Sg_caps_trie.to_rules ~equal:equal_states ~default:no_state t)
+
+let of_rules rules =
+  Sg_caps_trie.of_rules
+    ~equal:equal_states
+    ~default:no_state
+    (CCList.map
+       (fun (tenant, states) ->
+         (tenant, Sg_caps_trie.of_rules ~equal:Scope.equal ~default:Scope.empty states))
+       rules)
+
 let mem t ~tenant ~state ~address =
   Scope.mem (Sg_caps_trie.find (Sg_caps_trie.find t tenant) state) address
 
@@ -28,4 +43,4 @@ let union = combine Scope.union
 let inter = combine Scope.inter
 let diff = combine Scope.diff
 let is_empty = Sg_caps_trie.for_all (Sg_caps_trie.for_all Scope.is_empty)
-let subset a b = is_empty (diff a b)
+let entails a b = is_empty (diff b a)

@@ -94,11 +94,21 @@ val of_rules : equal:('a -> 'a -> bool) -> default:'a -> (Pattern.t * 'a) list -
 (** [to_rules ~equal t] gives one or two rules for each node of [t], in prefix order, starting with
     [Prefix ""]. [of_rules ~equal ~default (to_rules ~equal t)] is [t], whatever [default] is.
 
+    [to_rules ~equal ~default t] leaves the [Prefix ""] rule out when it answers [default], since
+    [of_rules ~equal ~default] reads its absence the same way. The rules are then the fewest that
+    [of_rules ~equal ~default] turns back into [t], and [to_rules ~equal ~default t] is [[]] exactly
+    when [t] answers [default] everywhere.
+
     {v
       to_rules (of_rules ~default:false [ (Prefix "a.", true); (Literal "a.b", false); (Literal "a.b.c", true) ])
         = [ (Prefix "", false); (Prefix "a.", true); (Literal "a.b", false) ]
+
+      to_rules ~default:false (of_rules ~default:false [ (Prefix "a.", true) ])
+        = [ (Prefix "a.", true) ]
+      to_rules ~default:true  (of_rules ~default:false [ (Prefix "a.", true) ])
+        = [ (Prefix "", false); (Prefix "a.", true) ]
     v} *)
-val to_rules : equal:('a -> 'a -> bool) -> 'a t -> (Pattern.t * 'a) list
+val to_rules : equal:('a -> 'a -> bool) -> ?default:'a -> 'a t -> (Pattern.t * 'a) list
 
 (** [map ~equal f t] answers [f (find t s)] for every string [s]. *)
 val map : equal:('b -> 'b -> bool) -> ('a -> 'b) -> 'a t -> 'b t

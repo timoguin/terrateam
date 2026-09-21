@@ -35,8 +35,30 @@ val full : t
     refused. *)
 val of_rules : (Sg_caps_trie.Pattern.t * bool) list -> t
 
-(** [to_rules t] gives the rules that [of_rules] turns back into [t], starting with [Prefix ""]. *)
+(** [to_rules t] gives the rules that [of_rules] turns back into [t]. A string that no rule names is
+    refused, so the [Prefix ""] rule is left out when it refuses: [to_rules empty] is [[]], and no
+    rule of [to_rules t] refuses everything. *)
 val to_rules : t -> (Sg_caps_trie.Pattern.t * bool) list
+
+(** [of_strings texts] reads rules written as text, where a leading ['!'] refuses what the rest of
+    the text matches. It fails on a text that is not a pattern once that ['!'] is taken off.
+
+    {v
+      of_strings [ "a.*"; "!a.b" ]  = Ok (of_rules [ (Prefix "a.", true); (Literal "a.b", false) ])
+      of_strings [ "!!a" ]          = Ok (of_rules [ (Literal "!a", false) ])
+      of_strings []                 = Ok empty
+      of_strings [ "a*b" ]          = Error (`Invalid_pattern_err "a*b")
+    v} *)
+val of_strings : string list -> (t, [> `Invalid_pattern_err of string ]) result
+
+(** [to_strings t] writes the rules of [t] in the form [of_strings] reads back as [t].
+
+    {v
+      to_strings empty                                = []
+      to_strings full                                 = [ "*" ]
+      to_strings (of_rules [ (Literal "a", true) ])   = [ "a" ]
+    v} *)
+val to_strings : t -> string list
 
 (** [mem t s] is true when [t] contains [s]. [s] can contain any byte. *)
 val mem : t -> string -> bool
@@ -61,13 +83,13 @@ val diff : t -> t -> t
 (** [compl t] contains the strings that [t] does not contain. *)
 val compl : t -> t
 
-(** [subset a b] is true when [b] contains every string that [a] contains.
+(** [entails a b] is true when [a] contains every string that [b] contains.
 
     {v
-      subset (of_rules [ (Literal "t1", true) ]) (of_rules [ (Prefix "t", true) ])  = true
-      subset (of_rules [ (Prefix "t", true) ])  (of_rules [ (Literal "t1", true) ]) = false
+      entails (of_rules [ (Prefix "t", true) ])  (of_rules [ (Literal "t1", true) ]) = true
+      entails (of_rules [ (Literal "t1", true) ]) (of_rules [ (Prefix "t", true) ])  = false
     v} *)
-val subset : t -> t -> bool
+val entails : t -> t -> bool
 
 (** [is_empty t] is true when [t] contains no string. *)
 val is_empty : t -> bool
