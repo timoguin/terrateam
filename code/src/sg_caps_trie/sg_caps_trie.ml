@@ -149,7 +149,7 @@ let of_rules ~equal ~default rules =
   CCList.stable_sort (fun (a, _) (b, _) -> Pattern.compare_specificity a b) rules
   |> CCList.fold_left (fun base (on, answer) -> override ~equal ~answer ~on ~base) (const default)
 
-let to_rules ~equal t =
+let to_rules ~equal ?default t =
   let literal ~prefix node =
     if equal node.here node.below then [] else [ (Pattern.Literal prefix, node.here) ]
   in
@@ -163,7 +163,12 @@ let to_rules ~equal t =
         node_rules ~prefix:(prefix ^ label) ~parent_below:node.below target)
       (Char_map.to_list node.children)
   in
-  ((Pattern.Prefix "", t.below) :: literal ~prefix:"" t) @ children_rules ~prefix:"" t
+  let root =
+    match default with
+    | Some default when equal t.below default -> []
+    | Some _ | None -> [ (Pattern.Prefix "", t.below) ]
+  in
+  root @ literal ~prefix:"" t @ children_rules ~prefix:"" t
 
 let rec for_all p t =
   p t.here

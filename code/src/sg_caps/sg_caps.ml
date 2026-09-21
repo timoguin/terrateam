@@ -136,14 +136,14 @@ let entails a b =
   let allows_action action =
     let wider = effective a action in
     let narrower = effective b action in
-    Sg_caps_reach.subset narrower.modified wider.modified
-    && Sg_caps_reach.subset narrower.pulled_in wider.pulled_in
+    Sg_caps_reach.entails wider.modified narrower.modified
+    && Sg_caps_reach.entails wider.pulled_in narrower.pulled_in
   in
   ((not b.access_token_create) || a.access_token_create)
   && ((not b.access_token_refresh) || a.access_token_refresh)
-  && Scope.subset b.admin a.admin
-  && Scope.subset b.users_manage a.users_manage
-  && Scope.subset b.sudo a.sudo
+  && Scope.entails a.admin b.admin
+  && Scope.entails a.users_manage b.users_manage
+  && Scope.entails a.sudo b.sudo
   && allows_action `Commit
   && allows_action `Preview
 

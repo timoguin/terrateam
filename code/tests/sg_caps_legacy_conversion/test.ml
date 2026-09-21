@@ -53,7 +53,7 @@ let previews ?states:s ?subgraph ?tenants () =
   Old_caps.make ~preview:(Some (Sgs_session_caps_preview.make ?states:s ?subgraph ?tenants ())) ()
 
 (* The new model's own vocabulary, to write down what a stored record is read as. *)
-let scope = Sg_caps_trie_rule_text.scope
+let scope texts = Oth.Assert.ok (Scope.of_strings texts)
 
 let reach ~tenants ~states ~addresses =
   Sg_caps_reach.make ~tenants:(scope tenants) ~states:(scope states) ~addresses:(scope addresses)

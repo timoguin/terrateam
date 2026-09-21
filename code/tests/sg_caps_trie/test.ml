@@ -6,9 +6,9 @@ module P = Sg_caps_trie.Pattern
 module S = Sg_caps_trie_scope
 module Q = QCheck2
 
-let pattern = Sg_caps_trie_rule_text.pattern
-let render_rule = Sg_caps_trie_rule_text.render_rule
-let scope = Sg_caps_trie_rule_text.scope
+let pattern text = Oth.Assert.ok ~fail_msg:("not a pattern: " ^ text) (P.of_string text)
+let render_rule (p, allowed) = (if allowed then "" else "!") ^ P.to_string p
+let scope texts = Oth.Assert.ok (S.of_strings texts)
 
 let pairs_to_trie ~default rules =
   T.of_rules ~equal:CCInt.equal ~default (CCList.map (fun (text, v) -> (pattern text, v)) rules)
@@ -248,6 +248,13 @@ module Trie_structure = struct
           ~expected:[ "* -> 0"; "ab* -> 1"; "ab -> 2" ]
           ~actual:(rules_of (pairs_to_trie ~default:0 [ ("ab", 2); ("ab*", 1) ]));
         Oth.Assert.Eq.string_list ~expected:[ "* -> 5" ] ~actual:(rules_of (T.const 5));
+        (* With a default, the [*] rule is left out when it answers that default. *)
+        let rules_over default t = render_int_rules (T.to_rules ~equal:CCInt.equal ~default t) in
+        let one_rule = pairs_to_trie ~default:0 [ ("a.*", 1) ] in
+        Oth.Assert.Eq.string_list ~expected:[ "a.* -> 1" ] ~actual:(rules_over 0 one_rule);
+        Oth.Assert.Eq.string_list ~expected:[ "* -> 0"; "a.* -> 1" ] ~actual:(rules_over 7 one_rule);
+        Oth.Assert.Eq.string_list ~expected:[] ~actual:(rules_over 5 (T.const 5));
+        Oth.Assert.Eq.string_list ~expected:[ "* -> 5" ] ~actual:(rules_over 0 (T.const 5));
         (* Reading the rules back gives the same trie, whatever the default. *)
         let t = pairs_to_trie ~default:0 [ ("a.*", 1); ("a.b", 2) ] in
         eq_int_tries t (T.of_rules ~equal:CCInt.equal ~default:7 (T.to_rules ~equal:CCInt.equal t));
@@ -256,15 +263,24 @@ module Trie_structure = struct
   let prop_to_rules =
     Oth.test ~name:"prop_to_rules" (fun _ ->
         check
-          ~name:"of_rules ~default (to_rules t) is t, whatever the default"
+          ~name:
+            "of_rules ~default (to_rules t) is t, whatever the default; so is of_rules ~default \
+             (to_rules ~default t)"
           ~print:(Q.Print.pair print_int_rules Q.Print.int)
           (Q.Gen.pair int_rules_gen (Q.Gen.int_bound 2))
           (fun (rules, default) ->
             let t = T.of_rules ~equal:CCInt.equal ~default:0 rules in
-            T.equal
-              CCInt.equal
-              t
-              (T.of_rules ~equal:CCInt.equal ~default (T.to_rules ~equal:CCInt.equal t)));
+            let reads_back rules =
+              T.equal CCInt.equal t (T.of_rules ~equal:CCInt.equal ~default rules)
+            in
+            let over_default = T.to_rules ~equal:CCInt.equal ~default t in
+            reads_back (T.to_rules ~equal:CCInt.equal t)
+            && reads_back over_default
+            (* And the [*] rule, when it is there, does not answer the default. *)
+            &&
+            match over_default with
+            | (P.Prefix "", v) :: _ -> not (CCInt.equal v default)
+            | (P.Prefix _, _) :: _ | (P.Literal _, _) :: _ | [] -> true);
         ())
 
   let to_rules_minimal_examples =
@@ -851,28 +867,28 @@ module Scope_semantics = struct
               values);
         ())
 
-  let subset_examples =
-    Oth.test ~name:"subset_examples" (fun _ ->
-        Oth.Assert.true_ (S.subset (scope [ "t1" ]) (scope [ "t*" ]));
-        Oth.Assert.not_true (S.subset (scope [ "t*" ]) (scope [ "t1" ]));
-        Oth.Assert.true_ (S.subset (scope [ "a.*"; "!a.b" ]) (scope [ "a.*" ]));
-        Oth.Assert.not_true (S.subset (scope [ "a.*" ]) (scope [ "a.*"; "!a.b" ]));
-        Oth.Assert.true_ (S.subset S.empty (scope [ "t1" ]));
-        Oth.Assert.true_ (S.subset (scope [ "t1" ]) S.full);
+  let entails_examples =
+    Oth.test ~name:"entails_examples" (fun _ ->
+        Oth.Assert.true_ (S.entails (scope [ "t*" ]) (scope [ "t1" ]));
+        Oth.Assert.not_true (S.entails (scope [ "t1" ]) (scope [ "t*" ]));
+        Oth.Assert.true_ (S.entails (scope [ "a.*" ]) (scope [ "a.*"; "!a.b" ]));
+        Oth.Assert.not_true (S.entails (scope [ "a.*"; "!a.b" ]) (scope [ "a.*" ]));
+        Oth.Assert.true_ (S.entails (scope [ "t1" ]) S.empty);
+        Oth.Assert.true_ (S.entails S.full (scope [ "t1" ]));
         ())
 
-  let prop_subset =
-    Oth.test ~name:"prop_subset" (fun _ ->
+  let prop_entails =
+    Oth.test ~name:"prop_entails" (fun _ ->
         check
-          ~name:"subset a b holds exactly when b contains every string of a"
+          ~name:"entails a b holds exactly when a contains every string of b"
           ~print:(Q.Print.pair print_scope_rules print_scope_rules)
           (Q.Gen.pair scope_rules_gen scope_rules_gen)
           (fun (rules_a, rules_b) ->
             let a = S.of_rules rules_a in
             let b = S.of_rules rules_b in
-            let contained = CCList.for_all (fun s -> (not (S.mem a s)) || S.mem b s) values in
-            CCBool.equal (S.subset a b) contained
-            && CCBool.equal (S.subset a b) (S.equal (S.inter a b) a));
+            let contained = CCList.for_all (fun s -> (not (S.mem b s)) || S.mem a s) values in
+            CCBool.equal (S.entails a b) contained
+            && CCBool.equal (S.entails a b) (S.equal (S.inter a b) b));
         ())
 
   let is_empty_is_full_examples =
@@ -1027,8 +1043,8 @@ module Scope_semantics = struct
       prop_lattice_laws;
       complement_laws_examples;
       prop_complement_laws;
-      subset_examples;
-      prop_subset;
+      entails_examples;
+      prop_entails;
       is_empty_is_full_examples;
       prop_is_empty_is_full;
       literals_examples;

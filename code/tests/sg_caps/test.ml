@@ -6,14 +6,16 @@ module C = Sg_caps
 module R = Sg_caps_reach
 module Scope = Sg_caps_trie_scope
 module Q = QCheck2
+module Gen = Sg_caps_gen
 
 let reach ~tenants ~states ~addresses =
-  let scope = Sg_caps_trie_rule_text.scope in
+  let scope texts = Oth.Assert.ok (Scope.of_strings texts) in
   R.make ~tenants:(scope tenants) ~states:(scope states) ~addresses:(scope addresses)
 
-let admin tenants = { C.empty with C.admin = Sg_caps_trie_rule_text.scope tenants }
-let users_manage tenants = { C.empty with C.users_manage = Sg_caps_trie_rule_text.scope tenants }
-let sudo users = { C.empty with C.sudo = Sg_caps_trie_rule_text.scope users }
+let scope texts = Oth.Assert.ok (Scope.of_strings texts)
+let admin tenants = { C.empty with C.admin = scope tenants }
+let users_manage tenants = { C.empty with C.users_manage = scope tenants }
+let sudo users = { C.empty with C.sudo = scope users }
 let commit reach = { C.empty with C.commit = { C.modified = reach; pulled_in = reach } }
 let preview reach = { C.empty with C.preview = { C.modified = reach; pulled_in = reach } }
 
@@ -22,51 +24,6 @@ let check_equivalent left right =
   Oth.Assert.true_
     ~fail_msg:(Format.asprintf "@[<v>left:  %a@,right: %a@]" C.pp left C.pp right)
     (C.equivalent left right)
-
-(* The generators the properties draw from. *)
-module Gen = struct
-  let text = Q.Gen.string_size ~gen:(Q.Gen.oneof_list [ 'a'; 'b'; 'c'; '.' ]) (Q.Gen.int_bound 2)
-
-  let pattern =
-    Q.Gen.map
-      (fun (text, prefix) -> Sg_caps_trie_rule_text.pattern (if prefix then text ^ "*" else text))
-      (Q.Gen.pair text Q.Gen.bool)
-
-  let scope =
-    Q.Gen.map Scope.of_rules (Q.Gen.list_size (Q.Gen.int_bound 3) (Q.Gen.pair pattern Q.Gen.bool))
-
-  (* A reach is the union of a few products, the shape the capabilities of a user take once the grants
-     of several group rules are joined. *)
-  let reach =
-    Q.Gen.map
-      (CCList.fold_left R.union R.empty)
-      (Q.Gen.list_size
-         (Q.Gen.int_bound 2)
-         (Q.Gen.map
-            (fun (tenants, states, addresses) -> R.make ~tenants ~states ~addresses)
-            (Q.Gen.triple scope scope scope)))
-
-  let actions =
-    Q.Gen.map (fun (modified, pulled_in) -> { C.modified; pulled_in }) (Q.Gen.pair reach reach)
-
-  let caps =
-    let open Q.Gen in
-    bool
-    >>= fun access_token_create ->
-    bool
-    >>= fun access_token_refresh ->
-    scope
-    >>= fun admin ->
-    scope
-    >>= fun users_manage ->
-    scope
-    >>= fun sudo ->
-    actions
-    >>= fun commit ->
-    actions
-    >|= fun preview ->
-    { C.access_token_create; access_token_refresh; admin; users_manage; sudo; commit; preview }
-end
 
 let print_caps caps = Format.asprintf "%a" C.pp caps
 let count = 500

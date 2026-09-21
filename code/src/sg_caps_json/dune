@@ -1,0 +1,5 @@
+(library
+ (name sg_caps_json)
+ (libraries containers sg_caps sg_caps_trie sg_caps_wire)
+ (preprocess
+  (pps ppx_deriving.show)))
