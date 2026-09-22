@@ -229,7 +229,7 @@ let output_of_run ?(default_visible_on = Visible_on.Failure) output =
     | None | Some (`String "code") -> (None, false)
     | Some (`String "raw") | Some (`String "markdown") -> (None, true)
     | Some (`Assoc fields) -> (
-        match CCList.assoc_opt ~eq:CCString.equal "lang" fields with
+        match Sln_list.String.assoc_opt "lang" fields with
         | Some (`String lang) -> (Some lang, false)
         | _ -> (None, false))
     | Some _ -> (None, false)

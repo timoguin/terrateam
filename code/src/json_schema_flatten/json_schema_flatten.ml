@@ -79,7 +79,7 @@ let flatten_document ~search_path ~file_link ~root_file json =
     if CCString.equal path "" then (ref_, state) (* internal ref, unchanged *)
     else
       let name = name_of_fragment frag ref_ in
-      match CCList.assoc_opt ~eq:CCString.equal (Filename.basename path) file_link_by_base with
+      match Sln_list.String.assoc_opt (Filename.basename path) file_link_by_base with
       | Some module_base -> (Printf.sprintf "#/file-link/%s/%s" module_base name, state)
       | None ->
           let file = resolve_file ~base_dir path in
@@ -94,7 +94,7 @@ let flatten_document ~search_path ~file_link ~root_file json =
                 let def_json =
                   match Yojson.Safe.Util.member "definitions" json with
                   | `Assoc kvs -> (
-                      match CCList.assoc_opt ~eq:CCString.equal name kvs with
+                      match Sln_list.String.assoc_opt name kvs with
                       | Some d -> d
                       | None -> failwith (Printf.sprintf "Definition %S not found in %s" name file))
                   | _ -> failwith (Printf.sprintf "No definitions object in %s" file)
@@ -171,7 +171,7 @@ let flatten_document ~search_path ~file_link ~root_file json =
   match rewritten with
   | `Assoc kvs ->
       let existing_defs =
-        match CCList.assoc_opt ~eq:CCString.equal "definitions" kvs with
+        match Sln_list.String.assoc_opt "definitions" kvs with
         | Some (`Assoc d) -> d
         | _ -> []
       in

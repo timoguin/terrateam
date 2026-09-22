@@ -126,5 +126,5 @@ let grants_all patterns =
   CCList.is_empty negs && CCList.exists (CCString.equal "*") poss
 
 let lookup assoc key =
-  CCOption.or_lazy (CCList.assoc_opt ~eq:CCString.equal key assoc) ~else_:(fun () ->
-      CCList.assoc_opt ~eq:CCString.equal "*" assoc)
+  CCOption.or_lazy (Sln_list.String.assoc_opt key assoc) ~else_:(fun () ->
+      Sln_list.String.assoc_opt "*" assoc)

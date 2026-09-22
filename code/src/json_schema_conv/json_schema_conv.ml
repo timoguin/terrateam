@@ -310,7 +310,7 @@ module Gen = struct
   let variant_name_of_default enum_json s =
     let enum_strings = Yojson.Safe.Util.filter_string enum_json in
     let variant_map = unique_variant_names enum_strings in
-    CCList.assoc_opt ~eq:CCString.equal s variant_map
+    Sln_list.String.assoc_opt s variant_map
 
   (* Every OCaml keyword, plus [ref], which is not a keyword but shadows the
      standard library's.  A schema property named after one of these would make a

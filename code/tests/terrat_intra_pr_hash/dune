@@ -1,3 +1,9 @@
 (test
  (name test)
- (libraries containers oth terrat_data terrat_dirspace terrat_intra_pr_hash))
+ (libraries
+  containers
+  oth
+  sln
+  terrat_data
+  terrat_dirspace
+  terrat_intra_pr_hash))

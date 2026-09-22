@@ -24,7 +24,7 @@ let state ?last_plan ?last_apply dir =
 (* [changes] is a list of (sha, the directories which changed between that sha and the head).  A
    sha which is absent has no change. *)
 let changed_dirspaces changes sha =
-  changes |> CCList.assoc_opt ~eq:CCString.equal sha |> CCOption.get_or ~default:[] |> dirspace_set
+  changes |> Sln_list.String.assoc_opt sha |> CCOption.get_or ~default:[] |> dirspace_set
 
 let select
     ?(changes = [])

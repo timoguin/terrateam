@@ -585,7 +585,7 @@ struct
                   the change match.  A pull request whose runs are older than this feature meets
                   this, and so does one whose trees the cleanup has removed. *)
                 let changed_of_sha sha =
-                  match CCList.assoc_opt ~eq:CCString.equal sha !changed_cache with
+                  match Sln_list.String.assoc_opt sha !changed_cache with
                   | Some changed -> Abbs_future_combinators.return_ok changed
                   | None ->
                       let ref_ = S.Api.Ref.of_string sha in
@@ -633,7 +633,7 @@ struct
                   shas
                 >>| fun changed ->
                 let changed_dirspaces sha =
-                  match CCList.assoc_opt ~eq:CCString.equal sha changed with
+                  match Sln_list.String.assoc_opt sha changed with
                   | Some (Some changed) -> changed
                   | Some None -> Terrat_data.Dirspace_set.of_list dirspaces
                   | None -> Terrat_data.Dirspace_set.empty
