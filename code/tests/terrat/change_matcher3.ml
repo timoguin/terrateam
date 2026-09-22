@@ -2340,11 +2340,9 @@ let test_layer_is_earliest_possible =
       in
       (* [d] has no dependency, so [d] belongs in the first layer.  This
          assertion does not depend on the hash order Tsort returns. *)
-      Oth.Assert.true_
-        (CCList.mem
-           ~eq:CCString.equal
-           "d"
-           (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
+      Oth.Assert.List.str_mem
+        ~searched:"d"
+        (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs));
       (* The whole layering, stated as it should be. *)
       Oth.Assert.true_
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "d" ]; [ "b" ]; [ "a" ] ]);
@@ -2423,11 +2421,9 @@ let test_layer_is_earliest_possible_shared_dependent =
                  layer)
           changes
       in
-      Oth.Assert.true_
-        (CCList.mem
-           ~eq:CCString.equal
-           "h"
-           (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs)));
+      Oth.Assert.List.str_mem
+        ~searched:"h"
+        (CCOption.get_or ~default:[] (CCList.head_opt layer_dirs));
       Oth.Assert.true_
         (CCList.equal (CCList.equal CCString.equal) layer_dirs [ [ "c"; "h" ]; [ "b" ]; [ "a" ] ]);
       ())

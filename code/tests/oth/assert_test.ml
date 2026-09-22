@@ -11,9 +11,13 @@ let fails f =
   | exception _ -> true
 
 let () =
-  check "a member passes" (not (fails (fun () -> Oth.Assert.List.str_mem "b" [ "a"; "b"; "c" ])));
-  check "an absent string fails" (fails (fun () -> Oth.Assert.List.str_mem "d" [ "a"; "b"; "c" ]));
-  check "the empty list fails" (fails (fun () -> Oth.Assert.List.str_mem "a" []));
+  check
+    "a member passes"
+    (not (fails (fun () -> Oth.Assert.List.str_mem ~searched:"b" [ "a"; "b"; "c" ])));
+  check
+    "an absent string fails"
+    (fails (fun () -> Oth.Assert.List.str_mem ~searched:"d" [ "a"; "b"; "c" ]));
+  check "the empty list fails" (fails (fun () -> Oth.Assert.List.str_mem ~searched:"a" []));
   check
     "a message does not change the answer"
-    (fails (fun () -> Oth.Assert.List.str_mem ~fail_msg:"why" "d" [ "a" ]))
+    (fails (fun () -> Oth.Assert.List.str_mem ~fail_msg:"why" ~searched:"d" [ "a" ]))
