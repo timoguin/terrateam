@@ -11,17 +11,17 @@ module Permissions = struct
 end
 
 type t = {
-  created_at : string;
+  created_at : string option; [@default None]
   description : string option; [@default None]
   events : Events.t option; [@default None]
-  external_url : string;
-  html_url : string;
-  id : int;
-  name : string;
-  node_id : string;
-  owner : Terrat_github_webhooks_user.t;
+  external_url : string option; [@default None]
+  html_url : string option; [@default None]
+  id : int option; [@default None]
+  name : string option; [@default None]
+  node_id : string option; [@default None]
+  owner : Terrat_github_webhooks_user.t option; [@default None]
   permissions : Permissions.t option; [@default None]
   slug : string option; [@default None]
-  updated_at : string;
+  updated_at : string option; [@default None]
 }
 [@@deriving yojson { strict = false; meta = true }, make, show, eq]

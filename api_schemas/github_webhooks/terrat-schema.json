@@ -61,17 +61,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "node_id",
-        "owner",
-        "name",
-        "description",
-        "external_url",
-        "html_url",
-        "created_at",
-        "updated_at"
-      ],
+      "required": [],
       "title": "App",
       "type": "object"
     },
