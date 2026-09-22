@@ -1,7 +1,13 @@
 module Ui : sig
-  val base_url : Terrat_vcs_api_github.Config.t -> Terrat_vcs_api_github.Account.t -> string
+  (** The console of [brand], and the installation of [account] inside it. *)
+  val base_url :
+    brand:Terrat_brand.t ->
+    Terrat_vcs_api_github.Config.t ->
+    Terrat_vcs_api_github.Account.t ->
+    string
 
   val work_manifest_url :
+    brand:Terrat_brand.t ->
     Terrat_vcs_api_github.Config.t ->
     Terrat_vcs_api_github.Account.t ->
     int option ->
@@ -9,5 +15,9 @@ module Ui : sig
     Uri.t option
 
   val run_url :
-    Terrat_vcs_api_github.Config.t -> Terrat_vcs_api_github.Account.t -> Uuidm.t -> Uri.t option
+    brand:Terrat_brand.t ->
+    Terrat_vcs_api_github.Config.t ->
+    Terrat_vcs_api_github.Account.t ->
+    Uuidm.t ->
+    Uri.t option
 end

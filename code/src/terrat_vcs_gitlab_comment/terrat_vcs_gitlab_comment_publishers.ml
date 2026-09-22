@@ -493,7 +493,12 @@ module Publisher_tools = struct
                ~default:[]
                (fun work_manifest_url ->
                  [ ("work_manifest_url", `String (Uri.to_string work_manifest_url)) ])
-               (Ui.work_manifest_url config work_manifest.Wm.account pull_number work_manifest);
+               (Ui.work_manifest_url
+                  ~brand
+                  config
+                  work_manifest.Wm.account
+                  pull_number
+                  work_manifest);
              CCOption.map_or
                ~default:[]
                (fun env -> [ ("environment", `String env) ])

@@ -126,3 +126,22 @@ val show_err : err -> string
 val statement_timeout : t -> string
 val telemetry : t -> Telemetry.t
 val terrateam_web_base_url : t -> Uri.t
+
+(** The console base of a brand, from the first source that is set: [STATEGRAPH_UI_BASE] for
+    [Stategraph], [TERRAT_UI_BASE] for [Terrateam], then {!terrateam_web_base_url}. It carries no
+    trailing slash, so a caller joins it with a path directly. *)
+val web_base_url : t -> Terrat_brand.t -> Uri.t
+
+(** [rebrand_url t brand url] answers [url] with a leading {!terrateam_web_base_url} replaced by the
+    console base of [brand]:
+
+    {[
+    (* TERRAT_WEB_BASE_URL = "https://app.example.com"
+       TERRAT_UI_BASE      = "https://app.terrateam.io" *)
+    rebrand_url t Terrateam "https://app.example.com/i/7/runs/ab-cd"
+    (* = "https://app.terrateam.io/i/7/runs/ab-cd" *)
+    ]}
+
+    A URL that opens on another base passes through, so a link read back from the forge and
+    published again keeps one base. *)
+val rebrand_url : t -> Terrat_brand.t -> string -> string
