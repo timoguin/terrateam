@@ -183,7 +183,7 @@ module Work_manifest = struct
 end
 
 module Ui = struct
-  let work_manifest_url config account = raise (Failure "nyi")
+  let work_manifest_url ~brand:_ config account = raise (Failure "nyi")
 end
 
 module Stacks = struct

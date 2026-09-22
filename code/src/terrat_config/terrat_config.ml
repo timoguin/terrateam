@@ -1,5 +1,14 @@
+(* A console base is joined with a path, so it carries no trailing slash. *)
+let base_url_of_string s = Uri.of_string (CCString.rdrop_while (Char.equal '/') s)
+
+(* An empty value reads as unset, so the next base in the order is consulted. *)
+let base_url_of_env key =
+  match Sys.getenv_opt key with
+  | None | Some "" -> None
+  | Some s -> Some (base_url_of_string s)
+
 let default_telemetry_uri = Uri.of_string "https://telemetry.terrateam.io"
-let default_terrateam_web_base_url = Uri.of_string "https://app.terrateam.io"
+let default_terrateam_web_base_url = base_url_of_string "https://app.terrateam.io"
 let default_vcs_call_timeout = 20.0
 
 module Github = struct
@@ -137,8 +146,10 @@ type t = {
   port : int;
   python_exec : string;
   session_cookie_name : string;
+  stategraph_ui_base : Uri.t option;
   statement_timeout : string;
   telemetry : Telemetry.t;
+  terrateam_ui_base : Uri.t option;
   terrateam_web_base_url : Uri.t;
 }
 [@@deriving show]
@@ -353,9 +364,8 @@ let load_gc () =
 
 let create () =
   let open CCResult.Infix in
-  (* This is required for Terrateam UI to work correctly so we simply check if
-     it is set to we can error to the user if it is not, we do not use it in the
-     actual server. *)
+  (* Required: the UI needs it, and it is the console base of a repository
+     whose brand is [Terrateam]. *)
   env_str "TERRAT_UI_BASE"
   >>= fun _ ->
   (* Validated here so a typo fails boot; the value itself is read by
@@ -415,11 +425,10 @@ let create () =
     | _ -> None)
   >>= fun telemetry ->
   let terrateam_web_base_url =
-    CCOption.map_or
-      ~default:default_terrateam_web_base_url
-      Uri.of_string
-      (Sys.getenv_opt "TERRAT_WEB_BASE_URL")
+    CCOption.get_or ~default:default_terrateam_web_base_url (base_url_of_env "TERRAT_WEB_BASE_URL")
   in
+  let stategraph_ui_base = base_url_of_env "STATEGRAPH_UI_BASE" in
+  let terrateam_ui_base = base_url_of_env "TERRAT_UI_BASE" in
   let statement_timeout =
     CCOption.get_or ~default:"5s" (Sys.getenv_opt "TERRAT_STATEMENT_TIMEOUT")
   in
@@ -455,8 +464,10 @@ let create () =
       port;
       python_exec;
       session_cookie_name;
+      stategraph_ui_base;
       statement_timeout;
       telemetry;
+      terrateam_ui_base;
       terrateam_web_base_url;
     }
 
@@ -484,3 +495,14 @@ let session_cookie_name t = t.session_cookie_name
 let statement_timeout t = t.statement_timeout
 let telemetry t = t.telemetry
 let terrateam_web_base_url t = t.terrateam_web_base_url
+
+let web_base_url t = function
+  | Terrat_brand.Stategraph ->
+      CCOption.get_or ~default:t.terrateam_web_base_url t.stategraph_ui_base
+  | Terrat_brand.Terrateam -> CCOption.get_or ~default:t.terrateam_web_base_url t.terrateam_ui_base
+
+let rebrand_url t brand url =
+  let canonical = Uri.to_string t.terrateam_web_base_url in
+  match CCString.chop_prefix ~pre:canonical url with
+  | Some path -> Uri.to_string (web_base_url t brand) ^ path
+  | None -> url

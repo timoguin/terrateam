@@ -1081,6 +1081,7 @@ module type S = sig
 
   module Ui : sig
     val work_manifest_url :
+      brand:Terrat_brand.t ->
       Api.Config.t ->
       Api.Account.t ->
       int option ->

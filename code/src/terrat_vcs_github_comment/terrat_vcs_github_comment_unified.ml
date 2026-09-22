@@ -304,10 +304,11 @@ module S = struct
       (fun work_manifest_id ->
         Uri.to_string
         @@ CCOption.get_exn_or "run_url"
-        @@ Ui.run_url t.config t.account work_manifest_id)
+        @@ Ui.run_url ~brand:t.brand t.config t.account work_manifest_id)
       el.work_manifest_id
 
-  let console_url t = Printf.sprintf "%s/runs/pr/%Ld" (Ui.base_url t.config t.account) t.pull_number
+  let console_url t =
+    Printf.sprintf "%s/runs/pr/%Ld" (Ui.base_url ~brand:t.brand t.config t.account) t.pull_number
 
   let sum f els =
     CCList.fold_left (fun acc el -> Int64.add acc (CCOption.get_or ~default:0L (f el))) 0L els

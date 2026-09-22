@@ -81,6 +81,10 @@ http {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
+        # Mirrored by the iris server block in docker/stategraph/service/nginx.
+        # Its %TERRATEAM_*% substitutions and Content-Security-Policy must stay
+        # the same as the ones here; code/tests/nginx_terrat_routes fails when
+        # they differ.
         location / {
 
             set $cspNonce '$request_id';

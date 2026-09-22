@@ -402,6 +402,7 @@ module Client = struct
   type t = {
     account : Account.t;
     client : Githubc2_abb.t;
+    config : Config.t;
     fetch_branch_sha_cache : Fetch_branch_sha_cache.t;
     fetch_centralized_repo_cache : Fetch_centralized_repo_cache.t;
     fetch_directory_by_rev_cache : Fetch_directory_cache.By_rev.t;
@@ -410,10 +411,11 @@ module Client = struct
     fetch_tree_by_rev_cache : Fetch_tree_cache.By_rev.t;
   }
 
-  let make ~account ~client () =
+  let make ~account ~client ~config () =
     {
       account;
       client;
+      config;
       fetch_branch_sha_cache = Globals.fetch_branch_sha_cache;
       fetch_centralized_repo_cache = Globals.fetch_centralized_repo_cache;
       fetch_directory_by_rev_cache = Globals.fetch_directory_by_rev_cache;
@@ -629,7 +631,7 @@ let create_client ~request_id config account _db =
   Client.Client_cache.fetch Client.Globals.client_cache account fetch
   >>= function
   | Ok github_client ->
-      Abbs_future_combinators.return_ok (Client.make ~account ~client:github_client ())
+      Abbs_future_combinators.return_ok (Client.make ~account ~client:github_client ~config ())
   | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
       Abbs_future_combinators.return_err err
   | Error `Error -> Abbs_future_combinators.return_err `Error
@@ -1049,8 +1051,10 @@ let react_to_comment ~request_id client pull_request comment_id =
 let create_commit_checks ~request_id ~brand client repo ref_ checks =
   let open Abb.Future.Infix_monad in
   Logs.info (fun m -> m "%s : CREATE_COMMIT_CHECKS : num=%d" request_id (CCList.length checks));
-  (* Titles are canonical ("terrateam ...") internally; the brand is applied
-     only here, at the VCS boundary. *)
+  (* Titles and Details links are canonical internally -- a "terrateam ..."
+     title on the TERRAT_WEB_BASE_URL console; the brand is applied only here,
+     at the VCS boundary. *)
+  let config = Config.config client.Client.config in
   let checks =
     CCList.map
       (fun c ->
@@ -1058,6 +1062,8 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
           c with
           Terrat_commit_check.title =
             Terrat_check_title.branded_with ~brand c.Terrat_commit_check.title;
+          Terrat_commit_check.details_url =
+            Terrat_config.rebrand_url config brand c.Terrat_commit_check.details_url;
         })
       checks
   in

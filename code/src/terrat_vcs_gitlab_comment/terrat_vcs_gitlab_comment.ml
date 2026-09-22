@@ -55,8 +55,8 @@ module S = struct
   let minimize_comment _t _comment_id = raise (Failure "nyi")
   let pull_number t = Some (Api.Pull_request.id t.pull_request)
 
-  (* GitLab has no Console run pages (see [Ui.run_url]) and does not yet track a
-     per-dirspace work manifest id, so there are no per-dirspace run links. *)
+  (* GitLab has no Console run pages and does not yet track a per-dirspace
+     work manifest id, so there are no per-dirspace run links. *)
   let dirspace_run_urls _t _els = []
 
   let summary_enabled t =
