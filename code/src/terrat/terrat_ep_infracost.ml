@@ -4,6 +4,10 @@ module Logs = (val Logs.src_log src : Logs.LOG)
 module Http = Cohttp_abb.Make (Abb)
 module Exec = Abb_keyed_concurrent_executor.Make (Abb) (CCString)
 
+type backend =
+  | Proxy of Terrat_config.Infracost.proxy
+  | Price_book of Terrat_storage.t
+
 module Metrics = struct
   module DefaultHistogram = Prmths.Histogram (struct
     let spec = Prmths.Histogram_spec.of_list [ 0.005; 0.5; 1.0; 5.0; 10.0; 15.0; 20.0 ]
@@ -51,7 +55,7 @@ let api_call = Exec.create ~slots:10 (fun f -> f ())
 let api_call_timeout = Duration.to_f (Duration.of_sec 10)
 let header_replace k v h = Cohttp.Header.replace h k v
 
-let post' _config storage api_key infracost_uri path ctx =
+let proxy storage api_key infracost_uri path ctx =
   let open Abb.Future.Infix_monad in
   let request = Brtl_ctx.request ctx in
   let request_id = Brtl_ctx.token ctx in
@@ -155,20 +159,138 @@ let post' _config storage api_key infracost_uri path ctx =
   | None ->
       Abb.Future.return (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
 
-let post config storage path =
+let invalid_api_key_body =
+  Terrat_api_components.Infracost_error.(
+    { error = "Invalid API key"; error_code = "invalid_api_key" }
+    |> to_yojson
+    |> Yojson.Safe.to_string)
+
+let bad_request_body =
+  Terrat_api_components.Infracost_error.(
+    { error = "Bad request"; error_code = "bad_request" } |> to_yojson |> Yojson.Safe.to_string)
+
+let unsupported_currency_body =
+  Terrat_api_components.Infracost_error.(
+    { error = "Unsupported currency"; error_code = "unsupported_currency" }
+    |> to_yojson
+    |> Yojson.Safe.to_string)
+
+let event_body =
+  Terrat_api_components.Infracost_event_result.(
+    { status = "ok" } |> to_yojson |> Yojson.Safe.to_string)
+
+let response status body ctx =
+  Abb.Future.return (Brtl_ctx.set_response (Brtl_rspnc.create ~status body) ctx)
+
+let invalid_api_key ctx =
+  Prmths.Counter.inc_one (Metrics.responses_total "invalid_api_key");
+  response `Forbidden invalid_api_key_body ctx
+
+let graphql ~pricing ctx =
+  let open Abb.Future.Infix_monad in
+  let request_id = Brtl_ctx.token ctx in
+  match Infracost_pricing.decode (Yojson.Safe.from_string (Brtl_ctx.body ctx)) with
+  | Ok elements -> (
+      Infracost_pricing.run pricing elements
+      >>= function
+      | Ok body ->
+          Logs.info (fun m -> m "%s : SUCCESS : %d" request_id (CCList.length elements));
+          Prmths.Counter.inc_one (Metrics.responses_total "success");
+          response
+            `OK
+            (Yojson.Safe.to_string
+               (Terrat_api_components.Infracost_graphql_batch_response.to_yojson body))
+            ctx
+      | Error (#Pgsql_pool.err as err) ->
+          Logs.err (fun m -> m "%s : PRICING_POOL_ERROR : %a" request_id Pgsql_pool.pp_err err);
+          Prmths.Counter.inc_one Metrics.pgsql_pool_errors_total;
+          Prmths.Counter.inc_one (Metrics.responses_total "error");
+          response `Internal_server_error "" ctx
+      | Error (#Pgsql_io.err as err) ->
+          Logs.err (fun m -> m "%s : PRICING_DB_ERROR : %a" request_id Pgsql_io.pp_err err);
+          Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+          Prmths.Counter.inc_one (Metrics.responses_total "error");
+          response `Internal_server_error "" ctx)
+  | Error `Bad_request_err ->
+      Logs.warn (fun m -> m "%s : BAD_REQUEST" request_id);
+      Prmths.Counter.inc_one Metrics.infracost_errors_total;
+      Prmths.Counter.inc_one (Metrics.responses_total "bad_request");
+      response `Bad_request bad_request_body ctx
+  | Error `Unsupported_currency_err ->
+      Logs.warn (fun m -> m "%s : UNSUPPORTED_CURRENCY" request_id);
+      Prmths.Counter.inc_one Metrics.infracost_errors_total;
+      Prmths.Counter.inc_one (Metrics.responses_total "unsupported_currency");
+      response `Bad_request unsupported_currency_body ctx
+  | exception Yojson.Json_error _ ->
+      Logs.warn (fun m -> m "%s : MALFORMED_BODY" request_id);
+      Prmths.Counter.inc_one Metrics.infracost_errors_total;
+      Prmths.Counter.inc_one (Metrics.responses_total "bad_request");
+      response `Bad_request bad_request_body ctx
+
+let price_book ~pricing storage path ctx =
+  let open Abb.Future.Infix_monad in
+  let request_id = Brtl_ctx.token ctx in
+  match Cohttp.Header.get (Brtl_ctx.Request.headers (Brtl_ctx.request ctx)) "x-api-key" with
+  | Some work_manifest_id -> (
+      (match Uuidm.of_string work_manifest_id with
+        | Some work_manifest_id ->
+            Pgsql_pool.with_conn storage ~f:(fun db ->
+                Pgsql_io.Prepared_stmt.fetch
+                  db
+                  Sql.verify_work_manifest
+                  ~f:CCFun.id
+                  work_manifest_id)
+        | None -> Abbs_future_combinators.return_err `Bad_work_manifest)
+      >>= function
+      | Ok (_ :: _) -> (
+          match path with
+          | "graphql" -> graphql ~pricing ctx
+          | "event" ->
+              Prmths.Counter.inc_one (Metrics.responses_total "success");
+              response `OK event_body ctx
+          | _ ->
+              Logs.warn (fun m -> m "%s : UNKNOWN_PATH : %s" request_id path);
+              Prmths.Counter.inc_one (Metrics.responses_total "not_found");
+              response `Not_found "" ctx)
+      | Ok [] ->
+          Logs.warn (fun m -> m "%s : MISSING_WORK_MANIFEST : %s" request_id work_manifest_id);
+          invalid_api_key ctx
+      | Error `Bad_work_manifest ->
+          Logs.warn (fun m -> m "%s : BAD_WORK_MANIFEST : %s" request_id work_manifest_id);
+          invalid_api_key ctx
+      | Error (#Pgsql_pool.err as err) ->
+          Logs.err (fun m -> m "%s : POOL_ERROR : %a" request_id Pgsql_pool.pp_err err);
+          Prmths.Counter.inc_one Metrics.pgsql_pool_errors_total;
+          Prmths.Counter.inc_one (Metrics.responses_total "error");
+          response `Internal_server_error "" ctx
+      | Error (#Pgsql_io.err as err) ->
+          Logs.err (fun m -> m "%s : DB_ERROR : %a" request_id Pgsql_io.pp_err err);
+          Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+          Prmths.Counter.inc_one (Metrics.responses_total "error");
+          response `Internal_server_error "" ctx)
+  | None ->
+      Logs.warn (fun m -> m "%s : MISSING_API_KEY" request_id);
+      invalid_api_key ctx
+
+let post' backend storage path ctx =
+  match backend with
+  | Proxy { Terrat_config.Infracost.endpoint; api_key } -> proxy storage api_key endpoint path ctx
+  | Price_book pricing -> price_book ~pricing storage path ctx
+
+let post infracost storage path =
   Brtl_ep.run_json ~f:(fun ctx ->
       let request_id = Brtl_ctx.token ctx in
-      match Terrat_config.infracost config with
-      | Some { Terrat_config.Infracost.endpoint = infracost_uri; api_key } ->
-          Logs.info (fun m -> m "%s : START" request_id);
+      match infracost with
+      | Some backend ->
+          Logs.info (fun m -> m "%s : START : %s" request_id path);
           Prmths.Counter.inc_one Metrics.requests_total;
           Metrics.DefaultHistogram.time Metrics.duration_seconds (fun () ->
               Prmths.Gauge.track_inprogress Metrics.requests_concurrent (fun () ->
                   Abbs_future_combinators.with_finally
-                    (fun () -> post' config storage api_key infracost_uri path ctx)
+                    (fun () -> post' backend storage path ctx)
                     ~finally:(fun () ->
                       Logs.info (fun m -> m "%s : FINISH" request_id);
                       Abbs_future_combinators.unit)))
       | None ->
           Logs.info (fun m -> m "%s : DISABLED" request_id);
-          Abb.Future.return (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
+          response `Bad_request "" ctx)

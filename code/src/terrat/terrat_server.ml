@@ -62,7 +62,7 @@ let maybe_add_admin_routes config storage =
         ]
   | None -> []
 
-let rtng config storage services =
+let rtng ~infracost config storage services =
   let routes =
     CCList.flat_map
       (function
@@ -94,7 +94,7 @@ let rtng config storage services =
             (`GET, Rt.whoami () --> Terrat_ep_whoami.get config storage services);
             (`POST, Rt.logout () --> Terrat_ep_logout.post config storage);
             (* Infracost *)
-            (`POST, Rt.infracost () --> fun _ -> Terrat_ep_infracost.post config storage);
+            (`POST, Rt.infracost () --> fun _ -> Terrat_ep_infracost.post infracost storage);
             (* Server *)
             (`GET, Rt.server_config () --> Terrat_ep_server.Config.get config);
             (* API 404s.  This is needed because for any and only UI endpoint we
@@ -123,7 +123,7 @@ let start_telemetry config =
       >>= fun () ->
       Abbs_future_combinators.ignore (Abb.Future.fork (Terrat_telemetry.start_ping_loop config))
 
-let run config storage services =
+let run ~infracost config storage services =
   let open Abb.Future.Infix_monad in
   let one_min = Duration.of_min 1 in
   let five_min = Duration.of_min 5 in
@@ -151,7 +151,7 @@ let run config storage services =
         Terrat_nginx_metrics.start uri
     | None -> Abb.Future.return ())
   >>= fun _ ->
-  Brtl.run cfg mw (rtng config storage services)
+  Brtl.run cfg mw (rtng ~infracost config storage services)
   >>| function
   | Ok () -> ()
   | Error (`Exn exn) ->

@@ -75,10 +75,31 @@ module Telemetry = struct
 end
 
 module Infracost = struct
-  type t = {
-    api_key : string; [@opaque]
+  type sslmode =
+    | Disable
+    | Prefer
+    | Require
+  [@@deriving show]
+
+  type price_book = {
+    db : string;
+    host : string;
+    password : (string[@opaque]);
+    port : int;
+    sslmode : sslmode;
+    user : string;
+  }
+  [@@deriving show]
+
+  type proxy = {
+    api_key : (string[@opaque]);
     endpoint : Uri.t;
   }
+  [@@deriving show]
+
+  type t =
+    | Proxy of proxy
+    | Price_book of price_book
   [@@deriving show]
 end
 
@@ -139,13 +160,54 @@ let vcs_call_timeout () =
   | None | Some "" -> Ok default_vcs_call_timeout
   | Some timeout -> of_opt (`Key_error "TERRAT_VCS_CALL_TIMEOUT") (CCFloat.of_string_opt timeout)
 
-let infracost () =
+let infracost_sslmode () =
+  match Sys.getenv_opt "PRICING_DB_SSLMODE" with
+  | None | Some "" | Some "disable" -> Ok Infracost.Disable
+  | Some "allow" | Some "prefer" -> Ok Infracost.Prefer
+  | Some "require" -> Ok Infracost.Require
+  | Some _ -> Error (`Key_error "PRICING_DB_SSLMODE")
+
+let infracost_env ~default key =
+  match Sys.getenv_opt key with
+  | None | Some "" -> default
+  | Some value -> value
+
+let infracost_proxy () =
   let infracost_pricing_api_endpoint = Sys.getenv_opt "INFRACOST_PRICING_API_ENDPOINT" in
   let infracost_api_key = Sys.getenv_opt "SELF_HOSTED_INFRACOST_API_KEY" in
   match (infracost_pricing_api_endpoint, infracost_api_key) with
   | Some "", _ | _, Some "" -> None
-  | Some endpoint, Some api_key -> Some { Infracost.endpoint = Uri.of_string endpoint; api_key }
+  | Some endpoint, Some api_key ->
+      Some (Infracost.Proxy { Infracost.endpoint = Uri.of_string endpoint; api_key })
   | _, _ -> None
+
+let infracost_price_book () =
+  let open CCResult.Infix in
+  match Sys.getenv_opt "PRICING_DB_HOST" with
+  | None | Some "" -> Ok None
+  | Some host ->
+      of_opt
+        (`Key_error "PRICING_DB_PORT")
+        (CCInt.of_string (infracost_env ~default:"5432" "PRICING_DB_PORT"))
+      >>= fun port ->
+      infracost_sslmode ()
+      >>= fun sslmode ->
+      Ok
+        (Some
+           (Infracost.Price_book
+              {
+                Infracost.db = infracost_env ~default:"cloud_pricing" "PRICING_DB_NAME";
+                host;
+                password = infracost_env ~default:"stategraph" "PRICING_DB_PASSWORD";
+                port;
+                sslmode;
+                user = infracost_env ~default:"stategraph" "PRICING_DB_USER";
+              }))
+
+let infracost () =
+  match infracost_proxy () with
+  | Some _ as proxy -> Ok proxy
+  | None -> infracost_price_book ()
 
 let load_github () =
   let open CCResult.Infix in
@@ -335,7 +397,8 @@ let create () =
     (CCInt.of_string
        (CCOption.get_or ~default:"20" (Sys.getenv_opt "TERRAT_EVENT_EVALUATOR_SLOTS")))
   >>= fun event_evaluator_slots ->
-  let infracost = infracost () in
+  infracost ()
+  >>= fun infracost ->
   let nginx_status_uri = CCOption.map Uri.of_string (Sys.getenv_opt "NGINX_STATUS_URI") in
   let admin_token = Sys.getenv_opt "TERRAT_ADMIN_TOKEN" in
   let telemetry_uri =

@@ -32,7 +32,7 @@ let metrics Pgsql_pool.Metrics.{ num_conns; idle_conns; queue_time } =
   CCOption.iter (Queue_time_histogram.observe Metrics.queue_time) queue_time;
   Abbs_future_combinators.unit
 
-let on_connect idle_tx_timeout lock_timeout conn =
+let on_connect ?(settings = []) idle_tx_timeout lock_timeout conn =
   Abbs_future_combinators.ignore
     (let go () =
        let open Fc.Infix_result_monad in
@@ -48,6 +48,10 @@ let on_connect idle_tx_timeout lock_timeout conn =
        Pgsql_io.Prepared_stmt.execute
          conn
          Pgsql_io.Typed_sql.(sql /^ "set statement_timeout='300s'")
+       >>= fun () ->
+       Fc.List_result.iter
+         ~f:(fun setting -> Pgsql_io.Prepared_stmt.execute conn Pgsql_io.Typed_sql.(sql /^ setting))
+         settings
      in
      let open Abb.Future.Infix_monad in
      go ()
@@ -57,26 +61,39 @@ let on_connect idle_tx_timeout lock_timeout conn =
          Logs.err (fun m -> m "%a" Pgsql_io.pp_err err);
          Abb.Future.return ())
 
-let create config =
-  let open Abb.Future.Infix_monad in
-  let tls_config =
-    let cfg = Otls.Tls_config.create () in
-    Otls.Tls_config.insecure_noverifycert cfg;
-    Otls.Tls_config.insecure_noverifyname cfg;
-    cfg
-  in
+let tls_config () =
+  let cfg = Otls.Tls_config.create () in
+  Otls.Tls_config.insecure_noverifycert cfg;
+  Otls.Tls_config.insecure_noverifyname cfg;
+  cfg
+
+let create_pool ?tls_config ?settings ~host ~user ~passwd ~port config db =
   Pgsql_pool.create
     ~metrics
     ~idle_check:(Duration.of_sec 0)
-    ~tls_config:(`Prefer tls_config)
+    ?tls_config
+    ~host
+    ~user
+    ~passwd
+    ~port
+    ~max_conns:(Terrat_config.db_max_pool_size config)
+    ~connect_timeout:(Terrat_config.db_connect_timeout config)
+    ~on_connect:
+      (on_connect
+         ?settings
+         (Terrat_config.db_idle_tx_timeout config)
+         (Terrat_config.db_lock_timeout config))
+    db
+
+let create config =
+  let open Abb.Future.Infix_monad in
+  create_pool
+    ~tls_config:(`Prefer (tls_config ()))
     ~host:(Terrat_config.db_host config)
     ~user:(Terrat_config.db_user config)
     ~passwd:(Terrat_config.db_password config)
     ~port:(Terrat_config.db_port config)
-    ~max_conns:(Terrat_config.db_max_pool_size config)
-    ~connect_timeout:(Terrat_config.db_connect_timeout config)
-    ~on_connect:
-      (on_connect (Terrat_config.db_idle_tx_timeout config) (Terrat_config.db_lock_timeout config))
+    config
     (Terrat_config.db config)
   >>= fun storage ->
   Pgsql_pool.with_conn storage ~f:(fun db ->
@@ -91,3 +108,25 @@ let create config =
   | Error (#Pgsql_pool.err as err) ->
       Logs.err (fun m -> m "%a" Pgsql_pool.pp_err err);
       raise (Failure "could not create storage")
+
+(* Every filter of the price query is a parameter that can be NULL, so a generic
+   plan cannot read the index on (service, region) and scans the whole price
+   book. The statements are prepared once for each connection and run up to 1000
+   times for each batch, which is where the planner would change to a generic
+   plan. *)
+let pricing_settings = [ "set plan_cache_mode='force_custom_plan'" ]
+
+let create_pricing config { Terrat_config.Infracost.db; host; password; port; sslmode; user } =
+  create_pool
+    ~settings:pricing_settings
+    ?tls_config:
+      (match sslmode with
+      | Terrat_config.Infracost.Disable -> None
+      | Terrat_config.Infracost.Prefer -> Some (`Prefer (tls_config ()))
+      | Terrat_config.Infracost.Require -> Some (`Require (tls_config ())))
+    ~host
+    ~user
+    ~passwd:password
+    ~port
+    config
+    db
