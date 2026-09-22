@@ -27,6 +27,7 @@
   git_config
   githubc2
   githubc2_abb
+  infracost_pricing
   iter
   jsonu
   jwt

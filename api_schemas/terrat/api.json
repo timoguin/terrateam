@@ -316,6 +316,270 @@
         ],
         "type": "object"
       },
+      "infracost-attribute-filter": {
+        "additionalProperties": false,
+        "description": "One condition of the Infracost CLI on a key of the product attributes. A value_regex that is not empty wins over value.",
+        "properties": {
+          "key": {
+            "description": "Name of the product attribute.",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value that the attribute must equal. The empty string matches an attribute that is absent or empty.",
+            "type": "string"
+          },
+          "value_regex": {
+            "description": "Pattern that the attribute must match, as /pattern/ or /pattern/i.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "infracost-error": {
+        "additionalProperties": false,
+        "description": "Error that the Infracost pricing API returns with a status other than 200.",
+        "properties": {
+          "error": {
+            "description": "Message for a person.",
+            "type": "string"
+          },
+          "error_code": {
+            "description": "Code for the CLI. The CLI stops only on invalid_api_key.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "error_code"
+        ],
+        "type": "object"
+      },
+      "infracost-event-result": {
+        "additionalProperties": false,
+        "description": "Answer to an event that the Infracost CLI posts.",
+        "properties": {
+          "status": {
+            "description": "Always ok.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "infracost-graphql-batch-response": {
+        "description": "Answer to a batch: one element for each element of the request, in the same order.",
+        "items": {
+          "$ref": "#/components/schemas/infracost-graphql-response"
+        },
+        "type": "array"
+      },
+      "infracost-graphql-data": {
+        "additionalProperties": false,
+        "description": "Result of the product-and-price query of the Infracost CLI.",
+        "properties": {
+          "products": {
+            "description": "Products that match the product filter, 1000 at most.",
+            "items": {
+              "$ref": "#/components/schemas/infracost-product"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "products"
+        ],
+        "type": "object"
+      },
+      "infracost-graphql-error": {
+        "additionalProperties": false,
+        "description": "GraphQL error. The CLI does not read it.",
+        "properties": {
+          "extensions": {
+            "additionalProperties": false,
+            "description": "Details of the error.",
+            "properties": {
+              "code": {
+                "description": "Code of the error.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "description": "Message for a person.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "extensions",
+          "message"
+        ],
+        "type": "object"
+      },
+      "infracost-graphql-response": {
+        "additionalProperties": false,
+        "description": "Answer to one element of the batch. The probe gets errors and a query gets data.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/infracost-graphql-data"
+          },
+          "errors": {
+            "description": "Errors of the element.",
+            "items": {
+              "$ref": "#/components/schemas/infracost-graphql-error"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "infracost-price": {
+        "additionalProperties": {
+          "description": "Amount of the price in the currency that the field name gives, as a decimal string.",
+          "nullable": true,
+          "type": "string"
+        },
+        "description": "One price of a product. The field whose name is the currency code of the query holds the amount, for example USD.",
+        "properties": {
+          "priceHash": {
+            "description": "Hash that identifies the price.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "infracost-price-filter": {
+        "additionalProperties": false,
+        "description": "Conditions of the Infracost CLI on the prices of a product. A field that is absent puts no condition. The empty string matches a field that is absent or empty.",
+        "properties": {
+          "description": {
+            "description": "Value that the price description must equal.",
+            "type": "string"
+          },
+          "description_regex": {
+            "description": "Pattern that the price description must match, as /pattern/ or /pattern/i.",
+            "type": "string"
+          },
+          "endUsageAmount": {
+            "description": "Value that the end of the usage tier must equal.",
+            "type": "string"
+          },
+          "purchaseOption": {
+            "description": "Value that the purchase option must equal, for example on_demand.",
+            "type": "string"
+          },
+          "startUsageAmount": {
+            "description": "Value that the start of the usage tier must equal.",
+            "type": "string"
+          },
+          "termLength": {
+            "description": "Value that the term length of a reservation must equal.",
+            "type": "string"
+          },
+          "termOfferingClass": {
+            "description": "Value that the offering class of a reservation must equal.",
+            "type": "string"
+          },
+          "termPurchaseOption": {
+            "description": "Value that the purchase option of a reservation must equal.",
+            "type": "string"
+          },
+          "unit": {
+            "description": "Value that the unit of the price must equal.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "infracost-product": {
+        "additionalProperties": false,
+        "description": "One product that matches the product filter of a query.",
+        "properties": {
+          "prices": {
+            "description": "Prices of the product that match the price filter of the query.",
+            "items": {
+              "$ref": "#/components/schemas/infracost-price"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "prices"
+        ],
+        "type": "object"
+      },
+      "infracost-product-filter": {
+        "additionalProperties": false,
+        "description": "Conditions of the Infracost CLI on a product. A field that is absent puts no condition.",
+        "properties": {
+          "attributeFilters": {
+            "description": "Conditions on the product attributes. A product matches when it satisfies all of them.",
+            "items": {
+              "$ref": "#/components/schemas/infracost-attribute-filter"
+            },
+            "type": "array"
+          },
+          "productFamily": {
+            "description": "Value that the product family must equal.",
+            "type": "string"
+          },
+          "region": {
+            "description": "Value that the region must equal. The empty string matches a product that has no region.",
+            "type": "string"
+          },
+          "service": {
+            "description": "Value that the service must equal, for example AmazonEC2.",
+            "type": "string"
+          },
+          "sku": {
+            "description": "Value that the SKU must equal.",
+            "type": "string"
+          },
+          "vendorName": {
+            "description": "Value that the vendor must equal, for example aws.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "infracost-query": {
+        "additionalProperties": false,
+        "description": "One element of the batch that the Infracost CLI posts to /graphql.",
+        "properties": {
+          "query": {
+            "description": "GraphQL text. The empty string is the probe that the CLI posts before each run. Any other text must be the product-and-price query of the CLI, which names the currency as the price field.",
+            "type": "string"
+          },
+          "variables": {
+            "$ref": "#/components/schemas/infracost-query-variables"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "infracost-query-variables": {
+        "additionalProperties": false,
+        "description": "Variables of the product-and-price query of the Infracost CLI.",
+        "properties": {
+          "priceFilter": {
+            "$ref": "#/components/schemas/infracost-price-filter"
+          },
+          "productFilter": {
+            "$ref": "#/components/schemas/infracost-product-filter"
+          }
+        },
+        "type": "object"
+      },
       "installation": {
         "additionalProperties": false,
         "properties": {

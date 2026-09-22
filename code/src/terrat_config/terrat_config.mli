@@ -48,10 +48,38 @@ module Telemetry : sig
 end
 
 module Infracost : sig
-  type t = {
+  (** How the connection to the pricing database treats TLS, as the libpq [sslmode] values name it.
+  *)
+  type sslmode =
+    | Disable
+    | Prefer
+    | Require
+  [@@deriving show]
+
+  (** Connection settings of the [cloud_pricing] database that holds the price book. *)
+  type price_book = {
+    db : string;
+    host : string;
+    password : string;
+    port : int;
+    sslmode : sslmode;
+    user : string;
+  }
+  [@@deriving show]
+
+  (** An Infracost pricing API that the engine forwards the CLI requests to, with [api_key] in place
+      of the key the CLI sent. *)
+  type proxy = {
     api_key : string;
     endpoint : Uri.t;
   }
+  [@@deriving show]
+
+  (** [Proxy] when [INFRACOST_PRICING_API_ENDPOINT] and [SELF_HOSTED_INFRACOST_API_KEY] are both
+      non-empty, otherwise [Price_book] when [PRICING_DB_HOST] is non-empty. *)
+  type t =
+    | Proxy of proxy
+    | Price_book of price_book
   [@@deriving show]
 end
 

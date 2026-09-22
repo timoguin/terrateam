@@ -1,0 +1,14 @@
+(tests
+ (names test test_run)
+ (libraries
+  abb
+  containers
+  infracost_pricing
+  oth
+  oth_abb
+  pgsql_io
+  pgsql_pool
+  terrat_api
+  yojson)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.eq)))

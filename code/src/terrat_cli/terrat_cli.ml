@@ -179,6 +179,14 @@ struct
           @@ (Terrat_config.gc config).Terrat_config.Gc.dynamic_gc;
           Terrat_storage.create config
           >>= fun storage ->
+          (match Terrat_config.infracost config with
+            | Some (Terrat_config.Infracost.Proxy proxy) ->
+                Abb.Future.return (Some (Terrat_ep_infracost.Proxy proxy))
+            | Some (Terrat_config.Infracost.Price_book price_book) ->
+                Terrat_storage.create_pricing config price_book
+                >>| fun pricing -> Some (Terrat_ep_infracost.Price_book pricing)
+            | None -> Abb.Future.return None)
+          >>= fun infracost ->
           Terrat_vcs_event_evaluator2.create_exec
             ~slots:(Terrat_config.event_evaluator_slots config)
             ()
@@ -188,7 +196,7 @@ struct
           maybe_start_gitlab config storage exec
           >>= fun gitlab_service ->
           let services = CCOption.to_list github_service @ CCOption.to_list gitlab_service in
-          Terrat_server.run config storage services
+          Terrat_server.run ~infracost config storage services
       | Error err ->
           Logs.err (fun m -> m "CONFIG : ERROR : %s" (Terrat_config.show_err err));
           exit 1
