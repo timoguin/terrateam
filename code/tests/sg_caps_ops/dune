@@ -1,0 +1,10 @@
+(test
+ (name test)
+ (libraries
+  containers
+  oth
+  qcheck-core
+  sg_caps
+  sg_caps_gen
+  sg_caps_ops
+  sg_caps_trie))

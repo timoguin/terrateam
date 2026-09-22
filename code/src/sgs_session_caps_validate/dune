@@ -1,5 +1,0 @@
-(library
- (name sgs_session_caps_validate)
- (libraries containers sg_caps_match sgs_session_caps sln)
- (preprocess
-  (pps ppx_deriving.show)))

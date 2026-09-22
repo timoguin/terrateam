@@ -50,6 +50,14 @@ val to_rules :
 val of_rules :
   (Sg_caps_trie.Pattern.t * (Sg_caps_trie.Pattern.t * Sg_caps_trie_scope.t) list) list -> t
 
+(** [state_rules t ~tenant] is the state rules that apply in [tenant]: the most specific one that
+    matches a state decides the addresses reached there. Always starts with [Prefix ""], the answer
+    for the states no other rule names. *)
+val state_rules : t -> tenant:string -> (Sg_caps_trie.Pattern.t * Sg_caps_trie_scope.t) list
+
+(** [addresses t ~tenant ~state] is the addresses reached in that state of that tenant. *)
+val addresses : t -> tenant:string -> state:string -> Sg_caps_trie_scope.t
+
 (** [mem t ~tenant ~state ~address] is true when [t] reaches that triple. *)
 val mem : t -> tenant:string -> state:string -> address:string -> bool
 

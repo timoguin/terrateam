@@ -1,12 +1,11 @@
 (* Tests of [Sg_caps_legacy_conversion]: the capability set it reads answers what the stored record answered.
-   The oracle is the legacy check itself -- the [Sg_capabilities_ops] functions the SQL check is
-   differential-tested against -- carrying the one decision the conversion takes: an [admin] grant
-   answers for preview and commit even when the action key is absent. *)
+   The oracle is the legacy reading, stated in this file rather than taken from the code that used
+   to do it: that code is what the conversion replaces. It carries the one decision the conversion
+   takes -- an [admin] grant answers for preview and commit even when the action key is absent. *)
 
 module New_caps = Sg_caps
 module Old_caps = Sgs_session_caps_capabilities
 module Scope = Sg_caps_trie_scope
-module Old_ops = Sg_capabilities_ops
 module Q = QCheck2
 
 let states pairs =
@@ -22,32 +21,76 @@ let admin tenants = Old_caps.make ~admin:(Some (Sgs_session_caps_admin.make ~ten
 let act ?(action = `Commit) ?(axis = `Modified) ~tenant ~state ~address () =
   New_caps.Act { action; axis; tenant; state; address }
 
-(* What the stored record authorized, read by the functions production reads it with. *)
-let legacy_authorizes old_caps = function
-  | New_caps.Access_token_create ->
-      CCOption.get_or ~default:false old_caps.Old_caps.access_token_create
+(* What the stored record authorized, stated here rather than taken from the code that read it:
+   that code is what this conversion replaces. An allow-list permits a value when one of its
+   patterns matches and none of its negations does; an absent list permits everything; a states map
+   answers the entry of the state, else the ["*"] entry, else nothing, and a [null] entry is every
+   address. *)
+let permits patterns value = Sg_caps_match.matches ~patterns value
+let list_permits list value = CCOption.map_or ~default:true (fun l -> permits l value) list
+
+let states_permit states ~state_id ~fq_address =
+  CCOption.map_or
+    ~default:true
+    (fun map ->
+      CCOption.map_or
+        ~default:false
+        (fun entry -> permits (CCOption.get_or ~default:[ "*" ] entry) fq_address)
+        (Sg_caps_match.lookup
+           (Sln_map.String.to_list (Sgs_session_caps_states.additional map))
+           state_id))
+    states
+
+let legacy_authorizes caps = function
+  | New_caps.Access_token_create -> CCOption.get_or ~default:false caps.Old_caps.access_token_create
   | New_caps.Access_token_refresh ->
-      CCOption.get_or ~default:false old_caps.Old_caps.access_token_refresh
-  | New_caps.Admin tenant -> Old_ops.grants_tenant old_caps `Admin tenant
-  | New_caps.Users_manage tenant -> Old_ops.grants_tenant old_caps `Users_manage tenant
+      CCOption.get_or ~default:false caps.Old_caps.access_token_refresh
+  | New_caps.Admin tenant ->
+      CCOption.map_or
+        ~default:false
+        (fun a -> list_permits a.Sgs_session_caps_admin.tenants tenant)
+        caps.Old_caps.admin
+  | New_caps.Users_manage tenant ->
+      CCOption.map_or
+        ~default:false
+        (fun u -> list_permits u.Sgs_session_caps_users_manage.tenants tenant)
+        caps.Old_caps.users_manage
   | New_caps.Sudo user ->
       CCOption.map_or
         ~default:false
-        (fun s -> Sg_caps_match.matches ~patterns:s.Sgs_session_caps_sudo.users user)
-        old_caps.Old_caps.sudo
+        (fun s -> permits s.Sgs_session_caps_sudo.users user)
+        caps.Old_caps.sudo
   | New_caps.Act { action; axis; tenant; state; address } ->
-      Old_ops.grants_tenant old_caps `Admin tenant
+      (* The one decision the conversion takes: an [admin] grant answers for the action over the
+         tenants it names, which the stored record only did when the action key was there too. *)
+      CCOption.map_or
+        ~default:false
+        (fun a -> list_permits a.Sgs_session_caps_admin.tenants tenant)
+        caps.Old_caps.admin
       || CCOption.map_or
            ~default:false
-           (fun grant ->
+           (fun (states, subgraph, tenants) ->
              let map =
                match axis with
-               | `Modified -> grant.Old_ops.states
-               | `Pulled_in -> grant.Old_ops.subgraph
+               | `Modified -> states
+               | `Pulled_in -> subgraph
              in
-             Old_ops.tenants_permit grant.Old_ops.tenants tenant
-             && CCOption.is_none (Old_ops.states_denial map ~state_id:state ~fq_address:address))
-           (Old_ops.action_grant old_caps action)
+             list_permits tenants tenant && states_permit map ~state_id:state ~fq_address:address)
+           (match action with
+           | `Commit ->
+               CCOption.map
+                 (fun g ->
+                   ( g.Sgs_session_caps_commit.states,
+                     g.Sgs_session_caps_commit.subgraph,
+                     g.Sgs_session_caps_commit.tenants ))
+                 caps.Old_caps.commit
+           | `Preview ->
+               CCOption.map
+                 (fun g ->
+                   ( g.Sgs_session_caps_preview.states,
+                     g.Sgs_session_caps_preview.subgraph,
+                     g.Sgs_session_caps_preview.tenants ))
+                 caps.Old_caps.preview)
 
 let previews ?states:s ?subgraph ?tenants () =
   Old_caps.make ~preview:(Some (Sgs_session_caps_preview.make ?states:s ?subgraph ?tenants ())) ()
@@ -415,7 +458,7 @@ let admin_answers_for_the_action_examples =
          presence check ran before the admin one. The converted set lets [admin] answer instead, so
          this atom is authorized where it was not. *)
       let stored = admin (Some [ "t1" ]) in
-      Oth.Assert.true_ (CCOption.is_none (Old_ops.action_grant stored `Commit));
+      Oth.Assert.true_ (CCOption.is_none stored.Old_caps.commit);
       let admin_of_t1 = convert stored in
       check_allows admin_of_t1 (act ~tenant:"t1" ~state:"s1" ~address:"a" ());
       check_refuses admin_of_t1 (act ~tenant:"t2" ~state:"s1" ~address:"a" ());

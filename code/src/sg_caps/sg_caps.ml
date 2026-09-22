@@ -132,19 +132,34 @@ let inter a b =
     preview = meet `Preview;
   }
 
-let entails a b =
+type capability =
+  [ `Access_token_create
+  | `Access_token_refresh
+  | `Admin
+  | `Commit
+  | `Preview
+  | `Sudo
+  | `Users_manage
+  ]
+
+let missing a b =
   let allows_action action =
     let wider = effective a action in
     let narrower = effective b action in
     Sg_caps_reach.entails wider.modified narrower.modified
     && Sg_caps_reach.entails wider.pulled_in narrower.pulled_in
   in
-  ((not b.access_token_create) || a.access_token_create)
-  && ((not b.access_token_refresh) || a.access_token_refresh)
-  && Scope.entails a.admin b.admin
-  && Scope.entails a.users_manage b.users_manage
-  && Scope.entails a.sudo b.sudo
-  && allows_action `Commit
-  && allows_action `Preview
+  CCList.filter_map
+    (fun (allowed, capability) -> if allowed then None else Some capability)
+    [
+      ((not b.access_token_create) || a.access_token_create, `Access_token_create);
+      ((not b.access_token_refresh) || a.access_token_refresh, `Access_token_refresh);
+      (Scope.entails a.admin b.admin, `Admin);
+      (allows_action `Commit, `Commit);
+      (allows_action `Preview, `Preview);
+      (Scope.entails a.sudo b.sudo, `Sudo);
+      (Scope.entails a.users_manage b.users_manage, `Users_manage);
+    ]
 
+let entails a b = CCList.is_empty (missing a b)
 let equivalent a b = entails a b && entails b a

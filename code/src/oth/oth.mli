@@ -43,8 +43,12 @@ module type ASSERT = sig
   val none_pp : pp:(Format.formatter -> 'a -> unit) -> 'a option -> unit
 
   (** Asserts that two values are equal based on a provided equality function [eq], otherwise prints
-      both values and fails the test. *)
+      both values and fails the test. TODO: rename me to eq_pp *)
   val eq : eq:('a -> 'a -> bool) -> pp:(Format.formatter -> 'a -> unit) -> 'a -> 'a -> unit
+
+  (** Asserts that two values are equal based on a provided equality function [eq], otherwise fails
+      the test. TODO: rename me to eq. *)
+  val eq_ : eq:('a -> 'a -> bool) -> expected:'a -> actual:'a -> unit
 
   (** Asserts that the value is [true], otherwise fails the test displaying [fail_msg]. *)
   val true_ : ?fail_msg:string -> bool -> unit

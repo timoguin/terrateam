@@ -35,9 +35,9 @@ let of_rules rules =
          (tenant, Sg_caps_trie.of_rules ~equal:Scope.equal ~default:Scope.empty states))
        rules)
 
-let mem t ~tenant ~state ~address =
-  Scope.mem (Sg_caps_trie.find (Sg_caps_trie.find t tenant) state) address
-
+let state_rules t ~tenant = Sg_caps_trie.to_rules ~equal:Scope.equal (Sg_caps_trie.find t tenant)
+let addresses t ~tenant ~state = Sg_caps_trie.find (Sg_caps_trie.find t tenant) state
+let mem t ~tenant ~state ~address = Scope.mem (addresses t ~tenant ~state) address
 let combine f = Sg_caps_trie.merge ~equal:equal_states (Sg_caps_trie.merge ~equal:Scope.equal f)
 let union = combine Scope.union
 let inter = combine Scope.inter
