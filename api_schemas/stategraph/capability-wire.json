@@ -1,0 +1,113 @@
+{
+  "$ref": "#/definitions/capabilities",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "actions": {
+      "additionalProperties": false,
+      "description": "What a preview or commit grant reaches, along the two axes enforcement checks separately: [modified] is the resources a transaction modifies directly, [pulled-in] the nodes its bundle pulls in.",
+      "properties": {
+        "modified": {
+          "$ref": "#/definitions/reach"
+        },
+        "pulled-in": {
+          "$ref": "#/definitions/reach"
+        }
+      },
+      "required": [
+        "modified",
+        "pulled-in"
+      ],
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "description": "What a user or a token is allowed to do. [admin] and [users-manage] scope over tenants, [sudo] over user names. Every field is present: a capability that reaches nothing is written as a scope that allows nothing, not as an absent key.",
+      "properties": {
+        "access-token-create": {
+          "type": "boolean"
+        },
+        "access-token-refresh": {
+          "type": "boolean"
+        },
+        "admin": {
+          "$ref": "#/definitions/scope"
+        },
+        "commit": {
+          "$ref": "#/definitions/actions"
+        },
+        "preview": {
+          "$ref": "#/definitions/actions"
+        },
+        "sudo": {
+          "$ref": "#/definitions/scope"
+        },
+        "users-manage": {
+          "$ref": "#/definitions/scope"
+        }
+      },
+      "required": [
+        "access-token-create",
+        "access-token-refresh",
+        "admin",
+        "commit",
+        "preview",
+        "sudo",
+        "users-manage"
+      ],
+      "type": "object"
+    },
+    "reach": {
+      "description": "The tenants a grant reaches, each with the states it reaches there.",
+      "items": {
+        "$ref": "#/definitions/tenant-reach"
+      },
+      "type": "array"
+    },
+    "scope": {
+      "description": "A set of strings, as rules read longest match first: \"a.*\" allows every string starting with \"a.\", \"!a.b\" refuses \"a.b\", and the more specific rule decides. Order does not matter. An empty list allows nothing.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "state-reach": {
+      "additionalProperties": false,
+      "description": "The addresses reached in the states a rule names.",
+      "properties": {
+        "addresses": {
+          "$ref": "#/definitions/scope"
+        },
+        "state": {
+          "description": "A state rule: a state id, or \"*\" for the states no other rule names.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "addresses"
+      ],
+      "type": "object"
+    },
+    "tenant-reach": {
+      "additionalProperties": false,
+      "description": "The states reached in the tenants a rule names.",
+      "properties": {
+        "states": {
+          "items": {
+            "$ref": "#/definitions/state-reach"
+          },
+          "type": "array"
+        },
+        "tenant": {
+          "description": "A tenant rule: a tenant id, a prefix such as \"prod-*\", or \"*\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant",
+        "states"
+      ],
+      "type": "object"
+    }
+  }
+}

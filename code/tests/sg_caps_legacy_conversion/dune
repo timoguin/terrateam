@@ -2,10 +2,9 @@
  (name test)
  (libraries
   containers
-  oth
   json_schema
+  oth
   qcheck-core
-  sg_capabilities_ops
   sg_caps
   sg_caps_legacy_conversion
   sg_caps_match

@@ -72,7 +72,25 @@ val union : t -> t -> t
     path applies. *)
 val inter : t -> t -> t
 
-(** [entails a b] is true when [a] allows every atom that [b] allows. *)
+(** One capability of a set, named so that a refusal can say which one was missing. *)
+type capability =
+  [ `Access_token_create
+  | `Access_token_refresh
+  | `Admin
+  | `Commit
+  | `Preview
+  | `Sudo
+  | `Users_manage
+  ]
+
+(** [missing a b] is the capabilities of [b] that [a] does not allow, in a fixed order. An [admin]
+    grant answers for commit and preview over the tenants it names, so those two are asked of what
+    the action reaches once admin is read into it. Ask {!entails} instead when only the answer
+    matters. *)
+val missing : t -> t -> capability list
+
+(** [entails a b] is true when [a] allows every atom that [b] allows, which is [missing a b] being
+    empty. *)
 val entails : t -> t -> bool
 
 (** [equivalent a b] is true when [a] entails [b] and [b] entails [a]. *)

@@ -22,8 +22,8 @@ let scope_of_patterns patterns =
   >>= fun allowed ->
   scope (CCList.map (CCString.drop 1) negations) >|= fun refused -> Scope.diff allowed refused
 
-(* An absent list used to be the unrestricted grant, see e.g. [Sg_capabilities_ops.state_resources]
-   for states. *)
+(* An absent list used to be the unrestricted grant, and a [null] value of a states map the
+   unrestricted set of addresses. *)
 let scope_of_patterns_opt = CCOption.map_or ~default:(Ok Scope.full) scope_of_patterns
 
 (* The states a key names. A key is matched by equality rather than as a pattern. The only

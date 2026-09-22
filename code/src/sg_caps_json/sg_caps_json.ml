@@ -4,6 +4,7 @@ module Reach = Sg_caps_reach
 type read_err =
   [ `Invalid_pattern_err of string
   | `Too_many_rules_err of string * int * int
+  | `Malformed_err of string
   ]
 [@@deriving show]
 
@@ -101,3 +102,26 @@ let of_wire wire =
     commit;
     preview;
   }
+
+let to_json caps = Sg_caps_wire_capabilities.to_yojson (to_wire caps)
+
+let of_json json =
+  match Sg_caps_wire_capabilities.of_yojson json with
+  | Error msg -> Error (`Malformed_err msg)
+  | Ok wire -> of_wire wire
+
+let read_err_to_string = function
+  | `Invalid_pattern_err pattern ->
+      Printf.sprintf
+        "invalid capability pattern %S: a %S is only allowed as the last character, and every \
+         character must be printable"
+        pattern
+        "*"
+  | `Too_many_rules_err (what, length, limit) ->
+      Printf.sprintf "too many %s: %d, at most %d" what length limit
+  | `Malformed_err msg -> Printf.sprintf "not a capabilities object: %s" msg
+
+type t = Sg_caps.t
+
+let to_yojson = to_json
+let of_yojson json = CCResult.map_err read_err_to_string (of_json json)

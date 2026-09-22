@@ -43,9 +43,13 @@ val to_rules : t -> (Sg_caps_trie.Pattern.t * bool) list
 (** [of_strings texts] reads rules written as text, where a leading ['!'] refuses what the rest of
     the text matches. It fails on a text that is not a pattern once that ['!'] is taken off.
 
+    Rules that only refuse are read with ["*"] in front of them: on their own they would allow
+    nothing, which is not what writing only refusals means. An empty list stays empty.
+
     {v
       of_strings [ "a.*"; "!a.b" ]  = Ok (of_rules [ (Prefix "a.", true); (Literal "a.b", false) ])
-      of_strings [ "!!a" ]          = Ok (of_rules [ (Literal "!a", false) ])
+      of_strings [ "!a.b" ]         = Ok (of_rules [ (Prefix "", true); (Literal "a.b", false) ])
+      of_strings [ "!!a" ]          = Ok (of_rules [ (Prefix "", true); (Literal "!a", false) ])
       of_strings []                 = Ok empty
       of_strings [ "a*b" ]          = Error (`Invalid_pattern_err "a*b")
     v} *)

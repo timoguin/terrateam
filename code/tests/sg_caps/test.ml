@@ -26,6 +26,12 @@ let check_equivalent left right =
     (C.equivalent left right)
 
 let print_caps caps = Format.asprintf "%a" C.pp caps
+let print_reach reach = Format.asprintf "%a" R.pp reach
+
+let starts_with_the_star_rule = function
+  | (Sg_caps_trie.Pattern.Prefix "", _) :: _ -> true
+  | _ -> false
+
 let count = 500
 
 let check ~name ~print gen prop =
@@ -323,6 +329,54 @@ let prop_equivalent =
           && C.equivalent (C.union a (C.union b c)) (C.union (C.union a b) c));
       ())
 
+(* {1 state_rules} *)
+
+let state_rules_examples =
+  Oth.test ~name:"state_rules_examples" (fun _ ->
+      let one_state = reach ~tenants:[ "t1" ] ~states:[ "s1" ] ~addresses:[ "aws_instance.*" ] in
+      (* The rule for the states no other rule names is written even where it reaches nothing, so
+         reading the rules of a tenant never leaves what happens outside them to the reader. *)
+      Oth.Assert.true_ (starts_with_the_star_rule (R.state_rules one_state ~tenant:"t1"));
+      Oth.Assert.true_ (starts_with_the_star_rule (R.state_rules one_state ~tenant:"t2"));
+      Oth.Assert.true_ (starts_with_the_star_rule (R.state_rules R.empty ~tenant:"t1"));
+      Oth.Assert.true_ (starts_with_the_star_rule (R.state_rules R.everything ~tenant:"t1"));
+      (* A refusal is where that rule carries the grant rather than restating a denial: it answers
+         for every state the refusal does not name, and the named rule is the exception. Read the
+         rules without it and "every state but s1" becomes "no state at all". *)
+      let all_but_s1 =
+        reach ~tenants:[ "t1" ] ~states:[ "*"; "!s1" ] ~addresses:[ "aws_instance.*" ]
+      in
+      (match R.state_rules all_but_s1 ~tenant:"t1" with
+      | [
+       (Sg_caps_trie.Pattern.Prefix "", every_other_state);
+       (Sg_caps_trie.Pattern.Literal "s1", refused);
+      ] ->
+          Oth.Assert.Eq.string_list
+            ~expected:[ "aws_instance.*" ]
+            ~actual:(Scope.to_strings every_other_state);
+          Oth.Assert.true_ (Scope.is_empty refused)
+      | rules ->
+          Oth.Assert.false_
+            (Format.asprintf
+               "expected the [*] rule and the refusal of s1, got %d rule(s)"
+               (CCList.length rules)));
+      (* [to_rules] is where that rule is left out when it reaches nothing, which is what makes the
+         two disagree on the same tenant. *)
+      match R.to_rules one_state with
+      | [ (_, states) ] -> Oth.Assert.not_true (starts_with_the_star_rule states)
+      | rules ->
+          Oth.Assert.false_
+            (Printf.sprintf "expected one tenant rule, got %d" (CCList.length rules)))
+
+let prop_state_rules_starts_with_the_star_rule =
+  Oth.test ~name:"prop_state_rules_starts_with_the_star_rule" (fun _ ->
+      check
+        ~name:"the state rules of a tenant start with the rule for the states no other rule names"
+        ~print:(Q.Print.pair print_reach Q.Print.string)
+        (Q.Gen.pair Gen.reach Gen.text)
+        (fun (reach, tenant) -> starts_with_the_star_rule (R.state_rules reach ~tenant));
+      ())
+
 let test =
   Oth.parallel
     [
@@ -348,6 +402,8 @@ let test =
       prop_entails_transitive;
       equivalent_examples;
       prop_equivalent;
+      state_rules_examples;
+      prop_state_rules_starts_with_the_star_rule;
     ]
 
 let () = Oth.run ~file:__FILE__ ~setup:(fun () -> Ok ()) ~teardown:(fun _ -> ()) (fun _ -> test)

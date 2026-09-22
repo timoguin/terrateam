@@ -35,6 +35,15 @@ let literals t =
 
 let of_strings texts =
   let open CCResult.Infix in
+  (* Rules that only refuse are read with ["*"] in front of them: written on their own they would
+     allow nothing, which is not what writing only refusals means, and it is how the same text has
+     always been read. An empty list stays empty -- there is nothing there to qualify. *)
+  let texts =
+    match texts with
+    | [] -> []
+    | texts when CCList.for_all (CCString.prefix ~pre:"!") texts -> "*" :: texts
+    | texts -> texts
+  in
   CCResult.map_l
     (fun text ->
       match CCString.chop_prefix ~pre:"!" text with
