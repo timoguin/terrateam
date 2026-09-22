@@ -88,9 +88,9 @@ module type ASSERT = sig
         fails the test. There is no failing element to name, so unlike {!all} there is no [pp]. *)
     val exists : ?fail_msg:string -> ('a -> bool) -> 'a list -> unit
 
-    (** Asserts that the string list holds [s], otherwise fails the test. The failure names [s] and
-        the list, and [fail_msg], when given, says why [s] must be there. *)
-    val str_mem : ?fail_msg:string -> string -> string list -> unit
+    (** [str_mem ?fail_msg searched l] asserts that [l] contains [searched], otherwise it fails the
+        test *)
+    val str_mem : ?fail_msg:string -> searched:string -> string list -> unit
   end
 
   module Eq : sig
