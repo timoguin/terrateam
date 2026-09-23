@@ -1,5 +1,4 @@
 let is_negation s = CCString.prefix ~pre:"!" s
-let dedup l = CCList.sort_uniq ~cmp:CCString.compare l
 
 (* A capability pattern, after any leading ['!'], is a literal prefix with an optional single
    trailing ['*']. The prefix is a raw character prefix (not segment/dot-aligned), so ["aws_*"] and
@@ -98,8 +97,8 @@ let matches ~patterns value =
 
 let canonicalize_list l =
   let negs, poss = CCList.partition is_negation l in
-  let negs = reduce_subsumed (dedup negs) in
-  let poss = reduce_subsumed (dedup poss) in
+  let negs = reduce_subsumed (Sln_list.String.sort_uniq negs) in
+  let poss = reduce_subsumed (Sln_list.String.sort_uniq poss) in
   if CCList.exists (CCString.equal "!*") negs then [ "!*" ]
     (* a "!*" excludes everything -> deny all *)
   else if CCList.is_empty poss then

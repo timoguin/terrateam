@@ -20,7 +20,7 @@ module Fc = Abbs_future_combinators
    there is no closed set of variants for the compiler to check. *)
 let merge_err a b =
   match (a, b) with
-  | `Rerun ids_a, `Rerun ids_b -> `Rerun (CCList.sort_uniq ~cmp:CCString.compare (ids_a @ ids_b))
+  | `Rerun ids_a, `Rerun ids_b -> `Rerun (Sln_list.String.sort_uniq (ids_a @ ids_b))
   | (`Rerun _ as rerun), _ | _, (`Rerun _ as rerun) -> rerun
   | _ -> a
 

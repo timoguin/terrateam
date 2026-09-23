@@ -14,6 +14,10 @@ module String : sig
       takes its value from [by], a key bound in only one is kept. The named form of
       [union (fun _ _ by -> Some by) m by], which does not say which side wins at the call site. *)
   val override : by:'a t -> 'a t -> 'a t
+
+  (** [of_list_multi l] binds each key of [l] to every value paired with it, in {b reverse} order of
+      appearance in [l]: [add_to_list] folded over [l] from [empty]. *)
+  val of_list_multi : (string * 'a) list -> 'a list t
 end
 
 module Uuidm : sig

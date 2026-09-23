@@ -25,6 +25,7 @@ module String = struct
   let show f t = Assoc_string_list.show f (to_list t)
   let keys_set m = keys m |> Iter.to_list |> Sln_set.String.of_list
   let override ~by m = union (fun _key _m by -> Some by) m by
+  let of_list_multi l = CCList.fold_left (fun acc (k, v) -> add_to_list k v acc) empty l
 end
 
 module Uuidm = struct

@@ -86,12 +86,7 @@ module Header = struct
   let algorithm = CCList.Assoc.get ~eq:String.equal "alg"
   let typ = CCList.Assoc.get_exn ~eq:String.equal "typ"
   let get = CCList.Assoc.get ~eq:String.equal
-
-  let to_json t =
-    `Assoc
-      (CCList.sort
-         (fun (c1, _) (c2, _) -> CCString.compare c1 c2)
-         (CCList.map (fun (c, v) -> (c, `String v)) t))
+  let to_json t = `Assoc (Sln_list.String.sort_assoc (CCList.map (fun (c, v) -> (c, `String v)) t))
 
   let to_string header =
     let json = to_json header in
@@ -173,7 +168,7 @@ module Payload = struct
 
   let to_json t =
     let t = (t : t :> Yojson.Safe.t Claim_map.t) in
-    `Assoc (CCList.sort (fun (c1, _) (c2, _) -> CCString.compare c1 c2) (Claim_map.to_list t))
+    `Assoc (Sln_list.String.sort_assoc (Claim_map.to_list t))
 
   let to_string t = Yojson.Safe.to_string (to_json t)
 end

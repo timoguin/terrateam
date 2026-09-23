@@ -264,7 +264,7 @@ let load_github () =
           (fun s ->
             s
             |> CCString.split_on_char ','
-            |> CCList.sort_uniq ~cmp:CCString.compare
+            |> Sln_list.String.sort_uniq
             |> CCList.filter_map (function
               | "pr_title" -> Some `Pr_title
               | "pr_number" -> Some `Pr_number

@@ -4393,12 +4393,8 @@ let derive ~ctx ~index ~file_list repo_config =
      all of those files that match the global [when_modified] configuration. *)
   let specified_dirs = Sln_map.String.of_list (non_glob_dirs @ glob_dir_matches) in
   (let make_dir_map file_list =
-     CCList.fold_left
-       (fun acc fname ->
-         let dirname = Filename.dirname fname in
-         Sln_map.String.add_to_list dirname fname acc)
-       Sln_map.String.empty
-       file_list
+     Sln_map.String.of_list_multi
+       (CCList.map (fun fname -> (Filename.dirname fname, fname)) file_list)
    in
    let test =
      let module Wm = When_modified in
