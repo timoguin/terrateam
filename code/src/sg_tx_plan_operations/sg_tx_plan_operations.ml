@@ -40,7 +40,7 @@ let operation_of_actions actions =
 
 let of_plan_json plan_json =
   let assoc k = function
-    | `Assoc fields -> CCList.assoc_opt ~eq:CCString.equal k fields
+    | `Assoc fields -> Sln_list.String.assoc_opt k fields
     | _ -> None
   in
   match assoc "resource_changes" plan_json with

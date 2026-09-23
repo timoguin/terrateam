@@ -92,7 +92,7 @@ let fetch_content ~request_id client repo ref_ listings ~directory ~basename =
   (* A directory that [list_directories] did not read is unknown here, thus
      read its names directly.  That answer is the same, it only costs a
      request. *)
-  match CCList.assoc_opt ~eq:CCString.equal directory listings with
+  match Sln_list.String.assoc_opt directory listings with
   | Some (Listed entries) ->
       find_candidate entries ~directory ~basename
       |> CCOption.map_or

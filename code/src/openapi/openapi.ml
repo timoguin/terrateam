@@ -125,7 +125,7 @@ module Make (Io : IO) = struct
     >>= function
     | Ok resp -> (
         let status = CCInt.to_string (Response.status resp) in
-        match CCList.assoc_opt ~eq:CCString.equal status responses with
+        match Sln_list.String.assoc_opt status responses with
         | Some conv -> (
             match conv (Response.value resp) with
             | Ok v -> Io.return (Ok Response.{ resp with value = v })

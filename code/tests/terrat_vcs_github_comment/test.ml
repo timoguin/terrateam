@@ -32,7 +32,7 @@ let shown ~overall_success s = kv_of_step ~overall_success s <> []
 let field ~name s =
   match kv_of_step ~overall_success:false s with
   | [ `Assoc fields ] -> (
-      match CCList.assoc_opt ~eq:CCString.equal name fields with
+      match Sln_list.String.assoc_opt name fields with
       | Some (`String v) -> v
       | Some _ | None -> Oth.Assert.false_ ("step has no " ^ name))
   | _ -> Oth.Assert.false_ "expected exactly one step"
