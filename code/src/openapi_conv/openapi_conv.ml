@@ -591,7 +591,7 @@ let convert_str_operation strict_records base_module_name components uritmpl op_
     let resolved_responses =
       op.Operation.responses
       |> Sln_map.String.to_list
-      |> CCList.sort (fun (a, _) (b, _) -> CCString.compare a b)
+      |> Sln_list.String.sort_assoc
       |> CCList.map (fun (c, r) -> (c, resolve_response_ref components r))
     in
     Ast_helper.(

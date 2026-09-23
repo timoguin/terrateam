@@ -5,6 +5,9 @@ module String : sig
   (** [CCList.sort CCString.compare] *)
   val sort : string list -> string list
 
+  (** [CCList.sort_uniq ~cmp:CCString.compare] *)
+  val sort_uniq : string list -> string list
+
   (** [CCList.equal CCString.equal] *)
   val equal : string list -> string list -> bool
 
@@ -17,6 +20,9 @@ module String : sig
 
   (** [CCList.assoc_opt ~eq:CCString.equal] *)
   val assoc_opt : string -> (string * 'a) list -> 'a option
+
+  (** [CCList.sort (fun (a, _) (b, _) -> CCString.compare a b)] *)
+  val sort_assoc : (string * 'a) list -> (string * 'a) list
 end
 
 module Uuidm : sig

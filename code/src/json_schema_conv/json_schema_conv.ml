@@ -1171,7 +1171,7 @@ and convert_str_schema_properties config properties =
             (config, acc)
         | Value.V _ -> (config, acc)
         | Value.Ref _ -> (config, acc))
-      (CCList.sort (fun (l, _) (r, _) -> CCString.compare l r) (Sln_map.String.to_list properties))
+      (Sln_list.String.sort_assoc (Sln_map.String.to_list properties))
   in
   acc
 
@@ -1233,7 +1233,7 @@ and convert_str_schema_obj config properties_config required properties =
               acc @ [ Ast_helper.Type.field ~attrs (Location.mknoloc field_name) field_type ]
             in
             (config, acc))
-      (CCList.sort (fun (l, _) (r, _) -> CCString.compare l r) (Sln_map.String.to_list properties))
+      (Sln_list.String.sort_assoc (Sln_map.String.to_list properties))
   in
   [
     Gen.make_str_record

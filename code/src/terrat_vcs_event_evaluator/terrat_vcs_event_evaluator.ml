@@ -811,7 +811,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let unlock_ids = function
       | Pull_request_comment { comment = Terrat_comment.Unlock ids; _ } ->
-          CCList.sort_uniq ~cmp:CCString.compare ids
+          Sln_list.String.sort_uniq ids
       | Pull_request_open _
       | Pull_request_close _
       | Pull_request_sync _

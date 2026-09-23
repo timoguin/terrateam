@@ -151,12 +151,7 @@ module Provider :
             Logs.info (fun m ->
                 m "%s : CHECK_GATE : token=%s : approver=%s" request_id token approver))
           approvers;
-        let approvers_map =
-          CCList.fold_left
-            (fun acc (token, approver) -> Sln_map.String.add_to_list token approver acc)
-            Sln_map.String.empty
-            approvers
-        in
+        let approvers_map = Sln_map.String.of_list_multi approvers in
         Api.fetch_pull_request_reviews
           ~request_id
           (Api.Pull_request.repo pull_request)

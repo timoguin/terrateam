@@ -5,6 +5,7 @@
   dynamic_gc
   mirage-crypto-pk
   ppx_deriving
+  sln
   terrat_brand
   uri
   x509)

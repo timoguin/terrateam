@@ -625,7 +625,7 @@ struct
                                last_plan;
                              CCOption.map (fun { Ipr.Run.sha; created_at = _ } -> sha) last_apply;
                            ])
-                  |> CCList.sort_uniq ~cmp:CCString.compare
+                  |> Sln_list.String.sort_uniq
                 in
                 Abbs_future_combinators.List_result.fold_left
                   ~init:[]
@@ -1991,7 +1991,7 @@ struct
                     Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Repo_config)
                 | Terrat_comment.Unlock unlocks ->
                     Abbs_future_combinators.return_ok
-                      (Some (Tjc.Job.Type_.Unlock (CCList.sort_uniq ~cmp:CCString.compare unlocks)))
+                      (Some (Tjc.Job.Type_.Unlock (Sln_list.String.sort_uniq unlocks)))
                 | Terrat_comment.Index ->
                     Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Index)
                 | Terrat_comment.Help -> Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Help)

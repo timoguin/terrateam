@@ -935,12 +935,7 @@ let synthesize_config ~index repo_config =
     Error (err : synthesize_config_err :> [> synthesize_config_err ])
 
 let make_dir_map file_list =
-  CCList.fold_left
-    (fun acc fname ->
-      let dirname = Filename.dirname fname in
-      Sln_map.String.add_to_list dirname fname acc)
-    Sln_map.String.empty
-    file_list
+  Sln_map.String.of_list_multi (CCList.map (fun fname -> (Filename.dirname fname, fname)) file_list)
 
 let files_of_diff = function
   | Terrat_change.Diff.Add { filename }
