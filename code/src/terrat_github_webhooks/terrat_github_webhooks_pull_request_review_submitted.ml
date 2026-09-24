@@ -14,7 +14,6 @@ module Primary = struct
   type t = {
     action : Action.t;
     installation : Terrat_github_webhooks_installation_lite.t option; [@default None]
-    organization : Terrat_github_webhooks_organization.t option; [@default None]
     repository : Terrat_github_webhooks_repository.t;
     sender : Terrat_github_webhooks_user.t;
   }
