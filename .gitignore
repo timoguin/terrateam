@@ -68,6 +68,7 @@ code/src/iris/src/lib/api-types-generated.ts
 # Generated copybara files
 scripts/monorepo/copy.bara.sky
 scripts/monorepo/copy.bara.sky.bak
+scripts/action-webhook-proxy/copy.bara.sky
 
 # Customer diagnostics dumps and derived analysis (see scripts/diagnostics_analysis/).
 # Anchored to the repo root so the cli_help_regression test fixture is unaffected.

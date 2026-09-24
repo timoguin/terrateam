@@ -14,7 +14,6 @@ type t = {
   action : Action.t;
   installation : Terrat_github_webhooks_installation_lite.t option; [@default None]
   number : int;
-  organization : Terrat_github_webhooks_organization.t option; [@default None]
   pull_request : Terrat_github_webhooks_pull_request.t;
   repository : Terrat_github_webhooks_repository.t;
   sender : Terrat_github_webhooks_user.t;

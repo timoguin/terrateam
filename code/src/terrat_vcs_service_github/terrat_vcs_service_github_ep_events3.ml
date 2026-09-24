@@ -274,9 +274,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
         {
           Gw.Pull_request_opened.installation =
             Some { Gw.Installation_lite.id = installation_id; _ };
-          pull_request =
-            Gw.Pull_request_opened.Pull_request_.T.
-              { primary = Primary.{ number = pull_request_id; _ }; _ };
+          pull_request = Gw.Pull_request.{ number = pull_request_id; _ };
           repository;
           sender;
           _;
@@ -367,9 +365,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
           Gw.Pull_request_reopened.installation =
             Some { Gw.Installation_lite.id = installation_id; _ };
           repository;
-          pull_request =
-            Gw.Pull_request_reopened.Pull_request_.T.
-              { primary = Primary.{ number = pull_request_id; _ }; _ };
+          pull_request = Gw.Pull_request.{ number = pull_request_id; _ };
           sender;
           _;
         } ->
@@ -414,9 +410,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
           Gw.Pull_request_ready_for_review.installation =
             Some { Gw.Installation_lite.id = installation_id; _ };
           repository;
-          pull_request =
-            Gw.Pull_request_ready_for_review.Pull_request_.T.
-              { primary = Primary.{ number = pull_request_id; _ }; _ };
+          pull_request = Gw.Pull_request.{ number = pull_request_id; _ };
           sender;
           _;
         } ->
@@ -466,9 +460,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
         {
           Gw.Pull_request_closed.installation =
             Some { Gw.Installation_lite.id = installation_id; _ };
-          pull_request =
-            Gw.Pull_request_closed.Pull_request_.T.
-              { primary = Primary.{ number = pull_request_id; _ }; _ };
+          pull_request = Gw.Pull_request.{ number = pull_request_id; _ };
           repository;
           sender;
           _;
@@ -656,9 +648,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
             Some { Gw.Installation_lite.id = installation_id; _ };
           repository;
           comment = { Gw.Issue_comment.id = comment_id; body = comment_body; _ };
-          issue =
-            Gw.Issue_comment_created.Issue_.T.
-              { primary = Primary.{ number = pull_request_id; pull_request = Some _; _ }; _ };
+          issue = Gw.Issue.{ number = pull_request_id; pull_request = Some _ };
           sender;
           _;
         } -> (
