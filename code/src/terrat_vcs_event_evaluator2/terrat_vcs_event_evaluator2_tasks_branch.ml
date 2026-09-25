@@ -153,10 +153,11 @@ struct
           let open Irm in
           fetch Keys.applied_dirspaces
           >>| fun applied_dirspaces ->
-          fun ~layers ~force:_ ->
+          fun ~dirspaces ~force:_ ->
            Abbs_future_combinators.return_ok
              {
-               Terrat_intra_pr_hash.Selection.to_run = CCList.flatten layers;
+               Terrat_intra_pr_hash.Selection.to_run = dirspaces;
+               out_of_order = [];
                applied = applied_dirspaces;
              })
 
@@ -189,9 +190,11 @@ struct
                     context.Tjc.Context.id
                     time)
                 (fun () ->
+                  (* An apply aborts no plan, thus the changed dirspaces are not asked for. *)
                   S.Db.query_conflicting_work_manifests_in_repo_for_context
                     ~request_id:(Builder.log_id s)
                     ~job_id:job.Tjc.Job.id
+                    ~changed_dirspaces:dirspaces
                     db
                     context
                     dirspaces

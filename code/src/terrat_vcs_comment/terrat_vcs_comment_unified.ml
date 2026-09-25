@@ -3,9 +3,11 @@ module Status = struct
      things to a reader: [Plan_running] has produced nothing for the dirspace yet, while
      [Apply_running] applies a plan that is already in the table, so what is in flight is the change
      to the infrastructure.  [Pending] is neither -- the dirspace belongs to the pull request and
-     nothing has run for it. *)
+     nothing has run for it.  [Stale] has run, but the commits moved during the run and changed its
+     files, or an unlock came after the run (RFD 2356). *)
   type t =
     | Failed
+    | Stale
     | Planned
     | Plan_running
     | Apply_running
@@ -15,11 +17,16 @@ module Status = struct
 
   let rank = function
     | Failed -> 0
-    | Planned -> 1
-    | Plan_running -> 2
-    | Apply_running -> 3
-    | Pending -> 4
-    | Applied -> 5
+    | Stale -> 1
+    | Planned -> 2
+    | Plan_running -> 3
+    | Apply_running -> 4
+    | Pending -> 5
+    | Applied -> 6
+
+  let shows_counts = function
+    | Failed | Stale | Planned | Apply_running | Applied -> true
+    | Plan_running | Pending -> false
 end
 
 module Tier = struct

@@ -94,6 +94,15 @@ val layers_of : Config.t -> Dirspace_config.t list -> Dirspace_config.t list lis
     back, so a dirspace it delays must still plan with the layer it belongs to. *)
 val apply_layers_of : Config.t -> Dirspace_config.t list -> Dirspace_config.t list list
 
+(** The dirspaces each given dirspace waits for, transitively, by the same edges {!layers_of} uses.
+    A dirspace with no dependency in the set is absent from the map.
+
+    A layer number cannot answer this question. The layers are one order over the whole run, so two
+    branches of the tree that depend on nothing of each other share their layers although neither
+    waits for the other. *)
+val dependencies_of :
+  Config.t -> Dirspace_config.t list -> Terrat_data.Dirspace_set.t Terrat_data.Dirspace_map.t
+
 val of_dirspace : Config.t -> Terrat_dirspace.t -> Dirspace_config.t option
 val merge_with_dedup : Dirspace_config.t list -> Dirspace_config.t list -> Dirspace_config.t list
 val match_tag_query : tag_query:Terrat_tag_query.t -> Dirspace_config.t -> bool

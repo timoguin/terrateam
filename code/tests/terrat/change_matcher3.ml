@@ -2949,6 +2949,86 @@ let test_layers_of_dependency_inside_subset =
         (CCList.equal (CCList.equal CCString.equal) layers [ [ "c" ]; [ "b" ]; [ "a" ] ]);
       ())
 
+(* A config whose directories each depend on the directories that [deps] names.
+   Each directory has one file, [<dir>/main.tf]. *)
+let depends_on_config deps =
+  let module R = Terrat_base_repo_config_v1 in
+  let dir = function
+    | [] -> R.Dirs.Dir.make ()
+    | depends ->
+        R.Dirs.Dir.make
+          ~workspaces:
+            (Sln_map.String.of_list
+               [
+                 ( "default",
+                   R.Dirs.Workspace.make
+                     ~when_modified:
+                       (R.When_modified.make
+                          ~depends_on:
+                            (depends_on_q
+                               (CCString.concat " or " (CCList.map (fun d -> "dir:" ^ d) depends)))
+                          ())
+                     () );
+               ])
+          ()
+  in
+  let repo_config =
+    derive
+      ~ctx
+      ~index:R.Index.empty
+      ~file_list:(CCList.map (fun (d, _) -> d ^ "/main.tf") deps)
+      (R.of_view
+         (R.View.make
+            ~dirs:(Sln_map.String.of_list (CCList.map (fun (d, depends) -> (d, dir depends)) deps))
+            ()))
+  in
+  CCResult.get_exn (Terrat_change_match3.synthesize_config ~index:R.Index.empty repo_config)
+
+(* The dependencies of each dirspace, as (dir, sorted dirs), sorted by dir, so
+   that the assertion does not depend on the order of the map. *)
+let dirs_of_dependencies dependencies =
+  Terrat_data.Dirspace_map.fold
+    (fun { Terrat_dirspace.dir; workspace = _ } deps acc ->
+      ( dir,
+        deps
+        |> Terrat_data.Dirspace_set.to_list
+        |> CCList.map (fun { Terrat_dirspace.dir; workspace = _ } -> dir)
+        |> CCList.sort CCString.compare )
+      :: acc)
+    dependencies
+    []
+  |> CCList.sort (fun (a, _) (b, _) -> CCString.compare a b)
+
+let assert_dependencies ~expected actual =
+  Oth.Assert.eq
+    ~eq:(CCList.equal (CCPair.equal CCString.equal (CCList.equal CCString.equal)))
+    ~pp:CCFormat.Dump.(list (pair string (list string)))
+    expected
+    (dirs_of_dependencies actual)
+
+let test_dependencies_of_chain =
+  Oth.test ~name:"dependencies_of: a chain of three is transitive" (fun _ ->
+      let config = depends_on_config [ ("a", [ "b" ]); ("b", [ "c" ]); ("c", []) ] in
+      (* [c] depends on nothing, thus it is absent. *)
+      assert_dependencies
+        ~expected:[ ("a", [ "b"; "c" ]); ("b", [ "c" ]) ]
+        (Terrat_change_match3.dependencies_of
+           config
+           (dirspace_configs_of_dirs config [ "c"; "b"; "a" ]));
+      ())
+
+let test_dependencies_of_independent_branches =
+  Oth.test ~name:"dependencies_of: two branches do not wait for each other" (fun _ ->
+      let config = depends_on_config [ ("a", [ "b" ]); ("b", []); ("x", [ "y" ]); ("y", []) ] in
+      (* [layers_of] puts [b] and [y] in one layer and [a] and [x] in the next,
+         but [a] waits only for [b], and [x] only for [y]. *)
+      assert_dependencies
+        ~expected:[ ("a", [ "b" ]); ("x", [ "y" ]) ]
+        (Terrat_change_match3.dependencies_of
+           config
+           (dirspace_configs_of_dirs config [ "a"; "b"; "x"; "y" ]));
+      ())
+
 (* The case a direct-edge rule gets wrong.  [b] is not in the subset, and the
    only path from [c] to [a] runs through it.  [b] cannot delay anything, but
    [a] still depends on [c] through it, so [a] must not join [c] in the first
@@ -3621,6 +3701,8 @@ let test =
       test_files_in_same_dir_match_multiple_dirs;
       test_layers_of_dependency_outside_subset;
       test_layers_of_dependency_inside_subset;
+      test_dependencies_of_chain;
+      test_dependencies_of_independent_branches;
       test_layers_of_contracts_through_a_missing_dirspace;
       test_apply_layers_of_counts_apply_after;
       test_layers_of_frees_a_branch_after_an_apply;

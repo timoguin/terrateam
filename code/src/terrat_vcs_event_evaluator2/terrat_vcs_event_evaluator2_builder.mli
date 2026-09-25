@@ -41,12 +41,19 @@ module Make (S : Terrat_vcs_provider2.S) : sig
       unit ->
       B.State.t Abb.Future.t
 
+    (** The state that [set_log_id], [set_tasks] and [set_path] give shares its store with [t]. A
+        task of a build writes what it computes to that shared store. *)
     val set_log_id : string -> t -> t
+
     val config : t -> S.Api.Config.t
     val exec : t -> Exec.t
     val mark_dirty : t -> 'v Bs.k -> unit
     val orig_store : t -> Hmap.t
+
+    (** [set_orig_store store t] is a state with a store of its own that starts from [store]. A
+        nested eval must get a state from this function. *)
     val set_orig_store : Hmap.t -> t -> t
+
     val tasks : t -> Hmap.t
     val set_tasks : Hmap.t -> t -> t
     val set_path : Bs.key_repr list -> t -> t
@@ -66,5 +73,11 @@ module Make (S : Terrat_vcs_provider2.S) : sig
 
   val log_id : B.State.t -> string
   val mk_log_id : request_id:string -> Uuidm.t -> string
+
+  (** [eval s k] builds [k] in the store of [s], and the caller reads the values that the build
+      computed with [State.forward_store_value]. The build first resets the store of [s] to the
+      store that [s] was made with, thus an eval does not start from what an earlier eval of [s]
+      left. An eval on a state that shares its store with a running build resets the store of that
+      build, thus a nested eval gets a state from [State.set_orig_store]. *)
   val eval : State.t -> 'v Bs.k -> 'v Bs.c
 end

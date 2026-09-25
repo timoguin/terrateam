@@ -211,6 +211,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           (fun () ->
             Logs.info (fun m ->
                 m "%s : BUILDER : EVAL : START : target=%s" (log_id s) (Hmap.Key.info k));
+            s.B.State.store := s.B.State.orig_store;
             Bs.build
               { B.Queue.exec = s.B.State.exec; root = s.B.State.root_path @ path @ [ log_id s ] }
               rebuilder
@@ -219,8 +220,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (Bs.St.create
                  {
                    s with
-                   B.State.store = ref s.B.State.orig_store;
-                   root_path = s.B.State.root_path @ s.B.State.path @ [ log_id s ];
+                   B.State.root_path = s.B.State.root_path @ s.B.State.path @ [ log_id s ];
                    path = [];
                  })))
       ~finally:unsuspend_root

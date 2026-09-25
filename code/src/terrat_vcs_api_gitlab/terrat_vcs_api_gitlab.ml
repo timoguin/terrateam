@@ -325,6 +325,9 @@ let fetch_branch_sha ~request_id client repo ref_ =
       Logs.err (fun m -> m "%s : FETCH_BRANCH_SHA : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_future_combinators.return_err `Error
 
+(* GitLab keeps no cache: the answer is always current, which is correct for every caller. *)
+let fetch_branch_sha_cached = fetch_branch_sha
+
 (* 100 is the largest page GitLab gives. One page bounds the cost of the call
    and bounds how far back a lineage test can look. *)
 let commits_page_size = 100

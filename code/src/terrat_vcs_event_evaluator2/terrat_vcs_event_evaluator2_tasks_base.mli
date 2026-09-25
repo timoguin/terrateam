@@ -34,6 +34,75 @@ module Make
     result
     Abb.Future.t
 
+  (** The paths whose contents differ between the stored tree of [base_ref] and the stored tree of
+      the given ref, with the time of the query in the log. *)
+  val query_repo_tree_changes :
+    base_ref:S.Api.Ref.t ->
+    Builder.Bs.state ->
+    S.Db.t ->
+    S.Api.Account.t ->
+    S.Api.Ref.t ->
+    (string list, [> `Error ]) result Abb.Future.t
+
+  (** [abort_work_manifest s db work_manifest_id run_id] records [run_id] as the run of the work
+      manifest and aborts it. A run that took a work manifest and cannot operate on it gives it
+      back, thus the job can make its work again. Every abort of a taken work manifest goes through
+      here, so that they all write the same state. *)
+  val abort_work_manifest :
+    Builder.Bs.state -> S.Db.t -> Uuidm.t -> string -> (unit, [> `Error ]) result Abb.Future.t
+
+  (** The dirspaces of [config] that the given paths change. It uses the change match of a pull
+      request diff, thus the file patterns and the dependencies of a dirspace count. *)
+  val dirspaces_of_paths :
+    Terrat_change_match3.Config.t -> string list -> Terrat_data.Dirspace_set.t
+
+  (** The hash of a repository config, the part of the key of a built config that follows the config
+      the build used. *)
+  val repo_config_hash : Terrat_base_repo_config_v1.raw Terrat_base_repo_config_v1.t -> string
+
+  (** The key under which the config builder stores the config it built for [ref_] from
+      [repo_config]. A built config belongs to a commit and to the config that the build read. *)
+  val build_config_cache_ref :
+    S.Api.Ref.t -> Terrat_base_repo_config_v1.raw Terrat_base_repo_config_v1.t -> S.Api.Ref.t
+
+  (** [changed_between ~from_ref ~to_ref] is the set of dirspaces of [config] with a file that
+      changed between the two commits, or [None] when the two commits cannot be compared: the tree
+      of one commit is not stored, or the config builder is on and the config of [to_ref] is not
+      built yet.
+
+      A commit can move while a run operates, and only a change to the files of a dirspace makes the
+      run stale (RFD 2356). [missing_tree] says what to do with a tree that is not stored. With
+      [`Fetch], and the tree builder off, the tree is read from the forge and stored. With
+      [`Unknown], or with the tree builder on, the answer is [None]. The call never waits for a tree
+      build or a config build: a caller that must answer now gets [None] instead. *)
+  val changed_between :
+    Builder.Bs.state ->
+    missing_tree:[ `Fetch of S.Api.Client.t * S.Api.Repo.t | `Unknown ] ->
+    config:Terrat_change_match3.Config.t ->
+    repo_config_raw:Terrat_base_repo_config_v1.raw Terrat_base_repo_config_v1.t ->
+    account:S.Api.Account.t ->
+    from_ref:S.Api.Ref.t ->
+    to_ref:S.Api.Ref.t ->
+    (Terrat_data.Dirspace_set.t option, Builder.err) result Abb.Future.t
+
+  (** The largest number of dirspaces that get a commit check each. A run with more dirspaces gets
+      no dirspace checks, because a forge shows a long list of checks badly. *)
+  val dirspace_check_threshold : int
+
+  (** [pending_apply_check ~config ~account ~repo ~apply_requirements ~commit_checks matches] is the
+      waiting [terrateam apply] check, when the repository asks for one and [commit_checks] has no
+      [terrateam apply] check yet. The check holds the pull request until it is applied. A run that
+      matches no dirspace gets none: it has nothing to wait for, and its apply check is created
+      completed when the run finishes. *)
+  val pending_apply_check :
+    config:S.Api.Config.t ->
+    account:S.Api.Account.t ->
+    repo:S.Api.Repo.t ->
+    apply_requirements:Terrat_base_repo_config_v1.Apply_requirements.t ->
+    commit_checks:Terrat_commit_check.t list ->
+    'a list ->
+    Terrat_commit_check.t list
+
   (** Create the completed [terrateam apply] commit check at the head of the pull request.
 
       A pull request that reached a noop still has to be mergeable, thus an operator who needs that
@@ -47,7 +116,21 @@ module Make
       nothing went wrong or the user has already been told. *)
   val msg_of_err : Builder.err -> Keys.msg option
 
-  (** Forward a standard keys that we want to pass between evals, because in an eval the store gets
-      reset *)
+  (** [forward_std_keys s store] adds to [store] the values of the standard keys that the build of
+      [s] computed, so that the next eval does not compute them again. An eval starts from the store
+      it was made with, thus a value it does not get is computed again.
+
+      A key is standard when it holds the same value for the whole of one event:
+      - It is a function of a commit sha or of an account, and not of a branch name. The ref of a
+        branch can move while a job operates, thus [branch_ref], [dest_branch_ref] and all that
+        comes from them are not standard.
+      - The evaluation does not write it. [commit_checks] and [work_manifests_for_job] change when
+        the evaluation writes, thus they are not standard.
+      - The forge does not change it during the event. The mergeable state of a pull request can
+        change, thus it has a key of its own.
+
+      The pull request is standard: an event reads it once. A caller that must know the head of a
+      branch at a later time reads the forge again. [client] is not standard, because it is a handle
+      and not a value. *)
   val forward_std_keys : Builder.State.t -> Builder.Hmap.t -> Builder.Hmap.t
 end

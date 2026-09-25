@@ -17,6 +17,16 @@ module Sql = struct
       /% Var.uuid "work_manifest"
       /% Var.boolean "output_details")
 
+  let select_unified_comment_latest_work_manifest =
+    Pgsql_io.Typed_sql.(
+      sql
+      //
+      (* id *)
+      Ret.uuid
+      /^ read [%blob "sql/select_unified_comment_latest_work_manifest.sql"]
+      /% Var.bigint "repository"
+      /% Var.bigint "pull_number")
+
   let mark_unified_comment_dirty =
     Pgsql_io.Typed_sql.(
       sql /^ read [%blob "sql/mark_unified_comment_dirty.sql"] /% Var.uuid "work_manifest")
@@ -99,6 +109,9 @@ module Sql = struct
       //
       (* aborted *)
       Ret.boolean
+      //
+      (* summary_state *)
+      Ret.(option text)
       /^ read [%blob "sql/select_unified_comment_elements.sql"]
       /% Var.uuid "work_manifest")
 
@@ -212,23 +225,39 @@ module S = struct
 
   type comment_id = Api.Comment.Id.t [@@deriving ord, show]
 
-  let status_of_row ~plan_success ~apply_success ~active ~active_apply ~aborted =
+  (* The database stores the state as text.  A name that this code does not know falls back to the
+     runs on the head. *)
+  let summary_status_of_string state =
+    let module Ds = Terrat_vcs_provider2.Dirspace_summary in
+    let module St = Unified.Status in
+    CCOption.map
+      (function
+        | Ds.Applied -> St.Applied
+        | Ds.Planned -> St.Planned
+        | Ds.Failed -> St.Failed
+        | Ds.Stale -> St.Stale)
+      (Ds.of_string state)
+
+  let status_of_row ~plan_success ~apply_success ~active ~active_apply ~aborted ~summary_state =
     let module St = Unified.Status in
     (* What a run in flight is called: the apply of a dirspace is named for what it does, because
        the plan it applies is already in the comment and the reader is waiting on the change, not
        on the plan. *)
     let in_flight = if active_apply then St.Apply_running else St.Plan_running in
-    match (apply_success, active, plan_success) with
-    | Some true, _, _ -> St.Applied
-    | Some false, _, _ -> St.Failed
-    | None, true, Some _ -> in_flight
-    | None, true, None -> if aborted then St.Failed else in_flight
-    (* Nothing in flight and no plan either: the dirspace belongs to the pull request and nothing
+    match (active, CCOption.flat_map summary_status_of_string summary_state) with
+    | false, Some status -> status
+    | true, _ | false, None -> (
+        match (apply_success, active, plan_success) with
+        | Some true, _, _ -> St.Applied
+        | Some false, _, _ -> St.Failed
+        | None, true, Some _ -> in_flight
+        | None, true, None -> if aborted then St.Failed else in_flight
+        (* Nothing in flight and no plan either: the dirspace belongs to the pull request and nothing
        has run for it -- the state a run-start publish leaves every dirspace the run does not
        cover in. *)
-    | None, false, Some false -> St.Failed
-    | None, false, Some true -> St.Planned
-    | None, false, None -> if aborted then St.Failed else St.Pending
+        | None, false, Some false -> St.Failed
+        | None, false, Some true -> St.Planned
+        | None, false, None -> if aborted then St.Failed else St.Pending)
 
   let query_comment_id t = Abbs_future_combinators.return_ok t.comment_id
 
@@ -253,6 +282,7 @@ module S = struct
           active
           active_apply
           aborted
+          summary_state
         ->
         {
           created;
@@ -261,7 +291,8 @@ module S = struct
           has_changes = CCOption.get_or ~default:false plan_has_changes;
           output = plan_output;
           replaced;
-          status = status_of_row ~plan_success ~apply_success ~active ~active_apply ~aborted;
+          status =
+            status_of_row ~plan_success ~apply_success ~active ~active_apply ~aborted ~summary_state;
           updated;
           work_manifest_id = CCOption.or_ ~else_:plan_work_manifest apply_work_manifest;
         })
@@ -279,6 +310,7 @@ module S = struct
     | St.Planned -> ":pencil2: Planned"
     | St.Plan_running -> ":construction: Plan Running"
     | St.Apply_running -> ":construction: Apply Running"
+    | St.Stale -> ":warning: Stale"
     | St.Pending -> ":hourglass_flowing_sand: Pending"
     | St.Applied -> ":white_check_mark: Applied"
 
@@ -289,15 +321,14 @@ module S = struct
     | St.Planned -> "planned"
     | St.Plan_running -> "plan_running"
     | St.Apply_running -> "apply_running"
+    | St.Stale -> "stale"
     | St.Pending -> "pending"
     | St.Applied -> "applied"
 
-  let count_kv el count =
-    match (el.status, el.has_changes, count) with
-    | (Unified.Status.Pending | Unified.Status.Plan_running | Unified.Status.Apply_running), _, _
-    | _, false, _
-    | _, _, None -> "-"
-    | _, true, Some n -> Int64.to_string n
+  let shown_count el count =
+    if Unified.Status.shows_counts el.status && el.has_changes then count else None
+
+  let count_kv el count = CCOption.map_or ~default:"-" Int64.to_string (shown_count el count)
 
   let run_url t el =
     CCOption.map
@@ -357,6 +388,7 @@ module S = struct
         [
           ("num_dirspaces", `Int num_els);
           ("num_failed", `Int (count_status Unified.Status.Failed));
+          ("num_stale", `Int (count_status Unified.Status.Stale));
           ("num_planned", `Int (count_status Unified.Status.Planned));
           ("num_plan_running", `Int (count_status Unified.Status.Plan_running));
           ("num_apply_running", `Int (count_status Unified.Status.Apply_running));
@@ -383,10 +415,14 @@ module S = struct
           ( "totals",
             `Assoc
               [
-                ("created", `String (Int64.to_string (sum (fun el -> el.created) els)));
-                ("updated", `String (Int64.to_string (sum (fun el -> el.updated) els)));
-                ("replaced", `String (Int64.to_string (sum (fun el -> el.replaced) els)));
-                ("deleted", `String (Int64.to_string (sum (fun el -> el.deleted) els)));
+                ( "created",
+                  `String (Int64.to_string (sum (fun el -> shown_count el el.created) els)) );
+                ( "updated",
+                  `String (Int64.to_string (sum (fun el -> shown_count el el.updated) els)) );
+                ( "replaced",
+                  `String (Int64.to_string (sum (fun el -> shown_count el el.replaced) els)) );
+                ( "deleted",
+                  `String (Int64.to_string (sum (fun el -> shown_count el el.deleted) els)) );
               ] );
           ("truncated", `Int (num_els - CCList.length shown));
           ("console_url", `String (console_url t));
@@ -691,6 +727,25 @@ let drain ~request_id ~fetch_brand config storage work_manifest_id =
       Logs.err (fun m ->
           m "%s : DRAIN_UNIFIED_COMMENT : VCS_API_RATE_LIMIT : %s" request_id operation);
       Abb.Future.return ()
+  | Error (#Pgsql_pool.err as err) ->
+      Logs.err (fun m -> m "%s : DRAIN_UNIFIED_COMMENT : %a" request_id Pgsql_pool.pp_err err);
+      Abb.Future.return ()
+  | Error (#Pgsql_io.err as err) ->
+      Logs.err (fun m -> m "%s : DRAIN_UNIFIED_COMMENT : %a" request_id Pgsql_io.pp_err err);
+      Abb.Future.return ()
+
+let drain_pull_request ~request_id ~fetch_brand config storage ~repository ~pull_number =
+  let open Abb.Future.Infix_monad in
+  Pgsql_pool.with_conn storage ~f:(fun db ->
+      Pgsql_io.Prepared_stmt.fetch
+        db
+        Sql.select_unified_comment_latest_work_manifest
+        ~f:CCFun.id
+        (CCInt64.of_int repository)
+        (CCInt64.of_int pull_number))
+  >>= function
+  | Ok [] -> Abb.Future.return ()
+  | Ok (work_manifest_id :: _) -> drain ~request_id ~fetch_brand config storage work_manifest_id
   | Error (#Pgsql_pool.err as err) ->
       Logs.err (fun m -> m "%s : DRAIN_UNIFIED_COMMENT : %a" request_id Pgsql_pool.pp_err err);
       Abb.Future.return ()

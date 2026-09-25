@@ -16,6 +16,9 @@ module S : sig
     num_remaining_layers : int;
     result : Terrat_api_components_work_manifest_tf_operation_result2.t;
     repo_config : Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t;
+    stale : Terrat_vcs_provider2.Work_manifest_stale.t option;
+        (** The commits of the run moved and its files changed (RFD 2356). The comment shows a
+            warning, thus the user does not use a stale output. *)
     synthesized_config : Terrat_change_match3.Config.t;
     work_manifest : (Api.Account.t, unit) Terrat_work_manifest3.Existing.t;
   }

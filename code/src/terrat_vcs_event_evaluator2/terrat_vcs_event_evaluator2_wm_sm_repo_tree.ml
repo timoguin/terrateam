@@ -18,14 +18,18 @@ struct
   module Wm_sm = Terrat_vcs_event_evaluator2_wm_sm.Make (S) (Keys)
   module Wm = Terrat_work_manifest3
 
-  let query_repo_tree s db account branch_ref dest_branch_ref =
+  (* Whether this slot has to build.  Only a tree the script made answers: a tree read from the
+     forge, which a push to a branch whose own config has the tree builder off stores, carries ids
+     of the forge, and the ids of the two trees this slot compares must come from one script
+     (RFD 2356). *)
+  let query_repo_tree s db account branch_ref =
     time_it
       s
       (fun m log_id time -> m "%s : QUERY_REPO_TREE : time=%f" log_id time)
       (fun () ->
-        S.Db.query_repo_tree
+        S.Db.query_repo_tree_built
           ~request_id:(Builder.log_id s)
-          ~base_ref:dest_branch_ref
+          ~script_only:true
           db
           account
           branch_ref)
@@ -46,7 +50,14 @@ struct
     time_it
       s
       (fun m log_id time -> m "%s : STORE_REPO_TREE : time=%f" log_id time)
-      (fun () -> S.Db.store_repo_tree ~request_id:(Builder.log_id s) db account branch_ref files)
+      (fun () ->
+        S.Db.store_repo_tree
+          ~request_id:(Builder.log_id s)
+          ~built_by_script:true
+          db
+          account
+          branch_ref
+          files)
 
   module Wmr = Terrat_api_components.Work_manifest_result
   module Bt = Terrat_api_components.Work_manifest_build_tree_result
@@ -67,14 +78,18 @@ struct
     let branch_name = S.Api.Ref.to_string branch_name in
     if branch = branch_name then "terrateam build-tree" else "terrateam build-tree " ^ branch
 
-  let create ~dest_branch_ref ~branch_ref ~branch s { Bs.Fetcher.fetch } =
+  let stored ~branch_ref s { Bs.Fetcher.fetch } =
+    let open Irm in
+    fetch Keys.account
+    >>= fun account -> Builder.run_db s ~f:(fun db -> query_repo_tree s db account branch_ref)
+
+  let create ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
     let open Irm in
     fetch Keys.account
     >>= fun account ->
-    (* Check to see if the tree already exists, if so we don't have to do anything. *)
-    Builder.run_db s ~f:(fun db -> query_repo_tree s db account branch_ref dest_branch_ref)
+    stored ~branch_ref s fetcher
     >>= function
-    | None ->
+    | false ->
         fetch Keys.repo
         >>= fun repo ->
         fetch Keys.initiator
@@ -123,7 +138,7 @@ struct
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
         >>| fun () -> [ work_manifest ]
-    | Some _ ->
+    | true ->
         fetch Keys.commit_checks
         >>= fun commit_checks ->
         fetch Keys.branch_ref
@@ -335,7 +350,13 @@ struct
   let run ~dest_branch_ref ~branch_ref ~branch ~name =
     Wm_sm.run
       ~name
-      ~eq:(eq dest_branch_ref branch_ref)
+      ~membership:
+        (Wm_sm.Refs
+           {
+             steps = [ Wm.Step.Build_tree ];
+             eq = eq dest_branch_ref branch_ref;
+             stored = stored ~branch_ref;
+           })
       ~dest_branch_ref
       ~branch_ref
       ~branch

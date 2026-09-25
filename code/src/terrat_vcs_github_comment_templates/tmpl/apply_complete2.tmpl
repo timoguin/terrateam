@@ -1,5 +1,51 @@
+{%- macro stale_warning(stale) %}
+
+> [!WARNING]
+> **Commits moved during this {% if stale.is_plan %}plan{% else %}apply{% endif %}.**
+{%- if stale.branch_move %}  The branch was at commit `{{ stale.branch_move.from_sha }}` when the run started.  Its head is now `{{ stale.branch_move.to_sha }}`.{% endif %}
+{%- if stale.dest_branch_move %}  The destination branch was at commit `{{ stale.dest_branch_move.from_sha }}` when the run started.  Its head is now `{{ stale.dest_branch_move.to_sha }}`.{% endif %}
+>
+{%- if stale.files_unknown %}
+> Stategraph cannot compare the files of these commits yet, so it cannot tell which directories changed.  Treat this output as stale.
+{%- else %}
+> Files of these directories and workspaces changed after the run started:
+>
+> | Directory | Workspace |
+> | --- | --- |
+{%- for ds in stale.dirspaces %}
+> | `{{ ds.dir }}` | `{{ ds.workspace }}` |
+{%- endfor %}
+{%- endif %}
+>
+{%- if stale.is_plan %}
+> This plan is stale.  Plan again before you apply:
+>
+> ```
+> stategraph plan
+> ```
+{%- else %}
+> The output below shows what the apply changed.  It applied the files of commit `{{ stale.run_sha }}`.  {% if stale.files_unknown %}The files of the directories of this apply can be different at the head{% else %}The files of these directories are different at the head{% endif %}, thus the head is not applied.  Plan and apply these directories again.
+>
+{%- if stale.is_layered_run %}
+> The layers that depend on them do not run until the head is applied.  To plan this layer again, comment:
+>
+> ```
+{%- for dir in stale.replan_dirs %}
+> stategraph plan dir:{{ dir }}
+{%- endfor %}
+> ```
+{%- else %}
+> ```
+> stategraph plan
+> ```
+{%- endif %}
+{%- endif %}
+>
+> [How Stategraph handles commits that move during a run](https://docs.terrateam.io/workflows/stale-runs)
+{%- endmacro -%}
 {%- if overall_success %}
 ## Applies :white_check_mark:
+{%- if stale is defined and stale %}{{ stale_warning(stale) }}{{ "\n" }}{% endif %}
   {%- if summary and dirspaces %}
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set applied = dirspaces | selectattr("success") | list %}
@@ -65,6 +111,7 @@ Not all [dirspaces](https://docs.terrateam.io/getting-started/concepts/#dirspace
 {%- else %}
 
 ## Applies :heavy_multiplication_x:
+{%- if stale is defined and stale %}{{ stale_warning(stale) }}{{ "\n" }}{% endif %}
   {%- if summary and dirspaces %}
 {%- set failed = dirspaces | rejectattr("success") | list %}
 {%- set applied = dirspaces | selectattr("success") | list %}

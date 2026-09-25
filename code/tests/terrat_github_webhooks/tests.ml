@@ -113,9 +113,74 @@ let test_person_comment_on_app_pull_request =
     ~expected:"Issue_comment_created"
     (issue_opened_by_app (app ~edit:(set_member "external_url" `Null) ()))
 
+(* A push event built from the repository and the sender of [base_payload]. *)
+let push ~compare ~head_commit =
+  let base = json_of_string base_payload in
+  let member key =
+    match base with
+    | `Assoc fields -> CCList.assoc ~eq:CCString.equal key fields
+    | _ -> assert false
+  in
+  `Assoc
+    [
+      ("ref", `String "refs/heads/main");
+      ("before", `String "2a7d17207d0000000000000000000000000000000");
+      ("after", `String "c50350e26cbf7c7fe1b89ecf3e252f984bd72d3b");
+      ("created", `Bool false);
+      ("deleted", `Bool false);
+      ("forced", `Bool true);
+      ("base_ref", `Null);
+      ("compare", compare);
+      ("commits", `List []);
+      ("head_commit", head_commit);
+      ("repository", member "repository");
+      ("pusher", `Assoc [ ("name", `String "someone"); ("email", `String "someone@example.com") ]);
+      ("sender", member "sender");
+    ]
+
+let head_commit =
+  let person = `Assoc [ ("name", `String "someone"); ("email", `String "someone@example.com") ] in
+  `Assoc
+    [
+      ("id", `String "c50350e26cbf7c7fe1b89ecf3e252f984bd72d3b");
+      ("tree_id", `String "5f0e0e7f1c1c9a2f3b8d0c7a0f1b2c3d4e5f6a7b");
+      ("distinct", `Bool true);
+      ("message", `String "a commit");
+      ("timestamp", `String "2026-09-24T18:18:15Z");
+      ("url", `String "https://github.com/owner/repo/commit/c50350e2");
+      ("author", person);
+      ("committer", person);
+      ("added", `List []);
+      ("removed", `List []);
+      ("modified", `List []);
+    ]
+
+let test_push ~name json =
+  Oth.test ~tags:[ "github_webhooks" ] ~name (fun _ ->
+      ignore (Oth.Assert.ok_show ~show:CCFun.id (Terrat_github_webhooks.Push_event.of_yojson json));
+      ())
+
+(* The control: a push with its comparison and its head commit. *)
+let test_push_full =
+  test_push
+    ~name:"push: a push with a compare and a head commit decodes"
+    (push
+       ~compare:(`String "https://github.com/owner/repo/compare/2a7d1720...c50350e2")
+       ~head_commit)
+
+(* GitHub can deliver a push with a null [compare], a null [head_commit] and no commits.  A push to
+   the default branch updates the drift schedules of the repository, thus such a push must not be
+   dropped. *)
+let test_push_null_compare_and_head_commit =
+  test_push
+    ~name:"push: a push with a null compare and a null head commit decodes"
+    (push ~compare:`Null ~head_commit:`Null)
+
 let test =
   Oth.parallel
     [
+      test_push_full;
+      test_push_null_compare_and_head_commit;
       test_app_full;
       test_app_external_url_null;
       test_app_external_url_absent;

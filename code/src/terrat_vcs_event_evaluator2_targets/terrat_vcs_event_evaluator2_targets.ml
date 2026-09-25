@@ -63,6 +63,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (unit S.Api.Pull_request.t, S.Api.Repo.t) Terrat_vcs_provider2.Target.t )
             Terrat_work_manifest3.Existing.t;
           run_id : string;
+          sha : string;
+              (* The commit that the runner checked out.  The runner starts at the head of the
+                 branch when the workflow runs, thus it can be newer than the commit of the work
+                 manifest. *)
         }
       | Fail of {
           work_manifest :
@@ -142,6 +146,20 @@ module Make (S : Terrat_vcs_provider2.S) = struct
      exist?" question still belongs in the database. *)
   let reruns : string list Key.t = Hmap.Key.create "reruns"
 
+  (* Which commits the refs of this evaluation name.  [Live] reads the heads of the branches now.
+     [Pinned_run] is the evaluation of an event of a plan or an apply work manifest: its refs are
+     the commits of that work manifest, which already have their tree and config, thus the event
+     never waits for a build of a head that moved during the run (RFD 2356).  An evaluation with
+     pinned refs must not create work: work created there would run at the old commit. *)
+  module Refs = struct
+    type t =
+      | Live
+      | Pinned_run
+    [@@deriving show]
+  end
+
+  let refs : Refs.t Key.t = Hmap.Key.create "refs"
+
   (* Ya basic *)
   let account : S.Api.Account.t Key.t = Hmap.Key.create "account"
   let account_status : P2.Account_status.t Key.t = Hmap.Key.create "account_status"
@@ -215,10 +233,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   (* Which dirspaces a push must run again, and which dirspaces keep the applied state of an
      earlier run, from the hashes of the files each dirspace uses.
 
-     This is a function and not a value because the layers are known only inside the computation of
-     the matches, which is where the answer is needed. *)
+     This is a function and not a value because the dirspaces of the run are known only inside the
+     computation of the matches, which is where the answer is needed. *)
   let intra_pr_selection :
-      (layers:Terrat_dirspace.t list list ->
+      (dirspaces:Terrat_dirspace.t list ->
       force:Terrat_data.Dirspace_set.t ->
       (Terrat_intra_pr_hash.Selection.t, err) result Abb.Future.t)
       Key.t =
@@ -496,6 +514,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let run_apply : unit Key.t = Hmap.Key.create "run_apply"
   let run_next_layer : unit Key.t = Hmap.Key.create "run_next_layer"
   let complete_no_change_dirspaces : unit Key.t = Hmap.Key.create "complete_no_change_dirspaces"
+  let kept_dirspace_checks : unit Key.t = Hmap.Key.create "kept_dirspace_checks"
   let maybe_complete_job : unit Key.t = Hmap.Key.create "maybe_complete_job"
 
   let maybe_complete_job_from_work_manifest_event : unit Key.t =

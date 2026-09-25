@@ -50,6 +50,7 @@ end
 
 module Publisher_tools : sig
   val create_run_output :
+    ?stale:Terrat_vcs_provider2.Work_manifest_stale.t ->
     brand:Terrat_brand.t ->
     view:[> `Compact ] ->
     compacted_dirspaces:Terrat_dirspace.t list ->

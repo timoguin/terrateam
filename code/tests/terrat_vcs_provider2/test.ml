@@ -120,9 +120,26 @@ let test_of_steps_empty_summary_absent =
       Oth.Assert.none_pp ~pp:Rs.pp (Rs.of_steps [ s ]);
       ())
 
+module Ds = Terrat_vcs_provider2.Dirspace_summary
+
+(* The database stores a summary state as text and reads it back. *)
+let test_dirspace_summary_of_string =
+  Oth.test ~name:"dirspace_summary_of_string" (fun _ ->
+      CCList.iter
+        (fun state ->
+          Oth.Assert.Eq.option
+            ~eq:Ds.equal
+            ~pp:Ds.pp
+            ~expected:(Some state)
+            ~actual:(Ds.of_string (Ds.to_string state)))
+        [ Ds.Applied; Ds.Planned; Ds.Failed; Ds.Stale ];
+      Oth.Assert.Eq.option ~eq:Ds.equal ~pp:Ds.pp ~expected:None ~actual:(Ds.of_string "pending");
+      ())
+
 let test =
   Oth.serial
     [
+      test_dirspace_summary_of_string;
       test_describe_no_summary;
       test_describe_full_summary;
       test_describe_partial_summary_dashes;

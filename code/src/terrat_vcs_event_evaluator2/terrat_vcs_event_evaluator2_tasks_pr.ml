@@ -137,19 +137,6 @@ struct
       (fun () ->
         S.Db.query_dirspace_runs_for_context ~request_id:(Builder.log_id s) db context dirspaces)
 
-  let query_repo_tree_changes ~base_ref s db account branch_ref =
-    time_it
-      s
-      (fun m log_id time ->
-        m
-          "%s : QUERY_REPO_TREE_CHANGES : base_ref = %s : branch_ref = %s : time=%f"
-          log_id
-          (S.Api.Ref.to_string base_ref)
-          (S.Api.Ref.to_string branch_ref)
-          time)
-      (fun () ->
-        S.Db.query_repo_tree_changes ~request_id:(Builder.log_id s) ~base_ref db account branch_ref)
-
   let lock_repository s account repo db =
     time_it
       s
@@ -207,7 +194,21 @@ struct
           (S.Api.Pull_request.Id.to_string @@ S.Api.Pull_request.id pull_request)
           time)
       (fun () ->
-        S.Api.react_to_comment ~request_id:(Builder.log_id s) client pull_request comment_id)
+        (* The reaction only tells the user that the comment arrived.  A failure to react, for
+           example on the rate limit of the forge, must not stop the job of the comment: the
+           forge does not deliver the comment again. *)
+        let open Abb.Future.Infix_monad in
+        S.Api.react_to_comment ~request_id:(Builder.log_id s) client pull_request comment_id
+        >>= function
+        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Error (#Terrat_vcs_api.call_err as err) ->
+            Logs.err (fun m ->
+                m
+                  "%s : REACT_TO_COMMENT : ERROR : %a"
+                  (Builder.log_id s)
+                  Terrat_vcs_api.pp_call_err
+                  err);
+            Abbs_future_combinators.return_ok ())
 
   let fetch_pull_request s account client repo pull_request_id =
     time_it
@@ -251,7 +252,7 @@ struct
           time)
       (fun () -> S.Db.store_pull_request ~request_id:(Builder.log_id s) db pull_request)
 
-  let query_conflicting_work_manifests s db ~job_id context dirspaces op =
+  let query_conflicting_work_manifests s db ~job_id ~changed_dirspaces context dirspaces op =
     time_it
       s
       (fun m log_id time ->
@@ -265,6 +266,7 @@ struct
         S.Db.query_conflicting_work_manifests_in_repo_for_context
           ~request_id:(Builder.log_id s)
           ~job_id
+          ~changed_dirspaces
           db
           context
           dirspaces
@@ -487,27 +489,64 @@ struct
           >>= fun account ->
           fetch Keys.synthesized_config
           >>= fun config ->
+          (* Which producer of a stored tree answers: the ids of a tree the tree builder script made
+             and of a tree read from the forge do not compare (RFD 2356). *)
+          fetch Keys.repo_config_raw'
+          >>= fun (_, repo_config_raw) ->
+          let script_only =
+            (Terrat_base_repo_config_v1.tree_builder repo_config_raw)
+              .Terrat_base_repo_config_v1.Tree_builder.enabled
+          in
           fetch Keys.pull_request
           >>= fun pull_request ->
           fetch Keys.dest_branch_ref
           >>= fun base_ref ->
           fetch Keys.branch_ref
-          >>| fun branch_ref ->
+          >>= fun branch_ref ->
+          (* A merged pull request keeps running after its head stops moving: an apply after the
+             merge, or a plan that a comment asks for, runs at the head of the destination branch.
+             Such a run is compared with the head it ran on, and not with the head of the pull
+             request, which is a commit the run never used (RFD 2356). *)
+          (match S.Api.Pull_request.state pull_request with
+            | Terrat_pull_request.State.Merged _ ->
+                fetch Keys.working_branch_ref >>| CCOption.return
+            | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
+                Abbs_future_combinators.return_ok None)
+          >>| fun dest_head ->
           (* The comparison of two trees is the expensive part of this rule: the database reads
              both trees whole, thus its cost follows the size of the repository and not the number
-             of paths which moved.  The answer is a function of the two shas and of nothing else,
-             and this closure carries one head, thus the sha of the run is the whole key.  The
-             apply path asks for the selection a second time over the same layers, and without
-             this cache it would pay for every comparison again.
+             of paths which moved.  The answer is a function of the two commits and of nothing
+             else, thus the pair is the whole key.  The apply path asks for the selection a second
+             time over the same layers, and without this cache it would pay for every comparison
+             again.
 
-             [None] is the tree of that sha which is not stored.  It cannot hold the dirspaces of
-             that case, because which dirspaces those are is a question about [layers] and the
-             cache outlives one call. *)
+             [None] is a pair that could not be compared: a tree that is not stored, or, with the
+             config builder on, a config of the newer commit that is not built.  It cannot hold the
+             dirspaces of that case, because which dirspaces those are is a question about
+             [layers] and the cache outlives one call. *)
           let changed_cache = ref [] in
-          fun ~layers ~force ->
-            let dirspaces = CCList.flatten layers in
+          let equal_pair (a_from, a_to) (b_from, b_to) =
+            CCString.equal a_from b_from && CCString.equal a_to b_to
+          in
+          let is_pr_head sha = CCString.equal sha (S.Api.Ref.to_string branch_ref) in
+          fun ~dirspaces ~force ->
+            (* A layered run is a tree: a dirspace waits for the dirspaces it depends on and for
+               nothing else.  The same edges the run itself is ordered by answer this. *)
+            let depends_on =
+              let dependencies =
+                Terrat_change_match3.dependencies_of
+                  config
+                  (CCList.filter_map (Terrat_change_match3.of_dirspace config) dirspaces)
+              in
+              fun dirspace ->
+                Terrat_data.Dirspace_map.get_or
+                  ~default:Terrat_data.Dirspace_set.empty
+                  dirspace
+                  dependencies
+            in
             Builder.run_db s ~f:(fun db -> query_dirspace_runs_for_context s db context dirspaces)
-            >>= fun states ->
+            >>= fun runs ->
+            let states = CCList.map (fun runs -> runs.P2.Dirspace_runs.state) runs in
             (* Two things the file test cannot see, because no file of this branch moves for
               either of them, and the runs the selection is given carry neither.  The apply gate
               asks this query and refuses on both, thus the selection has to ask it too or the two
@@ -531,7 +570,8 @@ struct
                       (Terrat_data.Dirspace_set.add dirspace superseded, last_run_failed)
                   | Mp.Last_run_failed ->
                       (superseded, Terrat_data.Dirspace_set.add dirspace last_run_failed)
-                  | Mp.Never_planned -> (superseded, last_run_failed))
+                  | Mp.Never_planned | Mp.Stale | Mp.Out_of_dependency_order ->
+                      (superseded, last_run_failed))
                 missing_plans
             in
             Logs.info (fun m ->
@@ -541,7 +581,12 @@ struct
                   (Terrat_data.Dirspace_set.cardinal superseded)
                   (Terrat_data.Dirspace_set.cardinal last_run_failed));
             Builder.run_db s ~f:(fun db ->
-                S.Db.query_repo_tree_built ~request_id:(Builder.log_id s) db account branch_ref)
+                S.Db.query_repo_tree_built
+                  ~request_id:(Builder.log_id s)
+                  ~script_only
+                  db
+                  account
+                  branch_ref)
             >>= function
             | false ->
                 (* The whole rule is a comparison against the tree of the head.  With no tree there
@@ -560,85 +605,97 @@ struct
                       (S.Api.Ref.to_string branch_ref));
                 Abbs_future_combinators.return_ok
                   (Ipr.select
-                     ~changed_dirspaces:(fun _ -> Terrat_data.Dirspace_set.of_list dirspaces)
+                     ~changed_since:(fun _ _ -> Terrat_data.Dirspace_set.of_list dirspaces)
+                     ~changed_between:(fun _ _ -> Terrat_data.Dirspace_set.of_list dirspaces)
                      ~force
                      ~superseded
                      ~last_run_failed
-                     ~layers
+                     ~depends_on
                      states)
             | true ->
-                (* The same change match the pull request diff uses, thus a dirspace which names a
-                  file of another directory in its file patterns is found, and so is a dirspace
-                  which depends on one that changed. *)
-                let dirspaces_of_paths paths =
-                  paths
-                  |> CCList.map (fun filename -> Terrat_change.Diff.Change { filename })
-                  |> Terrat_change_match3.match_diff_list config
-                  |> CCList.flatten
-                  |> CCList.map (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
-                      dirspace)
-                  |> Terrat_data.Dirspace_set.of_list
+                (* [None] when a pair could not be compared.  The comparison would answer the same
+                  thing -- a tree which is not there must mean "run it" -- but it would do it by
+                  giving back every path of the head and walking the whole repository through the
+                  change match.  A pull request whose runs are older than this feature meets this,
+                  and so does one whose trees the cleanup has removed. *)
+                (* A run at the head of the pull request is compared with that head.  A plan that a
+                  merged pull request ran at the destination is compared with the destination head
+                  now.  An open pull request has no run anywhere else. *)
+                let target_of_sha sha =
+                  dest_head
+                  |> CCOption.filter (fun _ -> not (is_pr_head sha))
+                  |> CCOption.get_or ~default:branch_ref
                 in
-                (* [None] when the tree of that sha is not stored.  The comparison would answer the
-                  same thing -- a tree which is not there must mean "run it" -- but it would do it
-                  by giving back every path of the head and walking the whole repository through
-                  the change match.  A pull request whose runs are older than this feature meets
-                  this, and so does one whose trees the cleanup has removed. *)
-                let changed_of_sha sha =
-                  match Sln_list.String.assoc_opt sha !changed_cache with
+                (* The pair a run is compared with since it ran.  An apply that a merged pull request
+                  ran at the destination has none: it changed the infrastructure at that commit, and
+                  a later merge to the destination does not undo it.  Its comparisons during the run
+                  still count (RFD 2356). *)
+                let since_pair kind { Ipr.Run.sha; created_at = _; during = _ } =
+                  match kind with
+                  | Ipr.Kind.Apply when CCOption.is_some dest_head && not (is_pr_head sha) -> None
+                  | Ipr.Kind.(Apply | Plan) -> Some (sha, S.Api.Ref.to_string (target_of_sha sha))
+                in
+                let changed_of_pair ((from_sha, to_sha) as pair) =
+                  match CCList.assoc_opt ~eq:equal_pair pair !changed_cache with
                   | Some changed -> Abbs_future_combinators.return_ok changed
                   | None ->
-                      let ref_ = S.Api.Ref.of_string sha in
-                      Builder.run_db s ~f:(fun db ->
-                          S.Db.query_repo_tree_built ~request_id:(Builder.log_id s) db account ref_)
-                      >>= (function
-                      | false ->
-                          Logs.info (fun m ->
-                              m
-                                "%s : INTRA_PR_SELECTION : NO_RUN_TREE : sha=%s"
-                                (Builder.log_id s)
-                                sha);
-                          Abbs_future_combinators.return_ok None
-                      | true ->
-                          Builder.run_db s ~f:(fun db ->
-                              query_repo_tree_changes ~base_ref:ref_ s db account branch_ref)
-                          >>| fun paths -> Some (dirspaces_of_paths paths))
+                      Tasks_base.changed_between
+                        s
+                        ~missing_tree:`Unknown
+                        ~config
+                        ~repo_config_raw
+                        ~account
+                        ~from_ref:(S.Api.Ref.of_string from_sha)
+                        ~to_ref:(S.Api.Ref.of_string to_sha)
                       >>| fun changed ->
-                      changed_cache := (sha, changed) :: !changed_cache;
+                      changed_cache := (pair, changed) :: !changed_cache;
                       changed
                 in
-                (* The shas of the runs, and not the dirspaces: two dirspaces which ran together
-                  share a sha, thus one comparison of trees answers for both of them. *)
-                let shas =
+                (* The pairs of the runs, and not the dirspaces: two dirspaces which ran together
+                  share their pairs, thus one comparison of trees answers for both of them. *)
+                let pairs =
                   states
                   |> CCList.flat_map
                        (fun { Ipr.Dirspace_state.dirspace = _; last_plan; last_apply } ->
-                         CCList.filter_map
-                           CCFun.id
-                           [
-                             CCOption.map
-                               (fun {
-                                      Ipr.Plan.run = { Ipr.Run.sha; created_at = _ };
-                                      has_changes = _;
-                                    }
-                                  -> sha)
-                               last_plan;
-                             CCOption.map (fun { Ipr.Run.sha; created_at = _ } -> sha) last_apply;
-                           ])
-                  |> Sln_list.String.sort_uniq
+                         let pairs_of kind ({ Ipr.Run.sha = _; created_at = _; during } as run) =
+                           CCOption.to_list (since_pair kind run) @ during
+                         in
+                         CCOption.map_or
+                           ~default:[]
+                           (fun { Ipr.Plan.run; has_changes = _ } -> pairs_of Ipr.Kind.Plan run)
+                           last_plan
+                         @ CCOption.map_or ~default:[] (pairs_of Ipr.Kind.Apply) last_apply)
+                  |> CCList.sort_uniq ~cmp:(fun (a_from, a_to) (b_from, b_to) ->
+                      match CCString.compare a_from b_from with
+                      | 0 -> CCString.compare a_to b_to
+                      | order -> order)
                 in
                 Abbs_future_combinators.List_result.fold_left
                   ~init:[]
-                  ~f:(fun acc sha -> changed_of_sha sha >>| fun changed -> (sha, changed) :: acc)
-                  shas
+                  ~f:(fun acc pair ->
+                    changed_of_pair pair >>| fun changed -> (pair, changed) :: acc)
+                  pairs
                 >>| fun changed ->
-                let changed_dirspaces sha =
-                  match Sln_list.String.assoc_opt sha changed with
+                let changed_between from_sha to_sha =
+                  match CCList.assoc_opt ~eq:equal_pair (from_sha, to_sha) changed with
                   | Some (Some changed) -> changed
                   | Some None -> Terrat_data.Dirspace_set.of_list dirspaces
                   | None -> Terrat_data.Dirspace_set.empty
                 in
-                Ipr.select ~changed_dirspaces ~force ~superseded ~last_run_failed ~layers states)
+                let changed_since kind run =
+                  CCOption.map_or
+                    ~default:Terrat_data.Dirspace_set.empty
+                    (fun (from_sha, to_sha) -> changed_between from_sha to_sha)
+                    (since_pair kind run)
+                in
+                Ipr.select
+                  ~changed_since
+                  ~changed_between
+                  ~force
+                  ~superseded
+                  ~last_run_failed
+                  ~depends_on
+                  states)
 
     let is_draft_pr =
       run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch } ->
@@ -1078,8 +1135,22 @@ struct
           >>= fun context ->
           fetch Keys.job
           >>= fun job ->
+          fetch Keys.all_matches
+          >>= fun all_matches ->
+          let changed_dirspaces =
+            CCList.map
+              (fun dc -> dc.Terrat_change_match3.Dirspace_config.dirspace)
+              (CCList.flatten all_matches)
+          in
           Builder.run_db s ~f:(fun db ->
-              query_conflicting_work_manifests s db ~job_id:job.Tjc.Job.id context dirspaces `Plan)
+              query_conflicting_work_manifests
+                s
+                db
+                ~job_id:job.Tjc.Job.id
+                ~changed_dirspaces
+                context
+                dirspaces
+                `Plan)
           >>= function
           | None -> Abbs_future_combinators.return_ok ()
           | Some (P2.Conflicting_work_manifests.Conflicting wms) ->
@@ -1338,9 +1409,11 @@ struct
           fetch Keys.job
           >>= fun job ->
           Builder.run_db s ~f:(fun db ->
+              (* An apply aborts no plan, thus the changed dirspaces are not asked for. *)
               S.Db.query_conflicting_work_manifests_in_repo_for_context
                 ~request_id:(Builder.log_id s)
                 ~job_id:job.Tjc.Job.id
+                ~changed_dirspaces:dirspaces
                 db
                 context
                 dirspaces
@@ -1378,6 +1451,7 @@ struct
               : (R.t, Terrat_access_control2.err) result
               :> (R.t, [> Terrat_access_control2.err ]) result)
           >>= fun { Terrat_access_control2.R.pass = working_set_matches; _ } ->
+          let working_dirspaces = CCList.map (fun dc -> dc.Dc.dirspace) working_set_matches in
           Builder.run_db s ~f:(fun db ->
               query_dirspaces_without_valid_plans
                 ~base_ref
@@ -1385,62 +1459,82 @@ struct
                 s
                 db
                 pull_request
-                (CCList.map (fun { Dc.dirspace; _ } -> dirspace) working_set_matches))
-          >>= function
+                working_dirspaces)
+          >>= fun dirspaces ->
+          (* The query compares the refs of the run with the refs of the pull request now.  The
+             intra-PR hash rule keeps a plan which an older sha made while the files of that
+             dirspace hold the same hashes, and that rule is what decides whether the plan is
+             re-run, so the gate has to ask it too or it refuses an apply that no plan will ever
+             come for.
+
+             Only [Never_planned] is cleared this way.  [Invalidated_by_pull_request] says another
+             pull request applied or merged this dirspace after this run, thus the state the plan
+             was built on is gone and no apply may run it.  The selection is given the same rows,
+             so such a dirspace is in [to_run] and the plan the user is told to ask for does
+             arrive.  [Last_run_failed] says the newest run of this pull request produced no plan to
+             apply.
+
+             The selection is asked even when the query finds nothing: the refs of a plan can match
+             the pull request while the plan is stale, because its commits moved during the run
+             (RFD 2356).  Such a dirspace is missing its plan with the reason [Stale].  A plan that
+             stands for its own files but is older than a run of a dirspace it waits for is missing
+             with the reason [Out_of_dependency_order]: no commit moved under it. *)
+          fetch Keys.all_matches
+          >>= fun all_matches ->
+          fetch Keys.intra_pr_selection
+          >>= fun intra_pr_selection ->
+          (* An empty force set makes [to_run] exactly the dirspaces which have no plan that still
+             stands.  This repeats the comparison of trees which the matches made, because the
+             selection is a function of the layers and the layers are not a key of their own. *)
+          intra_pr_selection
+            ~dirspaces:(all_matches |> CCList.flatten |> CCList.map (fun dc -> dc.Dc.dirspace))
+            ~force:Terrat_data.Dirspace_set.empty
+          >>= fun { Ipr.Selection.to_run; out_of_order; applied = _ } ->
+          let without_plan = Terrat_data.Dirspace_set.of_list to_run in
+          let out_of_order = Terrat_data.Dirspace_set.of_list out_of_order in
+          let queried =
+            Terrat_data.Dirspace_set.of_list (CCList.map (fun mp -> mp.Mp.dirspace) dirspaces)
+          in
+          let stale =
+            working_dirspaces
+            |> CCList.filter (fun dirspace ->
+                Terrat_data.Dirspace_set.mem dirspace without_plan
+                && not (Terrat_data.Dirspace_set.mem dirspace queried))
+            |> CCList.map (fun dirspace ->
+                if Terrat_data.Dirspace_set.mem dirspace out_of_order then
+                  { Mp.dirspace; reason = Mp.Out_of_dependency_order }
+                else { Mp.dirspace; reason = Mp.Stale })
+          in
+          let missing =
+            CCList.filter
+              (fun { Mp.dirspace; reason } ->
+                match reason with
+                | Mp.Invalidated_by_pull_request _ | Mp.Last_run_failed -> true
+                | Mp.Never_planned | Mp.Stale | Mp.Out_of_dependency_order ->
+                    Terrat_data.Dirspace_set.mem dirspace without_plan)
+              dirspaces
+            @ stale
+          in
+          Logs.info (fun m ->
+              m
+                "%s : MISSING_PLANS : queried=%d : stale=%d : after_hash_rule=%d"
+                (Builder.log_id s)
+                (CCList.length dirspaces)
+                (CCList.length stale)
+                (CCList.length missing));
+          match missing with
           | [] -> Abbs_future_combinators.return_ok ()
           | dirspaces -> (
-              (* The query compares the refs of the run with the refs of the pull request now.
-                 The intra-PR hash rule keeps a plan which an older sha made while the files of
-                 that dirspace hold the same hashes, and that rule is what decides whether the
-                 plan is re-run, so the gate has to ask it too or it refuses an apply that no
-                 plan will ever come for.
-
-                 Only [Never_planned] is cleared this way.  [Invalidated_by_pull_request] says
-                 another pull request applied or merged this dirspace after this run, thus the
-                 state the plan was built on is gone and no apply may run it.  The selection is
-                 given the same rows, so such a dirspace is in [to_run] and the plan the user is
-                 told to ask for does arrive.  [Last_run_failed] says the newest run of this pull
-                 request produced no plan to apply. *)
-              fetch Keys.all_matches
-              >>= fun all_matches ->
-              fetch Keys.intra_pr_selection
-              >>= fun intra_pr_selection ->
-              (* An empty force set makes [to_run] exactly the dirspaces which have no plan that
-                 still stands.  This repeats the comparison of trees which the matches made,
-                 because the selection is a function of the layers and the layers are not a key
-                 of their own. *)
-              intra_pr_selection
-                ~layers:(CCList.map (CCList.map (fun { Dc.dirspace; _ } -> dirspace)) all_matches)
-                ~force:Terrat_data.Dirspace_set.empty
-              >>= fun { Ipr.Selection.to_run; applied = _ } ->
-              let without_plan = Terrat_data.Dirspace_set.of_list to_run in
-              let missing =
-                CCList.filter
-                  (fun { Mp.dirspace; reason } ->
-                    match reason with
-                    | Mp.Invalidated_by_pull_request _ | Mp.Last_run_failed -> true
-                    | Mp.Never_planned -> Terrat_data.Dirspace_set.mem dirspace without_plan)
-                  dirspaces
-              in
-              Logs.info (fun m ->
-                  m
-                    "%s : MISSING_PLANS : queried=%d : after_hash_rule=%d"
-                    (Builder.log_id s)
-                    (CCList.length dirspaces)
-                    (CCList.length missing));
-              match missing with
-              | [] -> Abbs_future_combinators.return_ok ()
-              | dirspaces -> (
-                  fetch Keys.job
-                  >>= function
-                  | { Tjc.Job.type_ = Tjc.Job.Type_.Autoapply; _ } ->
-                      (* If it's an autoapply, don't publish *)
-                      Abbs_future_combinators.return_err `Noop
-                  | _ ->
-                      fetch Keys.publish_comment
-                      >>= fun publish_comment ->
-                      publish_comment' publish_comment (Msg.Missing_plans dirspaces)
-                      >>? fun () -> Error `Noop)))
+              fetch Keys.job
+              >>= function
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Autoapply; _ } ->
+                  (* If it's an autoapply, don't publish *)
+                  Abbs_future_combinators.return_err `Noop
+              | _ ->
+                  fetch Keys.publish_comment
+                  >>= fun publish_comment ->
+                  publish_comment' publish_comment (Msg.Missing_plans dirspaces)
+                  >>? fun () -> Error `Noop))
 
     let check_dirspaces_to_plan =
       run ~name:"check_dirspaces_to_plan" (fun s { Bs.Fetcher.fetch } ->
@@ -1506,10 +1600,13 @@ struct
                            is the only answer that is not a riddle. *)
                         (Msg.Matches_in_later_layer (dirspaces_of queued), false)
                   in
-                  Ee2_fc.all2
+                  (* Nothing runs, and a later evaluation is where a stale run can be found good
+                     again (RFD 2356), thus the checks of the kept dirspaces are written here. *)
+                  Ee2_fc.all3
                     (fetch Keys.maybe_create_completed_apply_check)
+                    (fetch Keys.kept_dirspace_checks)
                     (publish_comment' publish_comment msg)
-                  >>= fun ((), ()) ->
+                  >>= fun ((), (), ()) ->
                   (* Everything the query matched is applied, so automerge is the
                      only work left.  The completion path that usually runs it is
                      only reached by a job that had dirspaces to run, so without
@@ -1590,8 +1687,12 @@ struct
                                queued),
                           false )
                   in
-                  publish_comment' publish_comment msg
-                  >>= fun () ->
+                  (* Same reason as [check_dirspaces_to_plan]: nothing runs, thus the checks of
+                     the kept dirspaces are written here. *)
+                  Ee2_fc.all2
+                    (fetch Keys.kept_dirspace_checks)
+                    (publish_comment' publish_comment msg)
+                  >>= fun ((), ()) ->
                   (* Same reason as [check_dirspaces_to_plan]: an explicit apply
                      over dirspaces that are all applied is how a user retries a
                      failed automerge, so it has to reach the automerge logic. *)

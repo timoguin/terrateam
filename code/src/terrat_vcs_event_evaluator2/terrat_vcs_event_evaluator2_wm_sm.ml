@@ -367,9 +367,43 @@ struct
           publish_comment
           Terrat_vcs_provider2.Msg.(Operation_failed `Work_manifest_start_err)
 
+  type start =
+    | Run of {
+        head : S.Api.Ref.t option;
+        dest_head : S.Api.Ref.t option;
+      }
+    | Restart
+
+  type membership =
+    | Refs of {
+        steps : Wm.Step.t list;
+        eq : existing_wm -> bool;
+        stored :
+          Builder.B.State.t -> Builder.Bs.Fetcher.t -> (bool, Builder.err) result Abb.Future.t;
+      }
+    | Steps of {
+        steps : Wm.Step.t list;
+        start :
+          sha:S.Api.Ref.t ->
+          existing_wm ->
+          Builder.B.State.t ->
+          Builder.Bs.Fetcher.t ->
+          (start, Builder.err) result Abb.Future.t;
+        superseded :
+          existing_wm list ->
+          Builder.B.State.t ->
+          Builder.Bs.Fetcher.t ->
+          (bool, Builder.err) result Abb.Future.t;
+      }
+
+  let is_aborted wm =
+    match wm.Wm.state with
+    | Wm.State.Aborted -> true
+    | Wm.State.(Queued | Running | Completed) -> false
+
   let run
       ~name
-      ~eq
+      ~membership
       ~dest_branch_ref
       ~branch_ref
       ~branch
@@ -383,6 +417,184 @@ struct
     let open Irm in
     let module E = Keys.Work_manifest_event in
     Logs.info (fun m -> m "%s : WM : RUN : name=%s" (Builder.log_id s) name);
+    (* A slot made the work manifests it holds.  A plan or an apply slot knows them by their steps:
+       one job has one such slot, and its refs can move while a run operates.  A setup slot knows
+       them by their refs, because what it makes is for one commit and two setup slots of a job can
+       share their steps. *)
+    let in_slot =
+      match membership with
+      | Refs { eq; steps = _; stored = _ } -> eq
+      | Steps { steps; start = _; superseded = _ } ->
+          fun wm -> CCList.equal Wm.Step.equal wm.Wm.steps steps
+    in
+    (* A setup work manifest of this slot whose refs moved after it ran.  Its result is for a commit
+       that this evaluation no longer asks about, and the result handler stores what it made under
+       the refs of this evaluation, thus the result is not handled: the work manifest is completed
+       so that it holds nothing, and the next operation computes the data again.
+
+       Two setup slots of a job share their steps: one works on the destination branch, with the
+       same ref twice, and one on the working branch.  A work manifest of the other slot is not
+       stale, it is not ours, thus both sides of the question must be about the same branch. *)
+    let stale_setup wm =
+      match membership with
+      | Refs { eq; steps; stored = _ } ->
+          let slot_on_dest = S.Api.Ref.equal dest_branch_ref branch_ref in
+          let wm_on_dest = CCString.equal wm.Wm.base_ref wm.Wm.branch_ref in
+          (not (eq wm))
+          && CCList.equal Wm.Step.equal wm.Wm.steps steps
+          && CCBool.equal slot_on_dest wm_on_dest
+      | Steps _ -> false
+    in
+    (* Work made in an evaluation with pinned refs would run at the commit of an older run, thus it
+       waits: an evaluation which reads the refs live makes it.  A setup slot whose data is stored
+       has no work to make, thus it does not wait: the start of a run needs that data, and a start
+       that waits is never answered. *)
+    let create_wms () =
+      fetch Keys.refs
+      >>= function
+      | Keys.Refs.Pinned_run -> (
+          (match membership with
+            | Refs { stored; eq = _; steps = _ } -> stored s fetcher
+            | Steps _ -> Abbs_future_combinators.return_ok false)
+          >>= function
+          | true ->
+              Logs.info (fun m ->
+                  m "%s : WM : CREATE : PINNED_STORED : name=%s" (Builder.log_id s) name);
+              Abbs_future_combinators.return_ok []
+          | false ->
+              Logs.info (fun m ->
+                  m "%s : WM : CREATE : PINNED_NO_CREATE : name=%s" (Builder.log_id s) name);
+              Abbs_future_combinators.return_err (`Suspend_eval name))
+      | Keys.Refs.Live -> (
+          Logs.info (fun m -> m "%s : WM : CREATE : name=%s" (Builder.log_id s) name);
+          create ~dest_branch_ref ~branch_ref ~branch s fetcher
+          >>= function
+          | [] ->
+              Logs.info (fun m ->
+                  m "%s : WM : CREATE : name=%s : NO_WORK_MANIFESTS" (Builder.log_id s) name);
+              Abbs_future_combinators.return_ok []
+          | wms ->
+              CCList.iter
+                (fun {
+                       Terrat_work_manifest3.id;
+                       base_ref;
+                       branch_ref;
+                       environment;
+                       runs_on;
+                       steps;
+                       _;
+                     }
+                   ->
+                  Logs.info (fun m ->
+                      m
+                        "%s : CREATED_WORK_MANIFEST : id=%a : base_ref=%s : branch_ref=%s : \
+                         run_type=%s : env=%s : runs_on=%s"
+                        (Builder.log_id s)
+                        Uuidm.pp
+                        id
+                        base_ref
+                        branch_ref
+                        (CCOption.map_or ~default:"" Wm.Step.to_string @@ CCList.head_opt steps)
+                        (CCOption.get_or ~default:"" environment)
+                        (CCOption.map_or ~default:"" Yojson.Safe.to_string runs_on)))
+                wms;
+              fetch Keys.job
+              >>= fun job ->
+              Builder.run_db s ~f:(fun db -> add_work_manifests s job.Tjc.Job.id wms db)
+              >>= fun () ->
+              (* Read [Keys.compute_node], and not [Keys.compute_node_id].
+             The server makes these work manifests while it reads the
+             results of a run, and the results entry point adds the
+             node to the store, not its id.
+
+             Never read the work manifest event here.  The chain of
+             layers evaluates the next layer with no event, and the
+             node of that evaluation must still be able to take it. *)
+              fetch Keys.compute_node
+              >>= fun compute_node ->
+              (* Read the configuration that the repository holds, and
+             not the one that the config builder makes.  A step that
+             prepares a job runs before a built configuration
+             exists. *)
+              fetch Keys.repo_config_raw'
+              >>= fun (_, repo_config_raw) ->
+              (* Ask for the budget only here.  A step that prepares a job
+             runs before there is a repo config to read it from. *)
+              max_workspaces ()
+              >>= fun max_workspaces ->
+              let merge_steps = merge_steps_of repo_config_raw in
+              Builder.run_db s ~f:(fun db ->
+                  make_compute_nodes ~compute_node ~merge_steps ~max_workspaces s wms db)
+              >>? fun () -> Error (`Suspend_eval name))
+    in
+    (* Decide what the slot does now from the work manifests of the job.
+
+       An aborted work manifest leaves work undone.  When no live work manifest of the slot covers
+       its dirspaces, the slot makes the work again, now, at the refs of this evaluation: a start
+       that the commits moved under was aborted so that this happens.  The one exception is a plan
+       that newer plans of the pull request superseded: they plan each of its dirspaces, thus this
+       job has nothing left to do. *)
+    let settle job_wms =
+      if too_many_aborts job_wms then (
+        Logs.info (fun m -> m "%s : WM : TOO_MANY_ABORTS" (Builder.log_id s));
+        Abbs_future_combinators.return_err (`Compute_aborted_err (num_aborts job_wms)))
+      else
+        let slot_wms = CCList.filter in_slot job_wms in
+        let live = rem_aborted slot_wms in
+        let aborted = CCList.filter is_aborted slot_wms in
+        let uncovered =
+          Terrat_vcs_event_evaluator2_staleness.Start.uncovered_dirspaces ~live aborted
+        in
+        match live with
+        | [] when aborted <> [] -> (
+            (match membership with
+              | Steps { superseded; start = _; steps = _ } -> superseded aborted s fetcher
+              | Refs _ -> Abbs_future_combinators.return_ok false)
+            >>= function
+            | true ->
+                Logs.info (fun m -> m "%s : WM : SUPERSEDED : name=%s" (Builder.log_id s) name);
+                Abbs_future_combinators.return_err `Noop
+            | false -> create_wms ())
+        | [] -> create_wms ()
+        | live when not (all_wms_completed live) ->
+            Logs.info (fun m ->
+                m "%s : WM : SETTLE : name=%s : not_all_wms_completed" (Builder.log_id s) name);
+            Abbs_future_combinators.return_err (`Suspend_eval name)
+        | live when Terrat_data.Dirspace_set.is_empty uncovered ->
+            Logs.info (fun m ->
+                m "%s : WM : SETTLE : name=%s : all_wms_completed" (Builder.log_id s) name);
+            Abbs_future_combinators.return_ok live
+        | _ ->
+            Logs.info (fun m ->
+                m
+                  "%s : WM : SETTLE : name=%s : uncovered_aborted_dirspaces=%d"
+                  (Builder.log_id s)
+                  name
+                  (Terrat_data.Dirspace_set.cardinal uncovered));
+            create_wms ()
+    in
+    (* After a result or a failure the slot is over when all its work manifests are completed, and
+       waits otherwise.  It never makes work here: a failure that makes its work again would retry
+       without end, for example a start that the forge refuses.  An aborted work manifest also means
+       "wait": the evaluation of the job without an event, or a restart, is what makes the work
+       again. *)
+    let finish_event job_wms =
+      match CCList.filter in_slot job_wms with
+      | slot_wms when all_wms_completed slot_wms ->
+          Logs.info (fun m ->
+              m "%s : WM : EVENT : name=%s : all_wms_completed" (Builder.log_id s) name);
+          Abbs_future_combinators.return_ok slot_wms
+      | _ ->
+          Logs.info (fun m ->
+              m "%s : WM : EVENT : name=%s : not_all_wms_completed" (Builder.log_id s) name);
+          Abbs_future_combinators.return_err (`Suspend_eval name)
+    in
+    (* Explicitly query the work manifests for this job because we might have already created work
+       manifests in parallel operations so we don't need to do it again. *)
+    let job_wms () =
+      fetch Keys.job
+      >>= fun job -> Builder.run_db s ~f:(fun db -> query_work_manifests s job.Tjc.Job.id db)
+    in
     fetch Keys.work_manifest_event
     >>= function
     | Some
@@ -390,134 +602,88 @@ struct
            {
              work_manifest = { Wm.id; state = Wm.State.(Queued | Running); _ } as work_manifest;
              run_id;
+             sha;
            })
-      when eq work_manifest ->
+      when in_slot work_manifest -> (
         Logs.info (fun m -> m "%s : WM : INITIATE : name=%s" (Builder.log_id s) name);
-        Builder.run_db s ~f:(fun db -> update_run_id s name id run_id db)
-        >>= fun () ->
-        initiate work_manifest s fetcher
-        >>= fun response ->
-        fetch Keys.compute_node_id
-        >>= fun compute_node_id ->
-        (* An initiate event comes from a poll only, and a poll always knows its
-           compute node.  Fail loudly if that stops being true. *)
-        (match compute_node_id with
-          | None -> Abbs_future_combinators.return_err (`Missing_dep_err "compute_node_id")
-          | Some compute_node_id ->
-              Builder.run_db s ~f:(fun db -> set_work s compute_node_id id response db))
-        >>? fun () -> Error (`Suspend_eval name)
-    | Some (E.Fail { work_manifest; error }) when eq work_manifest -> (
+        (match membership with
+          | Steps { start; steps = _; superseded = _ } ->
+              start ~sha:(S.Api.Ref.of_string sha) work_manifest s fetcher
+          | Refs _ -> Abbs_future_combinators.return_ok (Run { head = None; dest_head = None }))
+        >>= function
+        | Restart ->
+            (* The commits moved before the run began and they changed its files.  Nothing ran,
+               thus abort the work manifest and answer nothing.  The poll evaluates the job again
+               outside of this start, which makes the work at the head now. *)
+            Logs.info (fun m -> m "%s : WM : INITIATE : RESTART : name=%s" (Builder.log_id s) name);
+            Builder.run_db s ~f:(fun db -> Tasks_base.abort_work_manifest s db id run_id)
+            >>= fun () -> Abbs_future_combinators.return_err (`Suspend_eval name)
+        | Run { head; dest_head } ->
+            Builder.run_db s ~f:(fun db -> update_run_id s name id run_id db)
+            >>= fun () ->
+            (if CCOption.is_some head || CCOption.is_some dest_head then
+               Builder.run_db s ~f:(fun db ->
+                   S.Work_manifest.update_start_refs
+                     ~request_id:(Builder.log_id s)
+                     db
+                     id
+                     ~start_sha:head
+                     ~start_dest_sha:dest_head)
+             else Abbs_future_combinators.return_ok ())
+            >>= fun () ->
+            initiate work_manifest s fetcher
+            >>= fun response ->
+            fetch Keys.compute_node_id
+            >>= fun compute_node_id ->
+            (* An initiate event comes from a poll only, and a poll always knows its
+               compute node.  Fail loudly if that stops being true. *)
+            CCOption.map_or
+              ~default:(Abbs_future_combinators.return_err (`Missing_dep_err "compute_node_id"))
+              (fun compute_node_id ->
+                Builder.run_db s ~f:(fun db -> set_work s compute_node_id id response db))
+              compute_node_id
+            >>? fun () -> Error (`Suspend_eval name))
+    | Some (E.Fail { work_manifest; error }) when in_slot work_manifest ->
         Logs.info (fun m -> m "%s : WM : FAIL : name=%s" (Builder.log_id s) name);
         fail work_manifest s fetcher
-        >>= fun () ->
-        publish_fail s fetcher error
-        >>= fun () ->
-        fetch Keys.work_manifests_for_job
-        >>? function
-        | wms when all_wms_completed @@ CCList.filter eq wms -> Ok (CCList.filter eq wms)
-        | _ -> Error (`Suspend_eval name))
-    | Some (E.Result { work_manifest; result = wm_result }) when eq work_manifest -> (
+        >>= fun () -> publish_fail s fetcher error >>= fun () -> job_wms () >>= finish_event
+    | Some (E.Result { work_manifest; result = wm_result }) when in_slot work_manifest ->
         Logs.info (fun m -> m "%s : WM : RESULT : name=%s" (Builder.log_id s) name);
         result work_manifest wm_result s fetcher
         >>= fun () ->
-        Builder.run_db s ~f:(fun db -> update_state_completed s name work_manifest.Wm.id db)
-        >>= fun () ->
-        fetch Keys.job
-        >>= fun job ->
-        (* Explicitly query the work manifests for this job because we might
-           have already created work manifests in parallel operations so we
-           don't need to do it again. *)
-        Builder.run_db s ~f:(fun db -> query_work_manifests s job.Tjc.Job.id db)
-        >>? function
-        | wms when all_wms_completed @@ CCList.filter eq wms ->
-            Logs.info (fun m ->
-                m "%s : WM : RESULT : name=%s : all_wms_completed" (Builder.log_id s) name);
-            Ok (CCList.filter eq wms)
-        | _ ->
-            Logs.info (fun m ->
-                m "%s : WM : RESULT : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-            Error (`Suspend_eval name))
-    | Some _ | None -> (
-        fetch Keys.job
-        >>= fun job ->
-        (* Explicitly query the work manifests for this job because we might
-           have already created work manifests in parallel operations so we
-           don't need to do it again. *)
-        Builder.run_db s ~f:(fun db -> query_work_manifests s job.Tjc.Job.id db)
-        >>= function
-        | wms when too_many_aborts wms ->
-            Logs.info (fun m -> m "%s : WM : TOO_MANY_ABORTS" (Builder.log_id s));
-            Abbs_future_combinators.return_err (`Compute_aborted_err (num_aborts wms))
-        | wms -> (
-            match rem_aborted @@ CCList.filter eq wms with
-            | [] -> (
-                Logs.info (fun m -> m "%s : WM : CREATE : name=%s" (Builder.log_id s) name);
-                create ~dest_branch_ref ~branch_ref ~branch s fetcher
-                >>= function
-                | [] ->
-                    Logs.info (fun m ->
-                        m "%s : WM : CREATE : name=%s : NO_WORK_MANIFESTS" (Builder.log_id s) name);
-                    Abbs_future_combinators.return_ok []
-                | wms ->
-                    CCList.iter
-                      (fun {
-                             Terrat_work_manifest3.id;
-                             base_ref;
-                             branch_ref;
-                             environment;
-                             runs_on;
-                             steps;
-                             _;
-                           }
-                         ->
-                        Logs.info (fun m ->
-                            m
-                              "%s : CREATED_WORK_MANIFEST : id=%a : base_ref=%s : branch_ref=%s : \
-                               run_type=%s : env=%s : runs_on=%s"
-                              (Builder.log_id s)
-                              Uuidm.pp
-                              id
-                              base_ref
-                              branch_ref
-                              (CCOption.map_or ~default:"" Wm.Step.to_string
-                              @@ CCList.head_opt steps)
-                              (CCOption.get_or ~default:"" environment)
-                              (CCOption.map_or ~default:"" Yojson.Safe.to_string runs_on)))
-                      wms;
-                    fetch Keys.job
-                    >>= fun job ->
-                    Builder.run_db s ~f:(fun db -> add_work_manifests s job.Tjc.Job.id wms db)
-                    >>= fun () ->
-                    (* Read [Keys.compute_node], and not [Keys.compute_node_id].
-                       The server makes these work manifests while it reads the
-                       results of a run, and the results entry point adds the
-                       node to the store, not its id.
-
-                       Never read the work manifest event here.  The chain of
-                       layers evaluates the next layer with no event, and the
-                       node of that evaluation must still be able to take it. *)
-                    fetch Keys.compute_node
-                    >>= fun compute_node ->
-                    (* Read the configuration that the repository holds, and
-                       not the one that the config builder makes.  A step that
-                       prepares a job runs before a built configuration
-                       exists. *)
-                    fetch Keys.repo_config_raw'
-                    >>= fun (_, repo_config_raw) ->
-                    (* Ask for the budget only here.  A step that prepares a job
-                       runs before there is a repo config to read it from. *)
-                    max_workspaces ()
-                    >>= fun max_workspaces ->
-                    let merge_steps = merge_steps_of repo_config_raw in
-                    Builder.run_db s ~f:(fun db ->
-                        make_compute_nodes ~compute_node ~merge_steps ~max_workspaces s wms db)
-                    >>? fun () -> Error (`Suspend_eval name))
-            | wms when all_wms_completed wms ->
-                Logs.info (fun m ->
-                    m "%s : WM : CREATE : name=%s : all_wms_completed" (Builder.log_id s) name);
-                Abbs_future_combinators.return_ok wms
-            | _ ->
-                Logs.info (fun m ->
-                    m "%s : WM : CREATE : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-                Abbs_future_combinators.return_err (`Suspend_eval name)))
+        (* A late result of an aborted work manifest is stored, and the work manifest stays
+           aborted: the work was given to another work manifest. *)
+        (if is_aborted work_manifest then Abbs_future_combinators.return_ok ()
+         else Builder.run_db s ~f:(fun db -> update_state_completed s name work_manifest.Wm.id db))
+        >>= fun () -> job_wms () >>= finish_event
+    | Some
+        (E.Result
+           {
+             work_manifest =
+               {
+                 Wm.id;
+                 state = Wm.State.(Queued | Running);
+                 account = _;
+                 base_ref = _;
+                 branch = _;
+                 branch_ref = _;
+                 changes = _;
+                 completed_at = _;
+                 created_at = _;
+                 denied_dirspaces = _;
+                 environment = _;
+                 initiator = _;
+                 run_id = _;
+                 runs_on = _;
+                 steps = _;
+                 tag_query = _;
+                 target = _;
+               } as work_manifest;
+             result = _;
+           })
+      when stale_setup work_manifest ->
+        Logs.info (fun m -> m "%s : WM : RESULT : STALE_SETUP : name=%s" (Builder.log_id s) name);
+        Builder.run_db s ~f:(fun db -> update_state_completed s name id db)
+        >>= fun () -> job_wms () >>= settle
+    | Some _ | None -> job_wms () >>= settle
 end
