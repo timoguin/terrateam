@@ -177,8 +177,8 @@ jobs:
 
   # The FIPS image is built from docker/terrat/Dockerfile.fips, which carries no
   # prebuilt base image, so this job compiles OpenSSL and the opam switch
-  # itself. No other job takes it as a dependency: the manifest, the release
-  # notes and the deploy must not wait for it.
+  # itself. No other job takes it as a dependency: the manifest and the release
+  # notes must not wait for it.
   build-fips:
     needs: set-version-tag
     runs-on: ubuntu-22.04
@@ -368,15 +368,3 @@ jobs:
       - name: Notify Slack
         run: |
           ./scripts/notify_slack
-
-  deploy:
-    needs: [set-version-tag, release-notify, create-multi-arch-manifest]
-    if: ${{ needs.create-multi-arch-manifest.outputs.is_latest_version_tag == 'true' }}
-    uses: ./.github/workflows/deploy.yml
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      environment: ${{ github.event.inputs.environment || 'production' }}
-      VERSION_TAG: ${{ needs.set-version-tag.outputs.version_tag }}
-    secrets: inherit
