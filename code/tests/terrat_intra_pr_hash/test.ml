@@ -12,11 +12,38 @@ let head = "head"
 let ds dir = { Terrat_dirspace.dir; workspace = "default" }
 let dirs_of = CCList.map (fun { Terrat_dirspace.dir; workspace = _ } -> dir)
 let dirspace_set dirs = Terrat_data.Dirspace_set.of_list (CCList.map ds dirs)
-let layers ls = CCList.map (fun l -> CCList.map ds l) ls
-let run ~sha ~created_at = { Ipr.Run.sha; created_at }
 
-let plan ?(has_changes = true) ~sha ~created_at () =
-  { Ipr.Plan.run = run ~sha ~created_at; has_changes }
+(* [~ls] is a chain of layers, as the tests of the layer order were written: each layer waits for
+   every layer before it.  [depends_on] takes each dirspace to the dirspaces it waits for, which is
+   what the rule asks (RFD 2305: a run is a tree).  [tree_depends_on] builds one branch per list, so
+   two branches wait for nothing of each other. *)
+let depends_on_of ls dirspace =
+  let rec go seen = function
+    | [] -> Terrat_data.Dirspace_set.empty
+    | layer :: rest ->
+        if CCList.mem ~eq:CCString.equal dirspace.Terrat_dirspace.dir layer then
+          Terrat_data.Dirspace_set.of_list (CCList.map ds seen)
+        else go (seen @ layer) rest
+  in
+  go [] ls
+
+let tree_depends_on branches dirspace =
+  let rec go seen = function
+    | [] -> None
+    | dir :: rest ->
+        if CCString.equal dir dirspace.Terrat_dirspace.dir then
+          Some (Terrat_data.Dirspace_set.of_list (CCList.map ds seen))
+        else go (seen @ [ dir ]) rest
+  in
+  branches
+  |> CCList.filter_map (go [])
+  |> CCList.fold_left Terrat_data.Dirspace_set.union Terrat_data.Dirspace_set.empty
+
+(* [during] is the pairs of commits that moved while the run operated (RFD 2356). *)
+let run ?(during = []) ~sha ~created_at () = { Ipr.Run.sha; created_at; during }
+
+let plan ?(has_changes = true) ?during ~sha ~created_at () =
+  { Ipr.Plan.run = run ?during ~sha ~created_at (); has_changes }
 
 let state ?last_plan ?last_apply dir =
   { Ipr.Dirspace_state.dirspace = ds dir; last_plan; last_apply }
@@ -26,25 +53,50 @@ let state ?last_plan ?last_apply dir =
 let changed_dirspaces changes sha =
   changes |> Sln_list.String.assoc_opt sha |> CCOption.get_or ~default:[] |> dirspace_set
 
+(* [between] is a list of ((from, to), the directories which changed between the two commits).  A
+   pair which is absent has no change. *)
+let changed_between between from_sha to_sha =
+  between
+  |> CCList.assoc_opt
+       ~eq:(fun (a_from, a_to) (b_from, b_to) ->
+         CCString.equal a_from b_from && CCString.equal a_to b_to)
+       (from_sha, to_sha)
+  |> CCOption.get_or ~default:[]
+  |> dirspace_set
+
+(* A run of an open pull request is compared with its head whatever its kind.  [~merged] is the
+   shape of a merged pull request: its applies at the destination have no comparison since they
+   ran. *)
+let changed_since ~merged changes kind { Ipr.Run.sha; created_at = _; during = _ } =
+  match (kind, merged) with
+  | Ipr.Kind.Apply, true -> Terrat_data.Dirspace_set.empty
+  | Ipr.Kind.Apply, false | Ipr.Kind.Plan, (true | false) -> changed_dirspaces changes sha
+
 let select
     ?(changes = [])
+    ?(between = [])
+    ?(merged = false)
     ?(force = [])
     ?(superseded = [])
     ?(last_run_failed = [])
     ?(ls = [])
     states =
   Ipr.select
-    ~changed_dirspaces:(changed_dirspaces changes)
+    ~changed_since:(changed_since ~merged changes)
+    ~changed_between:(changed_between between)
     ~force:(dirspace_set force)
     ~superseded:(dirspace_set superseded)
     ~last_run_failed:(dirspace_set last_run_failed)
-    ~layers:(layers ls)
+    ~depends_on:(depends_on_of ls)
     states
 
-let assert_to_run ~expected { Ipr.Selection.to_run; applied = _ } =
+let assert_to_run ~expected { Ipr.Selection.to_run; out_of_order = _; applied = _ } =
   Oth.Assert.Eq.string_list ~expected ~actual:(dirs_of to_run)
 
-let assert_applied ~expected { Ipr.Selection.to_run = _; applied } =
+let assert_out_of_order ~expected { Ipr.Selection.to_run = _; out_of_order; applied = _ } =
+  Oth.Assert.Eq.string_list ~expected ~actual:(dirs_of out_of_order)
+
+let assert_applied ~expected { Ipr.Selection.to_run = _; out_of_order = _; applied } =
   Oth.Assert.Eq.string_list ~expected ~actual:(dirs_of applied)
 
 (* -- Autoplan filtering -- *)
@@ -118,7 +170,7 @@ let test_apply_survives_an_unrelated_push =
             state
               "ds_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z" ());
           ]
       in
       assert_applied ~expected:[ "ds_one" ] selection;
@@ -134,7 +186,7 @@ let test_apply_lost_when_a_file_changed =
             state
               "ds_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z" ());
           ]
       in
       assert_applied ~expected:[] selection;
@@ -172,11 +224,11 @@ let test_working_layer_stays_at_the_third_layer =
             state
               "l_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state "l_three";
           ]
       in
@@ -196,15 +248,15 @@ let test_force_in_the_first_layer_rewinds =
             state
               "l_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state
               "l_three"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:04:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z" ());
           ]
       in
       assert_to_run ~expected:[ "l_one" ] selection;
@@ -225,11 +277,11 @@ let test_a_later_first_layer_run_invalidates_the_layers_after_it =
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state
               "l_three"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:04:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z" ());
           ]
       in
       assert_applied ~expected:[] selection;
@@ -249,11 +301,11 @@ let test_a_forced_plan_outlives_the_force =
             state
               "l_one"
               ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T11:14:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:10:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:10:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T11:10:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:12:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:12:00Z" ());
             state "l_three" ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T11:13:00Z" ());
           ]
       in
@@ -274,11 +326,11 @@ let test_the_layers_after_a_forced_apply_plan_again =
             state
               "l_one"
               ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T11:14:00Z" ())
-              ~last_apply:(run ~sha:head ~created_at:"2026-09-11T11:16:00Z");
+              ~last_apply:(run ~sha:head ~created_at:"2026-09-11T11:16:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T11:10:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:12:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T11:12:00Z" ());
             state "l_three" ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T11:13:00Z" ());
           ]
       in
@@ -298,11 +350,11 @@ let test_force_in_the_last_layer_keeps_the_earlier_layers =
             state
               "l_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state "l_three" ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:04:00Z" ());
           ]
       in
@@ -310,9 +362,12 @@ let test_force_in_the_last_layer_keeps_the_earlier_layers =
       assert_to_run ~expected:[ "l_three" ] selection;
       ())
 
+(* A force names one dirspace of a layer.  What waits for that dirspace loses its applied state,
+   and a dirspace beside it in the layer does not: nothing waits for a sibling, thus the run it
+   holds still stands (RFD 2305). *)
 let test_one_dirspace_of_a_layer_is_forced =
   Oth.test
-    ~name:"layers: only the forced dirspace of a layer runs, and the later layers are lost"
+    ~name:"tree: a force takes the applied state from what waits for the forced dirspace"
     (fun _ ->
       let selection =
         select
@@ -322,23 +377,23 @@ let test_one_dirspace_of_a_layer_is_forced =
             state
               "l_one"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z" ());
             state
               "m_alpha"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state
               "m_beta"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:02:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:03:00Z" ());
             state
               "l_three"
               ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:04:00Z" ())
-              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z");
+              ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:05:00Z" ());
           ]
       in
       assert_to_run ~expected:[ "m_alpha" ] selection;
-      assert_applied ~expected:[ "l_one" ] selection;
+      assert_applied ~expected:[ "l_one"; "m_beta" ] selection;
       ())
 
 (* -- Force path -- *)
@@ -375,13 +430,87 @@ let test_empty_force_changes_nothing =
           state
             "ds_one"
             ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z");
+            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:01:00Z" ());
           state "ds_two";
         ]
       in
       let selection = select ~ls:[ [ "ds_one" ]; [ "ds_two" ] ] states in
       assert_to_run ~expected:[ "ds_two" ] selection;
       assert_applied ~expected:[ "ds_one" ] selection;
+      ())
+
+(* -- The tree (RFD 2305) -- *)
+
+(* Two branches of the tree, [dev] and [prod], each networking -> database -> app.  The user walks
+   the whole dev branch and applies prod/networking after it.  dev/database waits for dev/networking
+   only, thus the later run of prod/networking takes nothing away from it. *)
+let test_tree_branches_do_not_order_each_other =
+  Oth.test ~name:"tree: a run of another branch does not send this branch back" (fun _ ->
+      let applied dir at =
+        state
+          dir
+          ~last_plan:(plan ~sha:head ~created_at:at ())
+          ~last_apply:(run ~sha:head ~created_at:at ())
+      in
+      let states =
+        [
+          applied "dev/networking" "2026-09-11T10:00:00Z";
+          applied "dev/database" "2026-09-11T10:01:00Z";
+          applied "dev/app" "2026-09-11T10:02:00Z";
+          applied "prod/networking" "2026-09-11T10:03:00Z";
+          state "prod/database";
+          state "prod/app";
+        ]
+      in
+      let selection =
+        Ipr.select
+          ~changed_since:(fun _ _ -> Terrat_data.Dirspace_set.empty)
+          ~changed_between:(fun _ _ -> Terrat_data.Dirspace_set.empty)
+          ~force:(dirspace_set [])
+          ~superseded:(dirspace_set [])
+          ~last_run_failed:(dirspace_set [])
+          ~depends_on:
+            (tree_depends_on
+               [
+                 [ "dev/networking"; "dev/database"; "dev/app" ];
+                 [ "prod/networking"; "prod/database"; "prod/app" ];
+               ])
+          states
+      in
+      assert_applied
+        ~expected:[ "dev/app"; "dev/database"; "dev/networking"; "prod/networking" ]
+        selection;
+      assert_to_run ~expected:[ "prod/app"; "prod/database" ] selection;
+      ())
+
+(* Inside one branch the order still holds: a dirspace whose dependency ran after it must run
+   again. *)
+let test_tree_branch_keeps_its_order =
+  Oth.test ~name:"tree: a dependency that ran later sends its dependent back" (fun _ ->
+      let states =
+        [
+          state
+            "dev/networking"
+            ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T10:05:00Z" ())
+            ~last_apply:(run ~sha:head ~created_at:"2026-09-11T10:05:00Z" ());
+          state
+            "dev/database"
+            ~last_plan:(plan ~sha:head ~created_at:"2026-09-11T10:01:00Z" ())
+            ~last_apply:(run ~sha:head ~created_at:"2026-09-11T10:01:00Z" ());
+        ]
+      in
+      let selection =
+        Ipr.select
+          ~changed_since:(fun _ _ -> Terrat_data.Dirspace_set.empty)
+          ~changed_between:(fun _ _ -> Terrat_data.Dirspace_set.empty)
+          ~force:(dirspace_set [])
+          ~superseded:(dirspace_set [])
+          ~last_run_failed:(dirspace_set [])
+          ~depends_on:(tree_depends_on [ [ "dev/networking"; "dev/database" ] ])
+          states
+      in
+      assert_applied ~expected:[ "dev/networking" ] selection;
+      assert_to_run ~expected:[ "dev/database" ] selection;
       ())
 
 (* -- Ordering -- *)
@@ -398,11 +527,11 @@ let test_equal_times_are_deterministic =
           state
             "l_one"
             ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z");
+            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ());
           state
             "l_two"
             ~last_plan:(plan ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ())
-            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z");
+            ~last_apply:(run ~sha:"sha_a" ~created_at:"2026-09-11T10:00:00Z" ());
         ]
       in
       let ls = [ [ "l_one" ]; [ "l_two" ] ] in
@@ -413,7 +542,7 @@ let test_equal_times_are_deterministic =
       ())
 
 (* The shape the apply gate falls back to when the tree of the head is not in the database.  It
-   hands [select] a [changed_dirspaces] which holds every dirspace, because a tree which is not
+   hands [select] change sets which hold every dirspace, because a tree which is not
    there must mean "run it" and never "skip it".  Nothing may survive as applied, or a stale plan
    reaches an apply. *)
 let test_everything_changed_runs_everything =
@@ -423,7 +552,7 @@ let test_everything_changed_runs_everything =
           state
             "l_one"
             ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ())
-            ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z");
+            ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ());
           state
             "l_two"
             ~last_plan:(plan ~has_changes:false ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ());
@@ -432,11 +561,12 @@ let test_everything_changed_runs_everything =
       in
       let selection =
         Ipr.select
-          ~changed_dirspaces:(fun _ -> dirspace_set [ "l_one"; "l_two"; "l_three" ])
+          ~changed_since:(fun _ _ -> dirspace_set [ "l_one"; "l_two"; "l_three" ])
+          ~changed_between:(fun _ _ -> dirspace_set [ "l_one"; "l_two"; "l_three" ])
           ~force:(dirspace_set [])
           ~superseded:(dirspace_set [])
           ~last_run_failed:(dirspace_set [])
-          ~layers:(layers [ [ "l_one" ]; [ "l_two" ]; [ "l_three" ] ])
+          ~depends_on:(depends_on_of [ [ "l_one" ]; [ "l_two" ]; [ "l_three" ] ])
           states
       in
       assert_to_run ~expected:[ "l_one"; "l_three"; "l_two" ] selection;
@@ -472,7 +602,7 @@ let test_superseded_apply_is_not_applied =
             state
               "ds_one"
               ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z");
+              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z" ());
           ]
       in
       assert_to_run ~expected:[ "ds_one" ] selection;
@@ -520,7 +650,7 @@ let test_empty_superseded_changes_nothing =
           state
             "ds_one"
             ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ())
-            ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z");
+            ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z" ());
         ]
       in
       Oth.Assert.eq
@@ -558,11 +688,11 @@ let test_failed_run_keeps_an_apply =
             state
               "l_one"
               ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ())
-              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z");
+              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T11:00:00Z" ());
             state
               "l_two"
               ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T12:00:00Z" ())
-              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T13:00:00Z");
+              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T13:00:00Z" ());
           ]
       in
       assert_to_run ~expected:[] selection;
@@ -582,7 +712,7 @@ let test_failed_run_does_not_apply_an_unapplied_plan =
             state
               "ds_one"
               ~last_plan:(plan ~sha:"old" ~created_at:"2026-09-11T12:00:00Z" ())
-              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z");
+              ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ());
           ]
       in
       assert_to_run ~expected:[ "ds_one" ] selection;
@@ -609,7 +739,7 @@ let test_empty_last_run_failed_changes_nothing =
 let test_an_apply_with_no_plan_is_applied_only =
   Oth.test ~name:"lists: an apply with no plan is applied and does not run" (fun _ ->
       let selection =
-        select [ state "ds_one" ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z") ]
+        select [ state "ds_one" ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ()) ]
       in
       assert_to_run ~expected:[] selection;
       assert_applied ~expected:[ "ds_one" ] selection;
@@ -621,7 +751,7 @@ let test_the_lists_never_overlap =
   Oth.test ~name:"lists: no dirspace is in both lists" (fun _ ->
       let states =
         [
-          state "ds_one" ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z");
+          state "ds_one" ~last_apply:(run ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ());
           state
             "ds_two"
             ~last_plan:(plan ~has_changes:false ~sha:"old" ~created_at:"2026-09-11T10:00:00Z" ());
@@ -631,7 +761,7 @@ let test_the_lists_never_overlap =
       in
       CCList.iter
         (fun (force, superseded, last_run_failed) ->
-          let { Ipr.Selection.to_run; applied } =
+          let { Ipr.Selection.to_run; out_of_order = _; applied } =
             select ~force ~superseded ~last_run_failed states
           in
           let to_run = Terrat_data.Dirspace_set.of_list to_run in
@@ -648,9 +778,210 @@ let test_the_lists_never_overlap =
         ];
       ())
 
+(* -- Commits that move during a run (RFD 2356) -- *)
+
+(* The heads at the start and at the result of a run.  [moved] is a pair of commits that moved
+   while the run operated. *)
+let moved = ("start", "result")
+
+let test_a_stale_apply_is_not_applied =
+  Oth.test ~name:"moved: an apply whose files changed during the run is not applied" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "tf" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      (* The apply used the plan, thus the plan is used up: the dirspace plans again. *)
+      assert_to_run ~expected:[ "tf" ] selection;
+      assert_applied ~expected:[] selection;
+      ())
+
+let test_an_apply_whose_files_did_not_move_is_applied =
+  Oth.test ~name:"moved: an apply whose files did not change during the run is applied" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "docs" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[] selection;
+      assert_applied ~expected:[ "tf" ] selection;
+      ())
+
+let test_a_stale_plan_runs =
+  Oth.test ~name:"moved: a plan whose files changed during the run plans again" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "tf" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:00:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[ "tf" ] selection;
+      assert_applied ~expected:[] selection;
+      ())
+
+let test_a_plan_after_a_stale_apply_stands =
+  Oth.test ~name:"moved: a plan made after a stale apply is not used up" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "tf" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:02:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[] selection;
+      assert_applied ~expected:[] selection;
+      ())
+
+(* -- Out of order -- *)
+
+(* A plan whose files did not change is still in [to_run] when a dirspace it waits for ran after
+   it.  Nothing moved under it, and the caller tells the user so. *)
+let test_a_plan_behind_its_dependency_is_out_of_order =
+  Oth.test ~name:"out of order: a plan older than a run of its dependency is out of order" (fun _ ->
+      let selection =
+        select
+          ~ls:[ [ "l_one" ]; [ "l_two" ] ]
+          [
+            state "l_one" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:05:00Z" ());
+            state "l_two" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[ "l_two" ] selection;
+      assert_out_of_order ~expected:[ "l_two" ] selection;
+      ())
+
+(* A stale plan is bad for its own files, thus it is not out of order even when a dependency ran
+   after it. *)
+let test_a_stale_plan_behind_its_dependency_is_not_out_of_order =
+  Oth.test ~name:"out of order: a stale plan is not out of order" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "l_two" ]) ]
+          ~ls:[ [ "l_one" ]; [ "l_two" ] ]
+          [
+            state "l_one" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:05:00Z" ());
+            state
+              "l_two"
+              ~last_plan:(plan ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[ "l_two" ] selection;
+      assert_out_of_order ~expected:[] selection;
+      ())
+
+(* A forced dirspace and a dirspace whose newest run failed run for that reason, and not for the
+   order of the layers. *)
+let test_forced_and_failed_are_not_out_of_order =
+  Oth.test ~name:"out of order: a forced or failed dirspace is not out of order" (fun _ ->
+      let states =
+        [
+          state "l_one" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:05:00Z" ());
+          state "l_two" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+        ]
+      in
+      let ls = [ [ "l_one" ]; [ "l_two" ] ] in
+      let forced = select ~force:[ "l_two" ] ~ls states in
+      assert_to_run ~expected:[ "l_two" ] forced;
+      assert_out_of_order ~expected:[] forced;
+      let failed = select ~last_run_failed:[ "l_two" ] ~ls states in
+      assert_to_run ~expected:[ "l_two" ] failed;
+      assert_out_of_order ~expected:[] failed;
+      ())
+
+let test_an_unknown_pair_is_not_good =
+  Oth.test ~name:"moved: a pair that could not be compared fails safe" (fun _ ->
+      (* The caller gives every dirspace for a pair whose tree is not stored. *)
+      let selection =
+        select
+          ~between:[ (moved, [ "tf"; "app" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+            state
+              "app"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      (* [app] ran with nothing that moved, thus the pair of [tf] says nothing about it. *)
+      assert_to_run ~expected:[ "tf" ] selection;
+      assert_applied ~expected:[ "app" ] selection;
+      ())
+
+let test_a_merged_apply_keeps_a_later_change =
+  Oth.test ~name:"moved: a merged apply stays applied when the destination changes later" (fun _ ->
+      let selection =
+        select
+          ~merged:true
+          ~changes:[ ("dest", [ "tf" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:"pr" ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~sha:"dest" ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_applied ~expected:[ "tf" ] selection;
+      ())
+
+let test_a_merged_apply_is_stale_when_it_moved =
+  Oth.test ~name:"moved: a merged apply whose files changed during the run is not applied" (fun _ ->
+      let selection =
+        select
+          ~merged:true
+          ~between:[ (moved, [ "tf" ]) ]
+          [
+            state
+              "tf"
+              ~last_plan:(plan ~sha:"pr" ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:"dest" ~created_at:"2026-09-22T10:01:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[ "tf" ] selection;
+      assert_applied ~expected:[] selection;
+      ())
+
+let test_a_stale_layer_holds_back_its_dependents =
+  Oth.test ~name:"moved: a stale apply of a layer holds back the layer that depends on it" (fun _ ->
+      let selection =
+        select
+          ~between:[ (moved, [ "base" ]) ]
+          ~ls:[ [ "base" ]; [ "database" ] ]
+          [
+            state
+              "base"
+              ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:00:00Z" ())
+              ~last_apply:(run ~during:[ moved ] ~sha:head ~created_at:"2026-09-22T10:01:00Z" ());
+            state "database" ~last_plan:(plan ~sha:head ~created_at:"2026-09-22T10:02:00Z" ());
+          ]
+      in
+      assert_to_run ~expected:[ "base" ] selection;
+      assert_applied ~expected:[] selection;
+      ())
+
 let test =
   Oth.parallel
     [
+      test_tree_branches_do_not_order_each_other;
+      test_tree_branch_keeps_its_order;
       test_no_plan_runs;
       test_failed_plan_runs;
       test_unchanged_plan_does_not_run;
@@ -682,6 +1013,17 @@ let test =
       test_empty_last_run_failed_changes_nothing;
       test_an_apply_with_no_plan_is_applied_only;
       test_the_lists_never_overlap;
+      test_a_stale_apply_is_not_applied;
+      test_an_apply_whose_files_did_not_move_is_applied;
+      test_a_stale_plan_runs;
+      test_a_plan_after_a_stale_apply_stands;
+      test_an_unknown_pair_is_not_good;
+      test_a_plan_behind_its_dependency_is_out_of_order;
+      test_a_stale_plan_behind_its_dependency_is_not_out_of_order;
+      test_forced_and_failed_are_not_out_of_order;
+      test_a_merged_apply_keeps_a_later_change;
+      test_a_merged_apply_is_stale_when_it_moved;
+      test_a_stale_layer_holds_back_its_dependents;
     ]
 
 let () =

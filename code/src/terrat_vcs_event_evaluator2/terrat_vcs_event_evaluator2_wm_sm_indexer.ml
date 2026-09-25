@@ -65,13 +65,19 @@ struct
     let branch_name = S.Api.Ref.to_string branch_name in
     if branch = branch_name then "terrateam index" else "terrateam index " ^ branch
 
-  let create ~dest_branch_ref ~branch_ref ~branch s { Bs.Fetcher.fetch } =
+  let stored ~branch_ref s { Bs.Fetcher.fetch } =
     let open Irm in
     fetch Keys.account
     >>= fun account ->
-    Builder.run_db s ~f:(fun db -> query_index s db account branch_ref)
+    Builder.run_db s ~f:(fun db -> query_index s db account branch_ref) >>| CCOption.is_some
+
+  let create ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
+    let open Irm in
+    fetch Keys.account
+    >>= fun account ->
+    stored ~branch_ref s fetcher
     >>= function
-    | None ->
+    | false ->
         fetch Keys.repo
         >>= fun repo ->
         fetch Keys.initiator
@@ -120,7 +126,7 @@ struct
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
         >>| fun () -> [ work_manifest ]
-    | Some _ ->
+    | true ->
         fetch Keys.commit_checks
         >>= fun commit_checks ->
         fetch Keys.branch_ref
@@ -287,6 +293,70 @@ struct
     publish_comment' publish_comment (Msg.Index_complete (false, []))
     >>? fun () -> Error `Silent_failure
 
+  (* The comment only informs the user, thus a failure to post it does not stop the run. *)
+  let publish_parse_failures s publish_comment failures =
+    let open Abb.Future.Infix_monad in
+    publish_comment
+      (Msg.Index_complete
+         ( true,
+           CCList.map
+             (fun { Terrat_vcs_provider2.Index.Failure.file; line_num; error } ->
+               (file, line_num, error))
+             failures ))
+    >>= function
+    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Error `Error ->
+        Logs.err (fun m -> m "%s : INDEX : PUBLISH_PARSE_FAILURES : ERROR" (Builder.log_id s));
+        Abbs_future_combinators.return_ok ()
+
+  (* A [terrateam index] job posts the failures itself when the job completes, thus this posts them
+     only for the other jobs.  The failures of the destination branch index are in files that the
+     pull request did not change, thus this posts only the failures of the pull request branch
+     index. *)
+  let maybe_publish_parse_failures ~branch s { Bs.Fetcher.fetch } =
+    let open Irm in
+    let module Type_ = Terrat_job_context.Job.Type_ in
+    let module I = Terrat_vcs_provider2.Index in
+    fetch Keys.job
+    >>= fun job ->
+    fetch Keys.branch_name
+    >>= fun branch_name ->
+    match job.Terrat_job_context.Job.type_ with
+    | Type_.Index -> Abbs_future_combinators.return_ok ()
+    | Type_.(
+        ( Apply _
+        | Autoapply
+        | Autoplan
+        | Gate_approval _
+        | Help
+        | Plan _
+        | Push
+        | Repo_config
+        | Unlock _ ))
+      when S.Api.Ref.to_string branch <> S.Api.Ref.to_string branch_name ->
+        Abbs_future_combinators.return_ok ()
+    | Type_.(
+        ( Apply _
+        | Autoapply
+        | Autoplan
+        | Gate_approval _
+        | Help
+        | Plan _
+        | Push
+        | Repo_config
+        | Unlock _ )) -> (
+        fetch Keys.account
+        >>= fun account ->
+        fetch Keys.branch_ref
+        >>= fun branch_ref ->
+        Builder.run_db s ~f:(fun db -> query_index s db account branch_ref)
+        >>= fun index ->
+        match CCOption.map_or ~default:[] (fun i -> i.I.failures) index with
+        | [] -> Abbs_future_combinators.return_ok ()
+        | failures ->
+            fetch Keys.publish_comment
+            >>= fun publish_comment -> publish_parse_failures s publish_comment failures)
+
   let result ~branch work_manifest result s ({ Bs.Fetcher.fetch } as fetcher) =
     let open Irm in
     match result with
@@ -352,6 +422,7 @@ struct
         fetch Keys.create_commit_checks
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
+        >>= fun () -> maybe_publish_parse_failures ~branch s fetcher
     | Wmr.Work_manifest_build_result_failure { Bf.msg } ->
         (* The indexer legitimately reports a build failure, so handle it the
            way the other builders do rather than treating it as impossible. *)
@@ -365,7 +436,13 @@ struct
   let run ~dest_branch_ref ~branch_ref ~branch ~name =
     Wm_sm.run
       ~name
-      ~eq:(eq dest_branch_ref branch_ref)
+      ~membership:
+        (Wm_sm.Refs
+           {
+             steps = [ Wm.Step.Index ];
+             eq = eq dest_branch_ref branch_ref;
+             stored = stored ~branch_ref;
+           })
       ~dest_branch_ref
       ~branch_ref
       ~branch

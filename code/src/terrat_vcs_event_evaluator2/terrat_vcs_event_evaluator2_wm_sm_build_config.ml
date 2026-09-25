@@ -62,13 +62,20 @@ struct
     let branch_name = S.Api.Ref.to_string branch_name in
     if branch = branch_name then "terrateam build-config" else "terrateam build-config " ^ branch
 
-  let create ~cache_ref ~dest_branch_ref ~branch_ref ~branch s { Bs.Fetcher.fetch } =
+  let stored ~cache_ref s { Bs.Fetcher.fetch } =
     let open Irm in
     fetch Keys.account
     >>= fun account ->
     Builder.run_db s ~f:(fun db -> query_repo_config_json s db account cache_ref)
+    >>| CCOption.is_some
+
+  let create ~cache_ref ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
+    let open Irm in
+    fetch Keys.account
+    >>= fun account ->
+    stored ~cache_ref s fetcher
     >>= function
-    | None ->
+    | false ->
         fetch Keys.repo
         >>= fun repo ->
         fetch Keys.initiator
@@ -117,7 +124,7 @@ struct
         >>= fun create_commit_checks ->
         create_commit_checks' create_commit_checks branch_ref [ check ]
         >>| fun () -> [ work_manifest ]
-    | Some _ ->
+    | true ->
         fetch Keys.commit_checks
         >>= fun commit_checks ->
         fetch Keys.branch_ref
@@ -319,7 +326,13 @@ struct
   let run ~cache_ref ~dest_branch_ref ~branch_ref ~branch ~name =
     Wm_sm.run
       ~name
-      ~eq:(eq dest_branch_ref branch_ref)
+      ~membership:
+        (Wm_sm.Refs
+           {
+             steps = [ Wm.Step.Build_config ];
+             eq = eq dest_branch_ref branch_ref;
+             stored = stored ~cache_ref;
+           })
       ~dest_branch_ref
       ~branch_ref
       ~branch

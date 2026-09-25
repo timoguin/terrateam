@@ -83,6 +83,7 @@ export default defineConfig({
           items: [
             { label: "PR Workflows", link: "/workflows/pull-request/" },
             { label: "Apply After Merge", link: "/workflows/apply-after-merge" },
+            { label: "Commits That Move", link: "/workflows/stale-runs" },
             { label: "Rollbacks", link: "/workflows/rollbacks" },
             { label: "Performance Optimization", link: "/workflows/performance" },
             {

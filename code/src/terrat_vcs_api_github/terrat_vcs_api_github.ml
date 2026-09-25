@@ -285,10 +285,7 @@ module Client = struct
         v
   end)
 
-  (* Only [fetch_branch_sha_cached] reads this, and only the repository
-     configuration load uses that function.  The plain [fetch_branch_sha] stays
-     uncached, because the evaluator also uses it to find the ref that a run
-     executes against, and that answer must be current. *)
+  (* Only [fetch_branch_sha_cached] reads this. *)
   module Fetch_branch_sha_cache = Abbs_cache.Expiring.Make (struct
     type k = Account.t * Repo.t * Ref.t [@@deriving eq]
     type v = Ref.t option

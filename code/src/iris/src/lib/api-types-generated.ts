@@ -782,6 +782,109 @@ export interface components {
             post: (components["schemas"]["workflow-output-drift-create-issue"] | components["schemas"]["workflow-output-run"] | components["schemas"]["workflow-output-env"] | components["schemas"]["workflow-output-oidc"])[];
             pre: (components["schemas"]["workflow-output-run"] | components["schemas"]["workflow-output-env"] | components["schemas"]["workflow-output-checkout"] | components["schemas"]["workflow-output-cost-estimation"] | components["schemas"]["workflow-output-oidc"])[];
         };
+        /** @description One condition of the Infracost CLI on a key of the product attributes. A value_regex that is not empty wins over value. */
+        "infracost-attribute-filter": {
+            /** @description Name of the product attribute. */
+            key: string;
+            /** @description Value that the attribute must equal. The empty string matches an attribute that is absent or empty. */
+            value?: string;
+            /** @description Pattern that the attribute must match, as /pattern/ or /pattern/i. */
+            value_regex?: string;
+        };
+        /** @description Error that the Infracost pricing API returns with a status other than 200. */
+        "infracost-error": {
+            /** @description Message for a person. */
+            error: string;
+            /** @description Code for the CLI. The CLI stops only on invalid_api_key. */
+            error_code: string;
+        };
+        /** @description Answer to an event that the Infracost CLI posts. */
+        "infracost-event-result": {
+            /** @description Always ok. */
+            status: string;
+        };
+        /** @description Answer to a batch: one element for each element of the request, in the same order. */
+        "infracost-graphql-batch-response": components["schemas"]["infracost-graphql-response"][];
+        /** @description Result of the product-and-price query of the Infracost CLI. */
+        "infracost-graphql-data": {
+            /** @description Products that match the product filter, 1000 at most. */
+            products: components["schemas"]["infracost-product"][];
+        };
+        /** @description GraphQL error. The CLI does not read it. */
+        "infracost-graphql-error": {
+            /** @description Details of the error. */
+            extensions: {
+                /** @description Code of the error. */
+                code: string;
+            };
+            /** @description Message for a person. */
+            message: string;
+        };
+        /** @description Answer to one element of the batch. The probe gets errors and a query gets data. */
+        "infracost-graphql-response": {
+            data?: components["schemas"]["infracost-graphql-data"];
+            /** @description Errors of the element. */
+            errors?: components["schemas"]["infracost-graphql-error"][];
+        };
+        /** @description One price of a product. The field whose name is the currency code of the query holds the amount, for example USD. */
+        "infracost-price": {
+            /** @description Hash that identifies the price. */
+            priceHash?: string;
+        } & {
+            [key: string]: string | null;
+        };
+        /** @description Conditions of the Infracost CLI on the prices of a product. A field that is absent puts no condition. The empty string matches a field that is absent or empty. */
+        "infracost-price-filter": {
+            /** @description Value that the price description must equal. */
+            description?: string;
+            /** @description Pattern that the price description must match, as /pattern/ or /pattern/i. */
+            description_regex?: string;
+            /** @description Value that the end of the usage tier must equal. */
+            endUsageAmount?: string;
+            /** @description Value that the purchase option must equal, for example on_demand. */
+            purchaseOption?: string;
+            /** @description Value that the start of the usage tier must equal. */
+            startUsageAmount?: string;
+            /** @description Value that the term length of a reservation must equal. */
+            termLength?: string;
+            /** @description Value that the offering class of a reservation must equal. */
+            termOfferingClass?: string;
+            /** @description Value that the purchase option of a reservation must equal. */
+            termPurchaseOption?: string;
+            /** @description Value that the unit of the price must equal. */
+            unit?: string;
+        };
+        /** @description One product that matches the product filter of a query. */
+        "infracost-product": {
+            /** @description Prices of the product that match the price filter of the query. */
+            prices: components["schemas"]["infracost-price"][];
+        };
+        /** @description Conditions of the Infracost CLI on a product. A field that is absent puts no condition. */
+        "infracost-product-filter": {
+            /** @description Conditions on the product attributes. A product matches when it satisfies all of them. */
+            attributeFilters?: components["schemas"]["infracost-attribute-filter"][];
+            /** @description Value that the product family must equal. */
+            productFamily?: string;
+            /** @description Value that the region must equal. The empty string matches a product that has no region. */
+            region?: string;
+            /** @description Value that the service must equal, for example AmazonEC2. */
+            service?: string;
+            /** @description Value that the SKU must equal. */
+            sku?: string;
+            /** @description Value that the vendor must equal, for example aws. */
+            vendorName?: string;
+        };
+        /** @description One element of the batch that the Infracost CLI posts to /graphql. */
+        "infracost-query": {
+            /** @description GraphQL text. The empty string is the probe that the CLI posts before each run. Any other text must be the product-and-price query of the CLI, which names the currency as the price field. */
+            query: string;
+            variables?: components["schemas"]["infracost-query-variables"];
+        };
+        /** @description Variables of the product-and-price query of the Infracost CLI. */
+        "infracost-query-variables": {
+            priceFilter?: components["schemas"]["infracost-price-filter"];
+            productFilter?: components["schemas"]["infracost-product-filter"];
+        };
         installation: {
             account_status: string;
             created_at: string;

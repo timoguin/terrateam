@@ -377,6 +377,7 @@ end
 
 module Publisher_tools = struct
   let create_run_output
+      ?stale
       ~brand
       ~view
       ~compacted_dirspaces
@@ -523,6 +524,11 @@ module Publisher_tools = struct
                  | `Trial_ending duration -> `Int (Duration.to_day duration)
                  | _ -> `Int 0 );
                ("is_layered_run", `Bool is_layered_run);
+               ( "stale",
+                 CCOption.map_or
+                   ~default:`Null
+                   Terrat_vcs_provider2.Work_manifest_stale.to_yojson
+                   stale );
                ("num_more_layers", `Int num_remaining_layers);
                ("overall_success", `Bool overall_success);
                ( "pre_hooks",

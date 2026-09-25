@@ -22,6 +22,7 @@ module S = struct
     num_remaining_layers : int;
     result : Terrat_api_components_work_manifest_tf_operation_result2.t;
     repo_config : Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t;
+    stale : Terrat_vcs_provider2.Work_manifest_stale.t option;
     synthesized_config : Terrat_change_match3.Config.t;
     work_manifest : (Api.Account.t, unit) Terrat_work_manifest3.Existing.t;
   }
@@ -84,6 +85,7 @@ module S = struct
     in
     let body =
       Publisher_tools.create_run_output
+        ?stale:t.stale
         ~brand:t.brand
         ~view:(if compact then `Compact else `Full)
         ~compacted_dirspaces
@@ -115,6 +117,7 @@ module S = struct
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
+            ?stale:t.stale
             ~brand:t.brand
             ~view:`Compact
             ~compacted_dirspaces:(CCList.map (fun { dirspace; _ } -> dirspace) els)
@@ -143,6 +146,7 @@ module S = struct
             let by_scope = [] in
             let body =
               Publisher_tools.create_run_output
+                ?stale:t.stale
                 ~brand:t.brand
                 ~view:`Compact
                 ~compacted_dirspaces:(CCList.map (fun { dirspace; _ } -> dirspace) els)
@@ -184,6 +188,7 @@ module S = struct
     in
     let body =
       Publisher_tools.create_run_output
+        ?stale:t.stale
         ~brand:t.brand
         ~view:(if compact then `Compact else `Full)
         ~compacted_dirspaces

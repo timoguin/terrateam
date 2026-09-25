@@ -1,6 +1,7 @@
 module Batch = Terrat_vcs_event_evaluator2_batch
 module Compute_node = Terrat_vcs_event_evaluator2_compute_node
 module Work_set = Terrat_vcs_event_evaluator2_work_set
+module Staleness = Terrat_vcs_event_evaluator2_staleness
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Fc = Abbs_future_combinators
 module Irm = Fc.Infix_result_monad
@@ -329,6 +330,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>= fun () ->
               Pgsql_io.tx db ~f:(fun () ->
                   let open Abb.Future.Infix_monad in
+                  let store = store |> Tasks_base.forward_std_keys s in
                   Builder.State.make
                     ~log_id:request_id
                     ~config
@@ -345,6 +347,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     s
                     |> Builder.State.orig_store
                     |> Keys.Key.add Keys.context context
+                    |> Tasks_base.forward_std_keys s
                     |> CCFun.flip Builder.State.set_orig_store s
                   in
                   s)
@@ -355,13 +358,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         "%s : target=%s"
                         (Builder.log_id s)
                         (Hmap.Key.info Keys.eval_pull_request_event));
-                  Builder.eval s Keys.eval_pull_request_event))
-          >>= fun job ->
+                  Builder.eval s Keys.eval_pull_request_event)
+              >>| fun job -> (s, job))
+          >>= fun (s, job) ->
           let open Abb.Future.Infix_monad in
           with_conn storage ~f:(fun db ->
               Pgsql_io.tx db ~f:(fun () ->
                   let open Abb.Future.Infix_monad in
-                  let store = store |> Keys.Key.add Keys.job job in
+                  let store = store |> Keys.Key.add Keys.job job |> Tasks_base.forward_std_keys s in
                   Builder.State.make
                     ~log_id:(Builder.mk_log_id ~request_id job.Tjc.Job.id)
                     ~config
@@ -443,6 +447,19 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         in
         log_err ~request_id run)
       ~finally:(fun () ->
+        let open Abb.Future.Infix_monad in
+        (* An evaluation that starts no work manifest can still change the states of the
+           dirspaces, and no work manifest result refreshes the summary comment then. *)
+        Fc.ignore
+          (Abb.Task.run ~name:"drain-unified-comment" (fun () ->
+               S.Comment.drain_unified_comment_for_pull_request
+                 ~request_id
+                 ~fetch_brand:(S.Repo_config.fetch_brand ~request_id)
+                 config
+                 storage
+                 repo
+                 pull_request_id))
+        >>= fun () ->
         Fc.ignore
         @@ Abb.Future.fork
         @@ run_next_pending_compute ~request_id ~config ~storage ~exec ())
@@ -706,6 +723,29 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | Some work_manifest -> Ok work_manifest
           | None -> Error `Error)
     in
+    (* A result that no slot of the job takes leaves its work manifest queued or
+       running, and the node of such a work manifest is given it again on its next
+       poll.  Abort it: the job then makes the work again when it still needs it,
+       and the node is told it is done. *)
+    let abort_declined db =
+      let open Irm in
+      query_work_manifest db
+      >>= fun work_manifest ->
+      match work_manifest.Terrat_work_manifest3.state with
+      | Terrat_work_manifest3.State.(Queued | Running) ->
+          Logs.info (fun m ->
+              m
+                "%s : WM : RESULT_DECLINED : work_manifest_id= %a"
+                request_id
+                Uuidm.pp
+                work_manifest_id);
+          S.Work_manifest.update_state
+            ~request_id
+            db
+            work_manifest_id
+            Terrat_work_manifest3.State.Aborted
+      | Terrat_work_manifest3.State.(Completed | Aborted) -> Abbs_future_combinators.return_ok ()
+    in
     (* Read the node through [compute_node_work].  The id of a node names no work
        manifest at all now, because the database chooses it, so this table is the
        only way from a work manifest to the node that performed it. *)
@@ -854,7 +894,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         Logs.info (fun m ->
                             m "%s : target=%s" (Builder.log_id s) (Hmap.Key.info target));
                         tx_safe ~request_id @@ Builder.eval s target
-                        >>| fun r -> (s, work_manifest, job, r)
+                        >>= fun r ->
+                        (* A pass that asks to be re-run has not handled the result
+                           yet, thus only the last pass can decline it. *)
+                        (match r with
+                          | `Rerun _ -> Abbs_future_combinators.return_ok ()
+                          | `Ok _ | `Suspend_eval _ | `Noop -> abort_declined db)
+                        >>| fun () -> (s, work_manifest, job, r)
                     | None ->
                         Logs.info (fun m ->
                             m

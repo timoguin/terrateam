@@ -301,6 +301,21 @@ let migrations =
       run_sql [%blob "migrations/2026-09-01-add-compute-node-queued-state.sql"] );
     ( "add-compute-node-id-default",
       run_sql [%blob "migrations/2026-09-02-add-compute-node-id-default.sql"] );
+    ( "add-work-manifest-start-sha",
+      run_sql [%blob "migrations/2026-09-21-add-work-manifest-start-sha.sql"] );
+    ("add-job-restart-of", run_sql [%blob "migrations/2026-09-21-add-job-restart-of.sql"]);
+    ( "add-job-restart-of-index",
+      run_sql ~mode:`Async [%blob "migrations/2026-09-21-add-job-restart-of-index.sql"] );
+    ( "add-repo-tree-build-producer",
+      run_sql [%blob "migrations/2026-09-22-add-repo-tree-build-producer.sql"] );
+    ( "add-work-manifest-run-refs",
+      run_sql [%blob "migrations/2026-09-22-add-work-manifest-run-refs.sql"] );
+    ( "add-github-pull-request-dirspace-summaries",
+      run_sql [%blob "migrations/2026-09-23-add-github-pull-request-dirspace-summaries.sql"] );
+    ( "add-github-pull-request-dirspace-summaries-work-manifest",
+      run_sql
+        [%blob "migrations/2026-09-24-add-github-pull-request-dirspace-summaries-work-manifest.sql"]
+    );
   ]
 
 let run config storage = Mig.run { Migrate.config; storage; tx = () } migrations

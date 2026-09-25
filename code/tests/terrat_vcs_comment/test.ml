@@ -1121,6 +1121,33 @@ let test_unified_tiers =
   in
   Oth_abb.parallel [ table_tier; details_five_tier; truncated_tier ]
 
+(* A dirspace whose apply runs keeps the counts of the plan it applies (#1929), and a stale dirspace
+   shows the counts of its stale run.  A dirspace with no plan shows none, and the total adds only
+   what the rows show. *)
+let test_unified_shows_counts =
+  Oth_abb.test
+    ~desc:"The rows show the plan counts in each state that has a valid plan"
+    ~name:"[Unified] Counts shown by status"
+    (fun () ->
+      let module St = Terrat_vcs_comment_unified.Status in
+      let expected =
+        [
+          (St.Failed, true);
+          (St.Stale, true);
+          (St.Planned, true);
+          (St.Plan_running, false);
+          (St.Apply_running, true);
+          (St.Pending, false);
+          (St.Applied, true);
+        ]
+      in
+      Oth.Assert.eq
+        ~eq:(CCList.equal (fun (s1, b1) (s2, b2) -> St.compare s1 s2 = 0 && CCBool.equal b1 b2))
+        ~pp:(CCFormat.Dump.list (CCFormat.Dump.pair St.pp CCFormat.bool))
+        expected
+        (CCList.map (fun (status, _) -> (status, St.shows_counts status)) expected);
+      Abb.Future.return ())
+
 let test =
   Oth_abb.(
     parallel
@@ -1134,6 +1161,7 @@ let test =
         test_unified_errors;
         test_unified_sorting;
         test_unified_tiers;
+        test_unified_shows_counts;
       ])
 
 let () =

@@ -27,19 +27,6 @@ struct
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
 
-  let repo_config_hash repo_config =
-    let json_str =
-      repo_config
-      |> Terrat_base_repo_config_v1.to_version_1
-      |> Terrat_repo_config.Version_1.to_yojson
-      |> Yojson.Safe.sort
-      |> Yojson.Safe.to_string
-    in
-    Sha256.(to_hex (string json_str))
-
-  let build_config_cache_ref ref_ repo_config =
-    S.Api.Ref.of_string (S.Api.Ref.to_string ref_ ^ ":" ^ repo_config_hash repo_config)
-
   let repo_config_cache_key account repo ref_ repo_config =
     S.Api.Account.to_string account
     ^ "."
@@ -47,7 +34,7 @@ struct
     ^ "."
     ^ S.Api.Ref.to_string ref_
     ^ ":"
-    ^ repo_config_hash repo_config
+    ^ Tasks_base.repo_config_hash repo_config
 
   let update_job_state_completed s job_id db =
     time_it
@@ -84,6 +71,63 @@ struct
         |> Keys.Key.add Keys.repo (S.Api.Pull_request.repo pr)
     | Terrat_vcs_provider2.Target.Drift { repo; _ } ->
         store |> Keys.Key.add Keys.account account |> Keys.Key.add Keys.repo repo
+
+  (* The evaluation of an event of a work manifest works on the commits of that work manifest.  A
+     head that moved since the work manifest was made can need a tree or a config that only a build
+     makes, and a start or a result would wait for that build and answer nothing (RFD 2356).
+
+     A drift reads the refs of its branch live, thus every drift work manifest is pinned.  A pull
+     request is pinned for a plan or an apply only.  A setup work manifest of a pull request can be
+     a work manifest of the destination branch, whose refs are not the refs of the pull request.
+     The [branch_ref] of a merged pull request is its head, which never moves, and its work
+     manifests run at the destination, thus only its working refs are pinned.  The live head of the
+     pull request stays available through [Keys.pull_request].
+
+     A plan or an apply is pinned as [Keys.Refs.Pinned_run], which forbids the creation of work.  A
+     drift setup work manifest stays [Live]: its result creates the plan of the drift, at the commit
+     of the build.  The pin stays in the evaluation of the event; the next layer and the completion
+     of the job read the branch again. *)
+  let pin_work_manifest_refs work_manifest store =
+    let module Wm = Terrat_work_manifest3 in
+    let run_refs =
+      match work_manifest.Wm.steps with
+      | [ Wm.Step.Plan ] | [ Wm.Step.Apply ] | [ Wm.Step.Unsafe_apply ] -> `Run
+      | [] | Wm.Step.(Apply | Build_config | Build_tree | Index | Plan | Unsafe_apply) :: _ ->
+          `Setup
+    in
+    let base_ref = work_manifest.Wm.base_ref in
+    let branch_ref = work_manifest.Wm.branch_ref in
+    match (work_manifest.Wm.target, run_refs) with
+    | Terrat_vcs_provider2.Target.Drift _, _ ->
+        store
+        |> Keys.Key.add Keys.branch_ref (S.Api.Ref.of_string branch_ref)
+        |> Keys.Key.add Keys.dest_branch_ref (S.Api.Ref.of_string base_ref)
+        |> Keys.Key.add
+             Keys.refs
+             (match run_refs with
+             | `Run -> Keys.Refs.Pinned_run
+             | `Setup -> Keys.Refs.Live)
+    | Terrat_vcs_provider2.Target.Pr _, `Setup -> store
+    | Terrat_vcs_provider2.Target.Pr pull_request, `Run -> (
+        let store =
+          store
+          |> Keys.Key.add Keys.working_branch_ref (S.Api.Ref.of_string branch_ref)
+          |> Keys.Key.add Keys.dest_branch_ref (S.Api.Ref.of_string base_ref)
+          |> Keys.Key.add Keys.refs Keys.Refs.Pinned_run
+        in
+        match S.Api.Pull_request.state pull_request with
+        | Terrat_pull_request.State.(Open | Closed) ->
+            Keys.Key.add Keys.branch_ref (S.Api.Ref.of_string branch_ref) store
+        | Terrat_pull_request.State.Merged _ -> store)
+
+  (* The store of [s] without the pin of [pin_work_manifest_refs]: the refs read the branches live
+     again. *)
+  let unpin_refs store =
+    store
+    |> Hmap.rem Keys.branch_ref
+    |> Hmap.rem Keys.dest_branch_ref
+    |> Hmap.rem Keys.working_branch_ref
+    |> Hmap.rem Keys.refs
 
   module H = struct
     let complete_job s job fut =
@@ -467,9 +511,11 @@ struct
               | Tjc.Job.Type_.Unlock _
               | Tjc.Job.Type_.Push -> Terrat_data.Dirspace_set.empty
             in
-            let layers = CCList.map (CCList.map (fun { Dc.dirspace; _ } -> dirspace)) all_matches in
-            intra_pr_selection ~layers ~force
-            >>| fun { Terrat_intra_pr_hash.Selection.to_run; applied } ->
+            let dirspaces =
+              all_matches |> CCList.flatten |> CCList.map (fun dc -> dc.Dc.dirspace)
+            in
+            intra_pr_selection ~dirspaces ~force
+            >>| fun { Terrat_intra_pr_hash.Selection.to_run; out_of_order = _; applied } ->
             (* The files of a dirspace decide whether it is still applied, and no longer the sha of
                the work manifest.  Thus a push which does not touch a dirspace keeps it applied and
                the evaluation stays at the layer it reached. *)
@@ -827,7 +873,7 @@ struct
           >>= fun branch_ref ->
           fetch Keys.repo_config_raw'
           >>= fun (_, repo_config_raw) ->
-          let cache_ref = build_config_cache_ref branch_ref repo_config_raw in
+          let cache_ref = Tasks_base.build_config_cache_ref branch_ref repo_config_raw in
           fetch Keys.working_branch_name
           >>= fun branch ->
           Build_config_wm.run
@@ -977,7 +1023,13 @@ struct
                    holds the paths and not the ids: when the tree of this sha is not stored yet,
                    the cache cannot give what the store needs, so skip it and fetch. *)
                 Builder.run_db s ~f:(fun db ->
-                    S.Db.query_repo_tree_built ~request_id:(Builder.log_id s) db account branch_ref)
+                    S.Db.query_repo_tree_built
+                      ~request_id:(Builder.log_id s)
+                        (* The tree builder is off here, thus a tree of either producer answers. *)
+                      ~script_only:false
+                      db
+                      account
+                      branch_ref)
                 >>= function
                 | true -> load_cache_repo_tree ~log_name:"CACHE_REPO_TREE" cache_key s
                 | false -> Abbs_future_combinators.return_ok None)
@@ -1008,6 +1060,7 @@ struct
                     Builder.run_db s ~f:(fun db ->
                         S.Db.store_repo_tree
                           ~request_id:(Builder.log_id s)
+                          ~built_by_script:false
                           db
                           account
                           branch_ref
@@ -1087,7 +1140,7 @@ struct
           >>= fun dest_branch_ref ->
           fetch Keys.repo_config_dest_branch_raw'
           >>= fun (_, repo_config_raw) ->
-          let cache_ref = build_config_cache_ref dest_branch_ref repo_config_raw in
+          let cache_ref = Tasks_base.build_config_cache_ref dest_branch_ref repo_config_raw in
           fetch Keys.dest_branch_name
           >>= fun branch ->
           Build_config_wm.run
@@ -1111,7 +1164,7 @@ struct
           >>= fun (_, repo_config_raw) ->
           let config_builder = V1.config_builder repo_config_raw in
           if config_builder.V1.Config_builder.enabled then
-            let cache_ref = build_config_cache_ref dest_branch_ref repo_config_raw in
+            let cache_ref = Tasks_base.build_config_cache_ref dest_branch_ref repo_config_raw in
             fetch Keys.built_repo_config_dest_branch_wm_completed
             >>= fun _ ->
             Builder.run_db s ~f:(fun db ->
@@ -1215,7 +1268,7 @@ struct
           >>= fun (_, repo_config_raw) ->
           let config_builder = V1.config_builder repo_config_raw in
           if config_builder.V1.Config_builder.enabled then
-            let cache_ref = build_config_cache_ref branch_ref repo_config_raw in
+            let cache_ref = Tasks_base.build_config_cache_ref branch_ref repo_config_raw in
             fetch Keys.built_repo_config_branch_wm_completed
             >>= fun _ ->
             Builder.run_db s ~f:(fun db ->
@@ -1239,6 +1292,7 @@ struct
        raises [Failure "Missing_dep_err ..."] out of [Builder.State.get_k],
        which surfaces to the user as an opaque internal error. *)
     let reruns = run ~name:"reruns" (fun _ _ -> Abbs_future_combinators.return_ok [])
+    let refs = run ~name:"refs" (fun _ _ -> Abbs_future_combinators.return_ok Keys.Refs.Live)
 
     let repo_config_system_defaults =
       run ~name:"repo_config_system_defaults" (fun s _ ->
@@ -2224,15 +2278,22 @@ struct
                     repo
                     db)))
 
+    (* The checks are finalized at the head of the pull request now.  The evaluation of an event of
+       a plan or an apply reads the commits of that run, thus it leaves this to [run_next_layer],
+       which reads the refs live. *)
     let maybe_finalize_when_all_applied =
       let open Irm in
       fun s { Bs.Fetcher.fetch } ->
-        fetch Keys.all_unapplied_matches
+        fetch Keys.refs
         >>= function
-        | [] ->
-            Logs.info (fun m -> m "%s : ALL_DIRSPACES_APPLIED" (Builder.log_id s));
-            fetch Keys.finalize_unfinished_terrateam_checks
-        | _ -> Abbs_future_combinators.return_ok ()
+        | Keys.Refs.Pinned_run -> Abbs_future_combinators.return_ok ()
+        | Keys.Refs.Live -> (
+            fetch Keys.all_unapplied_matches
+            >>= function
+            | [] ->
+                Logs.info (fun m -> m "%s : ALL_DIRSPACES_APPLIED" (Builder.log_id s));
+                fetch Keys.finalize_unfinished_terrateam_checks
+            | _ -> Abbs_future_combinators.return_ok ())
 
     let run_plan =
       run ~name:"run_plan" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
@@ -2399,95 +2460,6 @@ struct
                 C.State.Terminated))
 
     let eval_compute_node_poll =
-      (* Run the state machine of the work manifest to make the response for the
-         action, then read back the row that the state machine parked. *)
-      let make_work_manifest_response s compute_node work_manifest offering =
-        let module C = Tjc.Compute_node in
-        let module Cw = Tjc.Compute_node_work in
-        let module Offering = Terrat_api_components.Work_manifest_initiate in
-        let module Wm = Terrat_work_manifest3 in
-        let module Wmc = Terrat_api_components.Work_manifest in
-        let module Wmd = Terrat_api_components.Work_manifest_done in
-        match work_manifest with
-        | { Wm.state = Wm.State.(Completed | Aborted); _ } ->
-            Abbs_future_combinators.return_ok (Wmc.Work_manifest_done { Wmd.type_ = `Done })
-        | work_manifest -> (
-            let open Abb.Future.Infix_monad in
-            let work_manifest_event =
-              Keys.Work_manifest_event.Initiate { work_manifest; run_id = offering.Offering.run_id }
-            in
-            let s' =
-              s
-              |> Builder.State.orig_store
-              |> Keys.Key.add Keys.work_manifest_event (Some work_manifest_event)
-              |> Tasks_base.forward_std_keys s
-              |> CCFun.flip Builder.State.set_orig_store s
-            in
-            Builder.eval s' Keys.eval_work_manifest_event
-            >>= function
-            | Ok () | Error (`Suspend_eval _) -> (
-                let open Irm in
-                Builder.run_db s ~f:(fun db ->
-                    time_it
-                      s
-                      (fun m log_id time ->
-                        m
-                          "%s : COMPUTE_NODE : QUERY_WORK : compute_node_id = %a : time=%f"
-                          log_id
-                          Uuidm.pp
-                          compute_node.C.id
-                          time)
-                      (fun () ->
-                        S.Job_context.Compute_node.query_work
-                          ~request_id:(Builder.log_id s)
-                          ~compute_node_id:compute_node.C.id
-                          db))
-                >>| function
-                | Some { Cw.work = Some wm_response; _ } -> wm_response
-                | Some { Cw.work = None; _ } | None -> Wmc.Work_manifest_done { Wmd.type_ = `Done })
-            | Error (#Builder.err as err) ->
-                (* If anything failed, be sure to return to the querying node to give up. *)
-                Logs.info (fun m -> m "%s : %a" (Builder.log_id s) Builder.pp_err err);
-                Abbs_future_combinators.return_ok (Wmc.Work_manifest_done { Wmd.type_ = `Done }))
-      in
-      (* [work] is what the compute node already owes the action, read from its
-         row in [compute_node_work] by the caller. *)
-      let handle_sha_match s compute_node work_manifest work offering =
-        let module Wm = Terrat_work_manifest3 in
-        let module Wmc = Terrat_api_components.Work_manifest in
-        let module Wmd = Terrat_api_components.Work_manifest_done in
-        let open Irm in
-        match (work, work_manifest) with
-        (* The response already exists, so deliver it. *)
-        | Some wm_response, _ -> Abbs_future_combinators.return_ok wm_response
-        (* The node owes nothing and its work manifest is over. *)
-        | None, { Wm.state = Wm.State.(Completed | Aborted); _ } ->
-            terminate_compute_node s compute_node
-            >>| fun () -> Wmc.Work_manifest_done { Wmd.type_ = `Done }
-        (* The node has the work manifest, but the server has not made the
-           response yet.  Take the path that makes it. *)
-        | None, work_manifest -> make_work_manifest_response s compute_node work_manifest offering
-      in
-      let abort_work_manifest s db work_manifest_id run_id =
-        let open Irm in
-        time_it
-          s
-          (fun m log_id _time ->
-            m
-              "%s : WM : UPDATE_STATE : work_manifest_id = %a : run_id = %s : state = aborted"
-              log_id
-              Uuidm.pp
-              work_manifest_id
-              run_id)
-          (fun () ->
-            S.Work_manifest.update_run_id ~request_id:(Builder.log_id s) db work_manifest_id run_id
-            >>= fun () ->
-            S.Work_manifest.update_state
-              ~request_id:(Builder.log_id s)
-              db
-              work_manifest_id
-              Terrat_work_manifest3.State.Aborted)
-      in
       let query_job_by_work_manifest s db work_manifest_id =
         time_it
           s
@@ -2512,29 +2484,35 @@ struct
             m "%s : WORK_MANIFEST : QUERY : id = %a : time=%f" log_id Uuidm.pp work_manifest_id time)
           (fun () -> S.Work_manifest.query ~request_id:(Builder.log_id s) db work_manifest_id)
       in
-      let handle_sha_mismatch s compute_node work_manifest_id offering =
-        let module C = Tjc.Compute_node in
-        let module Offering = Terrat_api_components.Work_manifest_initiate in
+      (* Evaluate the job of an aborted work manifest again, in a state of its own, so that its slot
+         makes the work again at the refs of now.  The evaluation of the start cannot do this
+         itself: a start pins its refs to the work manifest ([pin_work_manifest_refs]), thus it
+         would make the work at the old commit. *)
+      let rerun_job s work_manifest_id =
         let module Wmc = Terrat_api_components.Work_manifest in
         let module Wmd = Terrat_api_components.Work_manifest_done in
         let open Irm in
-        (* We have received a poll from a compute node that has an
-           offering that no longer matches anything we are looking for.
-
-           We will kindly tell this compute node to exit, abort the
-           work manifest, and then run another one to get the
-           results we're actually interested in. *)
-        Logs.info (fun m ->
-            m
-              "%s : COMPUTE_NODE_OFFERING_MISMATCH : compute_node_sha= %s : offering_sha= %s"
-              (Builder.log_id s)
-              compute_node.C.capabilities.C.Capabilities.sha
-              offering.Offering.sha);
-        Builder.run_db s ~f:(fun db ->
-            abort_work_manifest s db work_manifest_id offering.Offering.run_id)
-        >>= fun () ->
         Builder.run_db s ~f:(fun db -> query_job_by_work_manifest s db work_manifest_id)
         >>= function
+        | Some
+            {
+              Tjc.Job.state = Tjc.Job.State.(Completed | Failed);
+              id;
+              completed_at = _;
+              context = _;
+              created_at = _;
+              initiator = _;
+              type_ = _;
+              updated_at = _;
+            } ->
+            (* A job that is over has nothing to make again. *)
+            Logs.info (fun m ->
+                m
+                  "%s : RERUN_JOB : JOB_ALREADY_COMPLETED : job_id = %a"
+                  (Builder.log_id s)
+                  Uuidm.pp
+                  id);
+            Abbs_future_combinators.return_ok (Wmc.Work_manifest_done { Wmd.type_ = `Done })
         | Some job ->
             Builder.run_db s ~f:(fun db -> query_work_manifest s db work_manifest_id)
             >>= fun work_manifest ->
@@ -2549,6 +2527,9 @@ struct
               |> Keys.Key.add Keys.user job.Tjc.Job.initiator
               |> Tasks_base.forward_std_keys s
               |> add_work_manifest_keys work_manifest
+              (* The node that polled is answered done below, thus the work made again goes to a
+                 node of its own. *)
+              |> Keys.Key.add Keys.compute_node None
               |> CCFun.flip Builder.State.set_orig_store s
               |> Builder.State.set_log_id log_id
               |> Builder.State.set_tasks
@@ -2558,7 +2539,7 @@ struct
             in
             Logs.info (fun m ->
                 m
-                  "%s : context_id=%a : log_id= %s"
+                  "%s : RERUN_JOB : context_id=%a : log_id= %s"
                   (Builder.log_id s)
                   Uuidm.pp
                   context.Tjc.Context.id
@@ -2569,10 +2550,157 @@ struct
             Logs.err (fun m -> m "%s : JOB_NOT_FOUND" (Builder.log_id s));
             assert false
       in
+      (* Run the state machine of the work manifest to make the response for the
+         action, then read back the row that the state machine parked.
+
+         A start that parks no response must not leave its work manifest running: nothing would
+         ever complete it, and it would hold its dirspaces for ever.  When the state machine aborted
+         it, because the commits moved and changed its files, or when the evaluation stopped without
+         an answer, abort it and evaluate its job again, which makes the work at the head now.  The
+         aborts count toward the limit of the job. *)
+      let make_work_manifest_response s compute_node work_manifest offering =
+        let module C = Tjc.Compute_node in
+        let module Cw = Tjc.Compute_node_work in
+        let module Offering = Terrat_api_components.Work_manifest_initiate in
+        let module Wm = Terrat_work_manifest3 in
+        let module Wmc = Terrat_api_components.Work_manifest in
+        let module Wmd = Terrat_api_components.Work_manifest_done in
+        match work_manifest with
+        | { Wm.state = Wm.State.(Completed | Aborted); _ } ->
+            Abbs_future_combinators.return_ok (Wmc.Work_manifest_done { Wmd.type_ = `Done })
+        | work_manifest ->
+            let open Abb.Future.Infix_monad in
+            let work_manifest_event =
+              Keys.Work_manifest_event.Initiate
+                { work_manifest; run_id = offering.Offering.run_id; sha = offering.Offering.sha }
+            in
+            let s' =
+              s
+              |> Builder.State.orig_store
+              |> Keys.Key.add Keys.work_manifest_event (Some work_manifest_event)
+              |> Tasks_base.forward_std_keys s
+              |> CCFun.flip Builder.State.set_orig_store s
+            in
+            Builder.eval s' Keys.eval_work_manifest_event
+            >>= fun evaluated ->
+            (match evaluated with
+            | Ok () | Error (`Suspend_eval _) -> ()
+            | Error (#Builder.err as err) ->
+                Logs.info (fun m -> m "%s : %a" (Builder.log_id s) Builder.pp_err err));
+            let open Irm in
+            Builder.run_db s ~f:(fun db ->
+                time_it
+                  s
+                  (fun m log_id time ->
+                    m
+                      "%s : COMPUTE_NODE : QUERY_WORK : compute_node_id = %a : time=%f"
+                      log_id
+                      Uuidm.pp
+                      compute_node.C.id
+                      time)
+                  (fun () ->
+                    S.Job_context.Compute_node.query_work
+                      ~request_id:(Builder.log_id s)
+                      ~compute_node_id:compute_node.C.id
+                      db))
+            >>= fun work ->
+            CCOption.map_lazy
+              (fun () ->
+                Builder.run_db s ~f:(fun db -> query_work_manifest s db work_manifest.Wm.id)
+                >>= fun queried ->
+                match CCOption.map (fun wm -> wm.Wm.state) queried with
+                | Some Wm.State.(Queued | Running) ->
+                    (* A start with pinned refs does not wait for a build, thus this is a safety
+                       net: a start that answered nothing is aborted, and the job is evaluated
+                       again with live refs. *)
+                    Logs.info (fun m ->
+                        m
+                          "%s : COMPUTE_NODE : START_UNANSWERED : work_manifest_id = %a"
+                          (Builder.log_id s)
+                          Uuidm.pp
+                          work_manifest.Wm.id);
+                    Builder.run_db s ~f:(fun db ->
+                        Tasks_base.abort_work_manifest
+                          s
+                          db
+                          work_manifest.Wm.id
+                          offering.Offering.run_id)
+                    >>= fun () -> rerun_job s work_manifest.Wm.id
+                | Some Wm.State.Aborted ->
+                    Logs.info (fun m ->
+                        m
+                          "%s : COMPUTE_NODE : START_RESTARTED : work_manifest_id = %a"
+                          (Builder.log_id s)
+                          Uuidm.pp
+                          work_manifest.Wm.id);
+                    rerun_job s work_manifest.Wm.id
+                | Some Wm.State.Completed | None ->
+                    Abbs_future_combinators.return_ok (Wmc.Work_manifest_done { Wmd.type_ = `Done }))
+              Abbs_future_combinators.return_ok
+              (CCOption.flat_map (fun cw -> cw.Cw.work) work)
+      in
+      (* [work] is what the compute node already owes the action, read from its
+         row in [compute_node_work] by the caller. *)
+      let handle_sha_match s compute_node work_manifest work offering =
+        let module Wm = Terrat_work_manifest3 in
+        let module Wmc = Terrat_api_components.Work_manifest in
+        let module Wmd = Terrat_api_components.Work_manifest_done in
+        let open Irm in
+        (* The response already exists, so deliver it. *)
+        CCOption.map_lazy
+          (fun () ->
+            match work_manifest with
+            (* The node owes nothing and its work manifest is over. *)
+            | { Wm.state = Wm.State.(Completed | Aborted); _ } ->
+                terminate_compute_node s compute_node
+                >>| fun () -> Wmc.Work_manifest_done { Wmd.type_ = `Done }
+            (* The node has the work manifest, but the server has not made the
+               response yet.  Take the path that makes it. *)
+            | work_manifest -> make_work_manifest_response s compute_node work_manifest offering)
+          Abbs_future_combinators.return_ok
+          work
+      in
+      (* Two pushes close together can make two plans of one pull request.  The older one is
+         replaced when newer plans of the pull request cover each of its dirspaces (RFD 2356):
+         abort it before it does any work and end its node.  Its job does not make the plan again,
+         because the newer plans supersede it. *)
+      let supersede_plan s compute_node work_manifest offering =
+        let module Offering = Terrat_api_components.Work_manifest_initiate in
+        let module Wm = Terrat_work_manifest3 in
+        let module Wmc = Terrat_api_components.Work_manifest in
+        let module Wmd = Terrat_api_components.Work_manifest_done in
+        let open Irm in
+        let id = work_manifest.Wm.id in
+        match (work_manifest.Wm.target, work_manifest.Wm.steps) with
+        | Terrat_vcs_provider2.Target.Pr _, [ Wm.Step.Plan ] -> (
+            Builder.run_db s ~f:(fun db ->
+                query_job_by_work_manifest s db id
+                >>= CCOption.map_or ~default:(Abbs_future_combinators.return_ok false) (fun job ->
+                    S.Db.query_plan_superseded
+                      ~request_id:(Builder.log_id s)
+                      ~job_id:job.Tjc.Job.id
+                      ~work_manifest_id:id
+                      db))
+            >>= function
+            | false -> Abbs_future_combinators.return_ok None
+            | true ->
+                Logs.info (fun m ->
+                    m
+                      "%s : COMPUTE_NODE : PLAN_SUPERSEDED : work_manifest_id = %a"
+                      (Builder.log_id s)
+                      Uuidm.pp
+                      id);
+                Builder.run_db s ~f:(fun db ->
+                    Tasks_base.abort_work_manifest s db id offering.Offering.run_id)
+                >>= fun () ->
+                terminate_compute_node s compute_node
+                >>| fun () -> Some (Wmc.Work_manifest_done { Wmd.type_ = `Done }))
+        | Terrat_vcs_provider2.Target.Pr _, ([] | _ :: _) | Terrat_vcs_provider2.Target.Drift _, _
+          -> Abbs_future_combinators.return_ok None
+      in
       run ~name:"eval_compute_node_poll" (fun s { Bs.Fetcher.fetch } ->
           let module C = Tjc.Compute_node in
           let module Cw = Tjc.Compute_node_work in
-          let module Offering = Terrat_api_components.Work_manifest_initiate in
           let module Wm = Terrat_work_manifest3 in
           let module Wmc = Terrat_api_components.Work_manifest in
           let module Wmd = Terrat_api_components.Work_manifest_done in
@@ -2656,54 +2784,18 @@ struct
                       | Some work_manifest ->
                           fetch Keys.compute_node_offering
                           >>= fun offering ->
-                          (* Compare the sha that the runner is offering vs the sha that
-                         the compute node is capable of operating against.
-
-                         These should match, however it is possible they don't because:
-
-                         1. There has been an update to this branch between evaluating
-                            the job and running it.
-
-                         2. This is a pull request and the destination branch has
-                            been updated and this PR has not been rebased yet.  The
-                            GitHub API always describes pull requests in terms of
-                            the original commit they were created against and not
-                            the latest commit of the base.  In this case, we will
-                            ALWAYS make work manifests that reference the pull
-                            requests base and not the actual base so we can't just
-                            retry.
-
-                         In case (1), we just want to fail this work manifest and
-                         run another one, that will pick up the new references and
-                         move on.
-
-                         In case (2), however, we have to use this same work manifest.
-
-                         We have two options of what we could do:
-
-                         1. We could tell the runner to switch to the commit we
-                            actually want to run against.
-
-                         2. Determine if this is an operation against the
-                            destination branch and validate it against the actual
-                            destination branch ref and use it.
-
-                         Despite (1) being the more correct answer, we cannot do it
-                         it right now because it would require modifying the
-                         protocol between the server and the runner and we aren't in
-                         a position to change that right now, so we will do (2).
-
-                         How do we determine if we can even apply situation (2)?
-                         Again, to minimize changes to the code, and database right
-                         now, we are going to use a heuristic.  In the work
-                         manifest, if the base_ref and branch_ref are the same, we
-                         will assume we are in (2) and run.
-                       *)
-                          if
-                            compute_node.C.capabilities.C.Capabilities.sha = offering.Offering.sha
-                            || CCString.equal work_manifest.Wm.base_ref work_manifest.Wm.branch_ref
-                          then handle_sha_match s compute_node work_manifest work offering
-                          else handle_sha_mismatch s compute_node work_manifest_id offering
+                          (* The runner can offer a sha that is not the one the node was made
+                             for: the branch moved between the evaluation of the job and the run.
+                             A moved commit is not a reason to abort on its own (RFD 2356): the
+                             start of the state machine compares the files of the dirspaces and
+                             restarts only on a proven impact.  A plan that a newer plan of the pull
+                             request replaced is aborted before that. *)
+                          (if CCOption.is_some work then Abbs_future_combinators.return_ok None
+                           else supersede_plan s compute_node work_manifest offering)
+                          >>= CCOption.map_lazy
+                                (fun () ->
+                                  handle_sha_match s compute_node work_manifest work offering)
+                                Abbs_future_combinators.return_ok
                       | None ->
                           (* If anything failed, be sure to return to the querying node to give up. *)
                           Logs.info (fun m -> m "%s : UNKNOWN_WORK_MANIFEST" (Builder.log_id s));
@@ -2784,6 +2876,7 @@ struct
                     |> Keys.Key.add Keys.user job.Tjc.Job.initiator
                     |> Tasks_base.forward_std_keys s
                     |> add_work_manifest_keys work_manifest
+                    |> pin_work_manifest_refs work_manifest
                     |> CCFun.flip Builder.State.set_orig_store s
                     |> Builder.State.set_log_id log_id
                     |> Builder.State.set_tasks
@@ -2873,9 +2966,12 @@ struct
                 | Tjc.Job.Type_.Autoplan | Tjc.Job.Type_.Plan _ ->
                     fetch Keys.run_plan
                     >>= fun () ->
+                    (* The checks of the kept dirspaces go to the head of the pull request now, thus
+                       this evaluation reads the refs live even in the evaluation of an event. *)
                     let s' =
                       s
                       |> Builder.State.orig_store
+                      |> unpin_refs
                       |> Tasks_base.forward_std_keys s
                       |> CCFun.flip Builder.State.set_orig_store s
                     in
@@ -3373,90 +3469,146 @@ struct
           in
           let module Wm = Terrat_work_manifest3 in
           let open Irm in
+          (* A drift whose files changed while it reconciled has a restart job, made when its result
+             was handled (RFD 2356).  Run it instead of the next step of this job: the reconcile of
+             this job is for a commit that the branch has left. *)
           fetch Keys.job
+          >>= fun job ->
+          Builder.run_db s ~f:(fun db ->
+              S.Db.query_job_restart ~request_id:(Builder.log_id s) ~job_id:job.Tjc.Job.id db
+              >>= CCOption.map_or
+                    ~default:(Abbs_future_combinators.return_ok None)
+                    (fun restart_id ->
+                      S.Job_context.Job.query ~request_id:(Builder.log_id s) db ~job_id:restart_id))
           >>= function
-          | {
-              Tjc.Job.type_ =
-                Tjc.Job.Type_.Plan
-                  { kind = Some (Tjc.Job.Type_.Kind.Drift { reconcile = true }) as kind; tag_query };
-              context;
-              initiator;
-              _;
-            } ->
-              (* If we've just finished a drift plan with reconciliation on,
-                 then time to run the apply *)
-              Logs.info (fun m -> m "%s : DRIFT : RECONCILE" (Builder.log_id s));
-              Builder.run_db s ~f:(fun db ->
-                  S.Job_context.Job.create
-                    ~request_id:(Builder.log_id s)
-                    db
-                    (Tjc.Job.Type_.Apply { tag_query; kind; force = false })
-                    context
-                    initiator)
-              >>= fun job ->
+          | Some
+              ({
+                 Tjc.Job.state = Tjc.Job.State.Running;
+                 completed_at = _;
+                 context = _;
+                 created_at = _;
+                 id = _;
+                 initiator = _;
+                 type_ = _;
+                 updated_at = _;
+               } as restart) ->
               Logs.info (fun m ->
-                  m "%s : CREATE_JOB : new_job= %a" (Builder.log_id s) Uuidm.pp job.Tjc.Job.id);
+                  m
+                    "%s : DRIFT : RUN_RESTART : job=%a"
+                    (Builder.log_id s)
+                    Uuidm.pp
+                    restart.Tjc.Job.id);
               let s' =
                 s
                 |> Builder.State.orig_store
-                |> Keys.Key.add Keys.job job
+                |> Keys.Key.add Keys.job restart
                 |> Keys.Key.add Keys.work_manifest_event None
                 |> Builder.State.forward_store_value Keys.context s
                 |> Tasks_base.forward_std_keys s
                 |> CCFun.flip Builder.State.set_orig_store s
-                |> Builder.State.set_log_id (Uuidm.to_string job.Tjc.Job.id)
+                |> Builder.State.set_log_id (Uuidm.to_string restart.Tjc.Job.id)
               in
-              Builder.eval s' Keys.run_apply
-          | {
-              Tjc.Job.type_ = Tjc.Job.Type_.Plan { kind = Some (Tjc.Job.Type_.Kind.Drift _); _ };
-              _;
-            } ->
-              Logs.info (fun m -> m "%s : DRIFT_COMPLETE" (Builder.log_id s));
+              Builder.eval s' Keys.run_plan
+          | Some _ ->
+              (* The restart is already over, and it went on from there on its own. *)
               Abbs_future_combinators.return_ok ()
-          | ( { Tjc.Job.type_ = Tjc.Job.Type_.Apply _; _ }
-            | { Tjc.Job.type_ = Tjc.Job.Type_.Autoapply; _ }
-            | { Tjc.Job.type_ = Tjc.Job.Type_.Autoplan; _ }
-            | { Tjc.Job.type_ = Tjc.Job.Type_.Plan _; _ } ) as job -> (
-              fetch Keys.all_unapplied_matches
-              >>= function
-              | [] ->
-                  Logs.info (fun m -> m "%s : ALL_DIRSPACES_APPLIED" (Builder.log_id s));
-                  fetch Keys.maybe_create_completed_apply_check
-                  >>= fun () ->
-                  fetch Keys.finalize_unfinished_terrateam_checks
-                  >>= fun () -> fetch Keys.maybe_automerge
-              | _ :: _ as all_unapplied_matches -> (
-                  fetch Keys.working_layer
-                  >>= fun working_layer ->
-                  fetch Keys.synthesized_config
-                  >>= fun config ->
-                  fetch Keys.work_manifests_for_job
-                  >>= fun work_manifests ->
-                  let just_ran =
-                    CCList.flat_map
-                      (fun {
-                             Wm.changes;
-                             account = _;
-                             base_ref = _;
-                             branch = _;
-                             branch_ref = _;
-                             completed_at = _;
-                             created_at = _;
-                             denied_dirspaces = _;
-                             environment = _;
-                             id = _;
-                             initiator = _;
-                             run_id = _;
-                             runs_on = _;
-                             state = _;
-                             steps = _;
-                             tag_query = _;
-                             target = _;
-                           }
-                         -> CCList.map Terrat_change.Dirspaceflow.to_dirspace changes)
-                      work_manifests
+          | None -> (
+              match job with
+              | {
+               Tjc.Job.type_ =
+                 Tjc.Job.Type_.Plan
+                   {
+                     kind = Some (Tjc.Job.Type_.Kind.Drift { reconcile = true }) as kind;
+                     tag_query;
+                   };
+               id = plan_job_id;
+               context;
+               initiator;
+               _;
+              } ->
+                  (* If we've just finished a drift plan with reconciliation on,
+                 then time to run the apply *)
+                  Logs.info (fun m -> m "%s : DRIFT : RECONCILE" (Builder.log_id s));
+                  (* The apply continues the plan, thus it takes the place of the plan in a chain of
+                     restarts, and a restart from the apply counts every restart before it. *)
+                  Builder.run_db s ~f:(fun db ->
+                      S.Job_context.Job.create
+                        ~request_id:(Builder.log_id s)
+                        db
+                        (Tjc.Job.Type_.Apply { tag_query; kind; force = false })
+                        context
+                        initiator
+                      >>= fun job ->
+                      S.Db.inherit_job_restart_of
+                        ~request_id:(Builder.log_id s)
+                        ~job_id:job.Tjc.Job.id
+                        ~from_job_id:plan_job_id
+                        db
+                      >>| fun () -> job)
+                  >>= fun job ->
+                  Logs.info (fun m ->
+                      m "%s : CREATE_JOB : new_job= %a" (Builder.log_id s) Uuidm.pp job.Tjc.Job.id);
+                  let s' =
+                    s
+                    |> Builder.State.orig_store
+                    |> Keys.Key.add Keys.job job
+                    |> Keys.Key.add Keys.work_manifest_event None
+                    |> Builder.State.forward_store_value Keys.context s
+                    |> Tasks_base.forward_std_keys s
+                    |> CCFun.flip Builder.State.set_orig_store s
+                    |> Builder.State.set_log_id (Uuidm.to_string job.Tjc.Job.id)
                   in
-                  (* Start another round only if this work manifest left
+                  Builder.eval s' Keys.run_apply
+              | {
+               Tjc.Job.type_ = Tjc.Job.Type_.Plan { kind = Some (Tjc.Job.Type_.Kind.Drift _); _ };
+               _;
+              } ->
+                  Logs.info (fun m -> m "%s : DRIFT_COMPLETE" (Builder.log_id s));
+                  Abbs_future_combinators.return_ok ()
+              | ( { Tjc.Job.type_ = Tjc.Job.Type_.Apply _; _ }
+                | { Tjc.Job.type_ = Tjc.Job.Type_.Autoapply; _ }
+                | { Tjc.Job.type_ = Tjc.Job.Type_.Autoplan; _ }
+                | { Tjc.Job.type_ = Tjc.Job.Type_.Plan _; _ } ) as job -> (
+                  fetch Keys.all_unapplied_matches
+                  >>= function
+                  | [] ->
+                      Logs.info (fun m -> m "%s : ALL_DIRSPACES_APPLIED" (Builder.log_id s));
+                      fetch Keys.maybe_create_completed_apply_check
+                      >>= fun () ->
+                      fetch Keys.finalize_unfinished_terrateam_checks
+                      >>= fun () -> fetch Keys.maybe_automerge
+                  | _ :: _ as all_unapplied_matches -> (
+                      fetch Keys.working_layer
+                      >>= fun working_layer ->
+                      fetch Keys.synthesized_config
+                      >>= fun config ->
+                      fetch Keys.work_manifests_for_job
+                      >>= fun work_manifests ->
+                      let just_ran =
+                        CCList.flat_map
+                          (fun {
+                                 Wm.changes;
+                                 account = _;
+                                 base_ref = _;
+                                 branch = _;
+                                 branch_ref = _;
+                                 completed_at = _;
+                                 created_at = _;
+                                 denied_dirspaces = _;
+                                 environment = _;
+                                 id = _;
+                                 initiator = _;
+                                 run_id = _;
+                                 runs_on = _;
+                                 state = _;
+                                 steps = _;
+                                 tag_query = _;
+                                 target = _;
+                               }
+                             -> CCList.map Terrat_change.Dirspaceflow.to_dirspace changes)
+                          work_manifests
+                      in
+                      (* Start another round only if this work manifest left
                      something ready that was not ready before.
 
                      "Did the first layer gain a member" is the test, not "is
@@ -3471,58 +3623,30 @@ struct
                      the same layer over and over -- and it also holds for a
                      partial apply, which frees nobody and must not set another
                      plan going. *)
-                  if Work_set.next_round_ready ~config ~all_unapplied_matches ~just_ran then (
-                    let { Tjc.Job.context; initiator; type_; _ } = job in
-                    let job_type =
-                      match type_ with
-                      | Tjc.Job.Type_.(
-                          ( Plan { tag_query; kind = Some _ as kind }
-                          | Apply { tag_query; kind = Some _ as kind; force = _ } )) ->
-                          Tjc.Job.Type_.(Plan { tag_query; kind })
-                      | Tjc.Job.Type_.Apply _
-                      | Tjc.Job.Type_.Autoapply
-                      | Tjc.Job.Type_.Autoplan
-                      | Tjc.Job.Type_.Gate_approval _
-                      | Tjc.Job.Type_.Help
-                      | Tjc.Job.Type_.Index
-                      | Tjc.Job.Type_.Plan _
-                      | Tjc.Job.Type_.Push
-                      | Tjc.Job.Type_.Repo_config
-                      | Tjc.Job.Type_.Unlock _ -> Tjc.Job.Type_.Autoplan
-                    in
-                    Builder.run_db s ~f:(fun db ->
-                        S.Job_context.Job.create
-                          ~request_id:(Builder.log_id s)
-                          db
-                          job_type
-                          context
-                          initiator)
-                    >>= fun job ->
-                    Logs.info (fun m ->
-                        m "%s : CREATE_JOB : new_job= %a" (Builder.log_id s) Uuidm.pp job.Tjc.Job.id);
-                    let s' =
-                      s
-                      |> Builder.State.orig_store
-                      |> Keys.Key.add Keys.job job
-                      |> Keys.Key.add Keys.work_manifest_event None
-                      |> Builder.State.forward_store_value Keys.context s
-                      |> Tasks_base.forward_std_keys s
-                      |> CCFun.flip Builder.State.set_orig_store s
-                      |> Builder.State.set_log_id (Uuidm.to_string job.Tjc.Job.id)
-                    in
-                    Builder.eval s' Keys.run_plan)
-                  else
-                    match job with
-                    | { Tjc.Job.type_ = Tjc.Job.Type_.Apply _; _ } ->
-                        Abbs_future_combinators.return_ok ()
-                    | { Tjc.Job.type_ = Tjc.Job.Type_.(Plan _ | Autoplan); _ }
-                      when can_stack_auto_apply working_layer ->
-                        let { Tjc.Job.context; initiator; _ } = job in
+                      if Work_set.next_round_ready ~config ~all_unapplied_matches ~just_ran then (
+                        let { Tjc.Job.context; initiator; type_; _ } = job in
+                        let job_type =
+                          match type_ with
+                          | Tjc.Job.Type_.(
+                              ( Plan { tag_query; kind = Some _ as kind }
+                              | Apply { tag_query; kind = Some _ as kind; force = _ } )) ->
+                              Tjc.Job.Type_.(Plan { tag_query; kind })
+                          | Tjc.Job.Type_.Apply _
+                          | Tjc.Job.Type_.Autoapply
+                          | Tjc.Job.Type_.Autoplan
+                          | Tjc.Job.Type_.Gate_approval _
+                          | Tjc.Job.Type_.Help
+                          | Tjc.Job.Type_.Index
+                          | Tjc.Job.Type_.Plan _
+                          | Tjc.Job.Type_.Push
+                          | Tjc.Job.Type_.Repo_config
+                          | Tjc.Job.Type_.Unlock _ -> Tjc.Job.Type_.Autoplan
+                        in
                         Builder.run_db s ~f:(fun db ->
                             S.Job_context.Job.create
                               ~request_id:(Builder.log_id s)
                               db
-                              Tjc.Job.Type_.Autoapply
+                              job_type
                               context
                               initiator)
                         >>= fun job ->
@@ -3542,21 +3666,68 @@ struct
                           |> CCFun.flip Builder.State.set_orig_store s
                           |> Builder.State.set_log_id (Uuidm.to_string job.Tjc.Job.id)
                         in
-                        Builder.eval s' Keys.run_apply
-                    | { Tjc.Job.type_ = Tjc.Job.Type_.(Plan _ | Autoplan); _ } ->
-                        Abbs_future_combinators.return_ok ()
-                    | {
-                     Tjc.Job.type_ =
-                       Tjc.Job.Type_.(
-                         Autoapply | Gate_approval _ | Help | Index | Repo_config | Unlock _ | Push);
-                     _;
-                    } -> Abbs_future_combinators.return_ok ()))
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Gate_approval _; _ }
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Help; _ }
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Index; _ }
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Repo_config; _ }
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Unlock _; _ }
-          | { Tjc.Job.type_ = Tjc.Job.Type_.Push; _ } -> Abbs_future_combinators.return_ok ())
+                        Builder.eval s' Keys.run_plan)
+                      else
+                        match job with
+                        | { Tjc.Job.type_ = Tjc.Job.Type_.Apply _; _ } ->
+                            Abbs_future_combinators.return_ok ()
+                        | { Tjc.Job.type_ = Tjc.Job.Type_.(Plan _ | Autoplan); _ }
+                          when can_stack_auto_apply working_layer ->
+                            let { Tjc.Job.context; initiator; _ } = job in
+                            Builder.run_db s ~f:(fun db ->
+                                S.Job_context.Job.create
+                                  ~request_id:(Builder.log_id s)
+                                  db
+                                  Tjc.Job.Type_.Autoapply
+                                  context
+                                  initiator)
+                            >>= fun job ->
+                            Logs.info (fun m ->
+                                m
+                                  "%s : CREATE_JOB : new_job= %a"
+                                  (Builder.log_id s)
+                                  Uuidm.pp
+                                  job.Tjc.Job.id);
+                            let s' =
+                              s
+                              |> Builder.State.orig_store
+                              |> Keys.Key.add Keys.job job
+                              |> Keys.Key.add Keys.work_manifest_event None
+                              |> Builder.State.forward_store_value Keys.context s
+                              |> Tasks_base.forward_std_keys s
+                              |> CCFun.flip Builder.State.set_orig_store s
+                              |> Builder.State.set_log_id (Uuidm.to_string job.Tjc.Job.id)
+                            in
+                            Builder.eval s' Keys.run_apply
+                        | { Tjc.Job.type_ = Tjc.Job.Type_.(Plan _ | Autoplan); _ } ->
+                            Abbs_future_combinators.return_ok ()
+                        | {
+                         Tjc.Job.type_ =
+                           Tjc.Job.Type_.(
+                             ( Autoapply
+                             | Gate_approval _
+                             | Help
+                             | Index
+                             | Repo_config
+                             | Unlock _
+                             | Push ));
+                         _;
+                        } -> Abbs_future_combinators.return_ok ()))
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Gate_approval _; _ }
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Help; _ }
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Index; _ }
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Repo_config; _ }
+              | { Tjc.Job.type_ = Tjc.Job.Type_.Unlock _; _ }
+              | {
+                  Tjc.Job.type_ = Tjc.Job.Type_.Push;
+                  completed_at = _;
+                  context = _;
+                  created_at = _;
+                  id = _;
+                  initiator = _;
+                  state = _;
+                  updated_at = _;
+                } -> Abbs_future_combinators.return_ok ()))
 
     let complete_no_change_dirspaces =
       run ~name:"complete_no_change_dirspaces" (fun s { Bs.Fetcher.fetch } ->
@@ -3616,7 +3787,237 @@ struct
           >>= fun branch_ref ->
           fetch Keys.create_commit_checks
           >>= fun create_commit_checks ->
-          create_commit_checks' create_commit_checks branch_ref checks)
+          create_commit_checks' create_commit_checks branch_ref checks
+          >>= fun () -> fetch Keys.kept_dirspace_checks)
+
+    (* A push to an open pull request makes a new head with no checks.  The intra-PR rule keeps the
+       dirspaces whose files did not change, and runs nothing for them, thus nothing else writes
+       their checks on the new head (RFD 2356).  A later evaluation can also find that a stale run
+       is good again (retroactive freshness), and its checks must say so.
+
+       Each dirspace of the pull request which this job does not run gets the check of its runs:
+       Completed for a plan which still stands and for an applied dirspace, Failed when its newest
+       run of that type failed.  A check which already says the same, or which is Queued or Running
+       because another job runs it now, is not written.  The combined apply check follows the
+       unapplied dirspaces. *)
+    let kept_dirspace_checks =
+      run ~name:"kept_dirspace_checks" (fun s { Bs.Fetcher.fetch } ->
+          let module Wm = Terrat_work_manifest3 in
+          let module Dc = Terrat_change_match3.Dirspace_config in
+          let module Status = Terrat_commit_check.Status in
+          let open Irm in
+          fetch Keys.context
+          >>= function
+          | {
+              Tjc.Context.scope = Tjc.Context.Scope.Branch _;
+              created_at = _;
+              id = _;
+              updated_at = _;
+            } -> Abbs_future_combinators.return_ok ()
+          | {
+              Tjc.Context.scope = Tjc.Context.Scope.Pull_request _;
+              created_at = _;
+              id = _;
+              updated_at = _;
+            } as context -> (
+              fetch Keys.pull_request
+              >>= fun pull_request ->
+              match S.Api.Pull_request.state pull_request with
+              | Terrat_pull_request.State.Closed -> Abbs_future_combinators.return_ok ()
+              | Terrat_pull_request.State.(Open | Merged _) -> (
+                  fetch Keys.work_manifests_for_job
+                  >>= fun work_manifests ->
+                  let job_dirspaces =
+                    work_manifests
+                    |> CCList.flat_map (fun wm ->
+                        CCList.map Terrat_change.Dirspaceflow.to_dirspace wm.Wm.changes)
+                    |> Terrat_data.Dirspace_set.of_list
+                  in
+                  let not_in_job dirspace =
+                    not (Terrat_data.Dirspace_set.mem dirspace job_dirspaces)
+                  in
+                  fetch Keys.matches
+                  >>= fun {
+                            Keys.Matches.all_matches;
+                            already_planned_matches;
+                            all_unapplied_matches;
+                            _;
+                          }
+                        ->
+                  let dirspaces_of = CCList.map (fun dc -> dc.Dc.dirspace) in
+                  let unapplied =
+                    Terrat_data.Dirspace_set.of_list
+                      (dirspaces_of (CCList.flatten all_unapplied_matches))
+                  in
+                  let kept =
+                    all_matches
+                    |> CCList.flatten
+                    |> dirspaces_of
+                    |> CCList.filter not_in_job
+                    |> CCList.sort_uniq ~cmp:Terrat_dirspace.compare
+                  in
+                  let kept_applied =
+                    CCList.filter
+                      (fun dirspace -> not (Terrat_data.Dirspace_set.mem dirspace unapplied))
+                      kept
+                  in
+                  let kept_planned =
+                    already_planned_matches
+                    |> dirspaces_of
+                    |> CCList.filter not_in_job
+                    |> CCList.append kept_applied
+                    |> CCList.sort_uniq ~cmp:Terrat_dirspace.compare
+                  in
+                  Builder.run_db s ~f:(fun db ->
+                      S.Db.query_dirspace_runs_for_context
+                        ~request_id:(Builder.log_id s)
+                        db
+                        context
+                        kept)
+                  >>= fun runs ->
+                  let failed_of is_failed =
+                    runs
+                    |> CCList.filter is_failed
+                    |> CCList.map (fun runs ->
+                        runs.Terrat_vcs_provider2.Dirspace_runs.state
+                          .Terrat_intra_pr_hash.Dirspace_state.dirspace)
+                    |> Terrat_data.Dirspace_set.of_list
+                  in
+                  let failed_plans =
+                    failed_of (fun runs -> runs.Terrat_vcs_provider2.Dirspace_runs.plan_failed)
+                  in
+                  let failed_applies =
+                    failed_of (fun runs -> runs.Terrat_vcs_provider2.Dirspace_runs.apply_failed)
+                  in
+                  fetch Keys.branch_ref
+                  >>= fun branch_ref ->
+                  (* The summary comment shows the same states as the checks. *)
+                  let summaries =
+                    CCList.filter_map
+                      (fun dirspace ->
+                        Terrat_vcs_event_evaluator2_staleness.Summary.decide
+                          ~applied:(Terrat_data.Dirspace_set.of_list kept_applied)
+                          ~planned:(Terrat_data.Dirspace_set.of_list kept_planned)
+                          ~failed:(Terrat_data.Dirspace_set.union failed_plans failed_applies)
+                          dirspace
+                        |> CCOption.map (fun state -> (dirspace, state)))
+                      kept
+                  in
+                  Builder.run_db s ~f:(fun db ->
+                      S.Db.store_dirspace_summaries
+                        ~request_id:(Builder.log_id s)
+                        db
+                        context
+                        ~sha:branch_ref
+                        ~work_manifest:None
+                        summaries)
+                  >>= fun () ->
+                  fetch Keys.account
+                  >>= fun account ->
+                  fetch Keys.repo
+                  >>= fun repo ->
+                  fetch Keys.repo_config
+                  >>= fun repo_config ->
+                  fetch Keys.commit_checks
+                  >>= fun commit_checks ->
+                  let notifications = Terrat_base_repo_config_v1.notifications repo_config in
+                  (* A newest run which failed says more than a run which stands, thus it decides the
+                     status of the check. *)
+                  let checks_of ~run ~step ~failed dirspaces =
+                    let dirspaces =
+                      CCList.sort_uniq
+                        ~cmp:Terrat_dirspace.compare
+                        (dirspaces @ Terrat_data.Dirspace_set.to_list failed)
+                    in
+                    if
+                      Terrat_base_repo_config_v1.Notifications.dirspace_status_checks_enabled
+                        notifications
+                        ~run
+                      && CCList.length dirspaces <= Tasks_base.dirspace_check_threshold
+                    then
+                      CCList.map
+                        (fun dirspace ->
+                          let status, description =
+                            if Terrat_data.Dirspace_set.mem dirspace failed then
+                              (Status.Failed, "Failed")
+                            else (Status.Completed, "Completed")
+                          in
+                          S.Commit_check.make_dirspace
+                            ~config:(Builder.State.config s)
+                            ~description
+                            ~run_type:(Wm.Step.to_string step)
+                            ~dirspace
+                            ~status
+                            ~repo
+                            ~account
+                            ())
+                        dirspaces
+                    else []
+                  in
+                  let needed { Terrat_commit_check.title; status; details_url = _; description = _ }
+                      =
+                    CCOption.for_all
+                      (function
+                        | {
+                            Terrat_commit_check.status = Status.(Queued | Running);
+                            details_url = _;
+                            description = _;
+                            title = _;
+                          } -> false
+                        | {
+                            Terrat_commit_check.status = existing;
+                            details_url = _;
+                            description = _;
+                            title = _;
+                          } -> not (Status.equal existing status))
+                      (CCList.find_opt
+                         (fun {
+                                Terrat_commit_check.title = existing;
+                                details_url = _;
+                                description = _;
+                                status = _;
+                              }
+                            -> CCString.equal existing title)
+                         commit_checks)
+                  in
+                  let checks =
+                    CCList.filter
+                      needed
+                      (checks_of ~run:`Plan ~step:Wm.Step.Plan ~failed:failed_plans kept_planned
+                      @ checks_of
+                          ~run:`Apply
+                          ~step:Wm.Step.Apply
+                          ~failed:failed_applies
+                          kept_applied)
+                  in
+                  Logs.info (fun m ->
+                      m
+                        "%s : KEPT_DIRSPACE_CHECKS : planned=%d : applied=%d : failed=%d : \
+                         written=%d"
+                        (Builder.log_id s)
+                        (CCList.length kept_planned)
+                        (CCList.length kept_applied)
+                        (Terrat_data.Dirspace_set.cardinal
+                           (Terrat_data.Dirspace_set.union failed_plans failed_applies))
+                        (CCList.length checks));
+                  fetch Keys.create_commit_checks
+                  >>= fun create_commit_checks ->
+                  create_commit_checks' create_commit_checks branch_ref checks
+                  >>= fun () ->
+                  match CCList.flatten all_unapplied_matches with
+                  | [] -> fetch Keys.maybe_create_completed_apply_check
+                  | _ :: _ as unapplied_matches ->
+                      create_commit_checks'
+                        create_commit_checks
+                        branch_ref
+                        (Tasks_base.pending_apply_check
+                           ~config:(Builder.State.config s)
+                           ~account
+                           ~repo
+                           ~apply_requirements:
+                             (Terrat_base_repo_config_v1.apply_requirements repo_config)
+                           ~commit_checks
+                           unapplied_matches))))
   end
 
   let default_tasks () =
@@ -3649,6 +4050,7 @@ struct
     |> Hmap.add (coerce Keys.client) Tasks.client
     |> Hmap.add (coerce Keys.commit_checks) Tasks.commit_checks
     |> Hmap.add (coerce Keys.complete_no_change_dirspaces) Tasks.complete_no_change_dirspaces
+    |> Hmap.add (coerce Keys.kept_dirspace_checks) Tasks.kept_dirspace_checks
     |> Hmap.add (coerce Keys.compute_node) Tasks.compute_node
     |> Hmap.add (coerce Keys.compute_node_id) Tasks.compute_node_id
     |> Hmap.add (coerce Keys.context) Tasks.context
@@ -3703,6 +4105,7 @@ struct
          (coerce Keys.repo_tree_dest_branch_wm_completed)
          Tasks.repo_tree_dest_branch_wm_completed
     |> Hmap.add (coerce Keys.reruns) Tasks.reruns
+    |> Hmap.add (coerce Keys.refs) Tasks.refs
     |> Hmap.add (coerce Keys.run_apply) Tasks.run_apply
     |> Hmap.add (coerce Keys.run_missing_drift_schedules) Tasks.run_missing_drift_schedules
     |> Hmap.add (coerce Keys.run_next_layer) Tasks.run_next_layer

@@ -170,6 +170,22 @@ module type S = sig
     Ref.t ->
     (Ref.t option, [> call_err ]) result Abb.Future.t
 
+  (** The same as {!fetch_branch_sha}, but the answer can be kept for a short time, to save calls to
+      the forge.
+
+      Use this only where a slightly old SHA errs on the safe side: the configuration load of the
+      default branch, which changes infrequently, and the heads that the start of a run records,
+      where an older head makes the range that the result compares larger and never hides a change.
+
+      Do not use it to find the ref that a run executes against, or the heads that a result is
+      compared with. That answer must be current. Use {!fetch_branch_sha} there. *)
+  val fetch_branch_sha_cached :
+    request_id:string ->
+    Client.t ->
+    Repo.t ->
+    Ref.t ->
+    (Ref.t option, [> call_err ]) result Abb.Future.t
+
   val fetch_file :
     request_id:string ->
     Client.t ->

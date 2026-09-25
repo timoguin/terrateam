@@ -240,7 +240,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Account.to_string account)
               (S.Api.Ref.to_string ref_)
               time))
-      (fun () -> S.Db.store_repo_tree ~request_id db account ref_ files)
+      (* The old evaluator stores the tree the tree builder made. *)
+      (fun () -> S.Db.store_repo_tree ~request_id ~built_by_script:true db account ref_ files)
 
   let cleanup_repo_configs request_id db =
     Abbs_time_it.run
@@ -4606,6 +4607,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                           CCList.length matches.Dv.Matches.all_unapplied_matches;
                         result;
                         repo_config;
+                        stale = None;
                         synthesized_config;
                         work_manifest;
                       })

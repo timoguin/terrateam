@@ -29,6 +29,13 @@ delete_unified_comments as (
         and gir.id = $repo_id
         and gir.installation_id = $installation_id
 ),
+delete_dirspace_summaries as (
+    delete from github_pull_request_dirspace_summaries
+    using github_installation_repositories as gir
+    where github_pull_request_dirspace_summaries.repository = gir.id
+        and gir.id = $repo_id
+        and gir.installation_id = $installation_id
+),
 delete_plans as (
     delete from plans
     using work_manifests as wm, repo as r

@@ -103,6 +103,171 @@ struct
             Abbs_future_combinators.return_err err
         | Error `Error -> Abbs_future_combinators.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
 
+  let time_it s l f =
+    Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
+
+  let query_repo_tree_changes ~base_ref s db account branch_ref =
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : QUERY_REPO_TREE_CHANGES : base_ref = %s : branch_ref = %s : time=%f"
+          log_id
+          (S.Api.Ref.to_string base_ref)
+          (S.Api.Ref.to_string branch_ref)
+          time)
+      (fun () ->
+        S.Db.query_repo_tree_changes ~request_id:(Builder.log_id s) ~base_ref db account branch_ref)
+
+  let abort_work_manifest s db work_manifest_id run_id =
+    let open Abbs_future_combinators.Infix_result_monad in
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : WM : UPDATE_STATE : work_manifest_id = %a : run_id = %s : state = aborted : time=%f"
+          log_id
+          Uuidm.pp
+          work_manifest_id
+          run_id
+          time)
+      (fun () ->
+        S.Work_manifest.update_run_id ~request_id:(Builder.log_id s) db work_manifest_id run_id
+        >>= fun () ->
+        S.Work_manifest.update_state
+          ~request_id:(Builder.log_id s)
+          db
+          work_manifest_id
+          Terrat_work_manifest3.State.Aborted)
+
+  let repo_config_hash repo_config =
+    let json_str =
+      repo_config
+      |> Terrat_base_repo_config_v1.to_version_1
+      |> Terrat_repo_config.Version_1.to_yojson
+      |> Yojson.Safe.sort
+      |> Yojson.Safe.to_string
+    in
+    Sha256.(to_hex (string json_str))
+
+  let build_config_cache_ref ref_ repo_config =
+    S.Api.Ref.of_string (S.Api.Ref.to_string ref_ ^ ":" ^ repo_config_hash repo_config)
+
+  let dirspaces_of_paths config paths =
+    paths
+    |> CCList.map (fun filename -> Terrat_change.Diff.Change { filename })
+    |> Terrat_change_match3.match_diff_list config
+    |> CCList.flatten
+    |> CCList.map (fun dc -> dc.Terrat_change_match3.Dirspace_config.dirspace)
+    |> Terrat_data.Dirspace_set.of_list
+
+  (* With the tree builder off, the server reads a tree from the forge and stores it, as the
+     [repo_tree_branch] task does.  With it on, only a tree build work manifest stores a tree, and
+     starting one here would make the caller wait, which it must not. *)
+  let ensure_repo_tree s ~missing_tree ~tree_builder ~account ref_ =
+    let open Abbs_future_combinators.Infix_result_monad in
+    Builder.run_db s ~f:(fun db ->
+        S.Db.query_repo_tree_built
+          ~request_id:(Builder.log_id s)
+            (* With the tree builder on, the trees this comparison reads are the ones the script
+             made, thus a tree read from the forge does not answer. *)
+          ~script_only:tree_builder
+          db
+          account
+          ref_)
+    >>= function
+    | true -> Abbs_future_combinators.return_ok true
+    | false -> (
+        match missing_tree with
+        | `Unknown -> Abbs_future_combinators.return_ok false
+        | `Fetch _ when tree_builder -> Abbs_future_combinators.return_ok false
+        | `Fetch (client, repo) ->
+            time_it
+              s
+              (fun m log_id time ->
+                m
+                  "%s : STALENESS : FETCH_TREE : repo = %s : ref = %s : time=%f"
+                  log_id
+                  (S.Api.Repo.to_string repo)
+                  (S.Api.Ref.to_string ref_)
+                  time)
+              (fun () -> S.Api.fetch_tree ~request_id:(Builder.log_id s) client repo ref_)
+            >>= fun files ->
+            Builder.run_db s ~f:(fun db ->
+                S.Db.store_repo_tree
+                  ~request_id:(Builder.log_id s)
+                  ~built_by_script:false
+                  db
+                  account
+                  ref_
+                  files)
+            >>| fun () -> true)
+
+  (* The config is tested first, then both trees: [query_repo_tree_changes] against a tree that is
+     not stored gives back every path of the other tree, which is a walk of the whole repository
+     through the change match to reach an answer that is only "unknown". *)
+  let changed_between s ~missing_tree ~config ~repo_config_raw ~account ~from_ref ~to_ref =
+    let module V1 = Terrat_base_repo_config_v1 in
+    let open Abbs_future_combinators.Infix_result_monad in
+    let tree_builder = (V1.tree_builder repo_config_raw).V1.Tree_builder.enabled in
+    let config_builder = (V1.config_builder repo_config_raw).V1.Config_builder.enabled in
+    if S.Api.Ref.equal from_ref to_ref then
+      Abbs_future_combinators.return_ok (Some Terrat_data.Dirspace_set.empty)
+    else
+      (if config_builder then
+         Builder.run_db s ~f:(fun db ->
+             S.Db.query_repo_config_json
+               ~request_id:(Builder.log_id s)
+               db
+               account
+               (build_config_cache_ref to_ref repo_config_raw))
+         >>| CCOption.is_some
+       else Abbs_future_combinators.return_ok true)
+      >>= fun config_built ->
+      (if config_built then ensure_repo_tree s ~missing_tree ~tree_builder ~account from_ref
+       else Abbs_future_combinators.return_ok false)
+      >>= fun from_stored ->
+      (if from_stored then ensure_repo_tree s ~missing_tree ~tree_builder ~account to_ref
+       else Abbs_future_combinators.return_ok false)
+      >>= fun to_stored ->
+      if to_stored then
+        Builder.run_db s ~f:(fun db ->
+            query_repo_tree_changes ~base_ref:from_ref s db account to_ref)
+        >>| fun paths -> Some (dirspaces_of_paths config paths)
+      else (
+        Logs.info (fun m ->
+            m
+              "%s : STALENESS : NOT_COMPARED : from_ref = %s : to_ref = %s : config_built = %b : \
+               from_stored = %b"
+              (Builder.log_id s)
+              (S.Api.Ref.to_string from_ref)
+              (S.Api.Ref.to_string to_ref)
+              config_built
+              from_stored);
+        Abbs_future_combinators.return_ok None)
+
+  let dirspace_check_threshold = 50
+
+  let pending_apply_check ~config ~account ~repo ~apply_requirements ~commit_checks matches =
+    let module Ar = Terrat_base_repo_config_v1.Apply_requirements in
+    let apply_check_exists =
+      CCList.exists
+        (fun check -> CCString.equal check.Terrat_commit_check.title "terrateam apply")
+        commit_checks
+    in
+    match matches with
+    | _ :: _ when apply_requirements.Ar.create_pending_apply_check && not apply_check_exists ->
+        [
+          S.Commit_check.make_str
+            ~config
+            ~description:"Waiting"
+            ~status:Terrat_commit_check.Status.Queued
+            ~repo
+            ~account
+            "terrateam apply";
+        ]
+    | [] | _ :: _ -> []
+
   (* A precheck answers before the tree, the config and the index exist, and a
      read of the matches would build all three. *)
   let create_completed_apply_check s { Builder.Bs.Fetcher.fetch } =
@@ -161,5 +326,10 @@ struct
     | `Error -> Some (Msg.Operation_failed (`Internal_err "UNKNOWN"))
     | `Noop | `Suspend_eval _ | `Rerun _ | `Silent_failure -> None
 
-  let forward_std_keys s store = store |> Builder.State.forward_store_value Keys.pull_request s
+  let forward_std_keys s store =
+    store
+    |> Builder.State.forward_store_value Keys.pull_request s
+    |> Builder.State.forward_store_value Keys.repo s
+    |> Builder.State.forward_store_value Keys.account s
+    |> Builder.State.forward_store_value Keys.repo_config_system_defaults s
 end

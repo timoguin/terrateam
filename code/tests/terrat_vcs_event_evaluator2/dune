@@ -1,5 +1,5 @@
 (tests
- (names test test_ee2_fc test_work_set)
+ (names test test_ee2_fc test_work_set test_staleness)
  (libraries
   abb
   abbs
@@ -10,5 +10,10 @@
   terrat_base_repo_config_v1
   terrat_change
   terrat_change_match3
+  terrat_data
+  terrat_dirspace
   terrat_job_context
-  terrat_vcs_event_evaluator2))
+  terrat_tag_query
+  terrat_vcs_event_evaluator2
+  terrat_vcs_provider2
+  terrat_work_manifest3))

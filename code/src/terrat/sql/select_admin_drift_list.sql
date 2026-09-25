@@ -10,7 +10,10 @@ github_drifts as (
         gwm.run_type as runu_type,
         to_char(gwm.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
         to_char(gwm.completed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
-        (latest_unlocks.repository is null or gwm.created_at < latest_unlocks.unlocked_at) as unlocked
+        -- A drift is unlocked when an unlock of its repository came after it.  A
+        -- repository that was never unlocked has no row here, and its drifts are not
+        -- unlocked.
+        (latest_unlocks.repository is not null and gwm.created_at < latest_unlocks.unlocked_at) as unlocked
     from drift_work_manifests as gdwm
     inner join github_work_manifests as gwm
         on gdwm.work_manifest = gwm.id
@@ -28,7 +31,10 @@ gitlab_drifts as (
         gwm.run_type as runu_type,
         to_char(gwm.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
         to_char(gwm.completed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
-        (latest_unlocks.repository is null or gwm.created_at < latest_unlocks.unlocked_at) as unlocked
+        -- A drift is unlocked when an unlock of its repository came after it.  A
+        -- repository that was never unlocked has no row here, and its drifts are not
+        -- unlocked.
+        (latest_unlocks.repository is not null and gwm.created_at < latest_unlocks.unlocked_at) as unlocked
     from drift_work_manifests as gdwm
     inner join gitlab_work_manifests as gwm
         on gdwm.work_manifest = gwm.id

@@ -5,15 +5,19 @@
 
 module Status : sig
   (** The lifecycle state of a dirspace in the pull request, ordered by urgency: failures sort
-      before anything else, then plans awaiting an apply, then runs in flight (a plan first, then an
-      apply), then dirspaces that have not run yet, then successfully applied ones.
+      before anything else, then stale runs that must be planned again, then plans awaiting an
+      apply, then runs in flight (a plan first, then an apply), then dirspaces that have not run
+      yet, then successfully applied ones.
 
       The two states in flight are named for the run that is in flight, because they mean different
       things to a reader: [Plan_running] has produced nothing for the dirspace yet, while
       [Apply_running] applies a plan that is already there. [Pending] is neither -- the dirspace
-      belongs to the pull request and nothing has run for it. *)
+      belongs to the pull request and nothing has run for it. [Stale] has run, but the commits moved
+      during the run and changed its files, or an unlock came after the run (RFD 2356): the run is
+      not valid, and the dirspace must be planned again. *)
   type t =
     | Failed
+    | Stale
     | Planned
     | Plan_running
     | Apply_running
@@ -22,6 +26,13 @@ module Status : sig
   [@@deriving ord, show]
 
   val rank : t -> int
+
+  (** Whether the row of a dirspace in this state shows the resource counts of its plan. A dirspace
+      that is planned, applied, or whose apply runs, shows the counts of the plan it has. A stale
+      dirspace shows the counts of its stale run, thus the user sees what the run did. A dirspace
+      whose plan runs, or that waits for a plan, has no plan to show. The total of the comment adds
+      only the counts that the rows show, thus the two always agree. *)
+  val shows_counts : t -> bool
 end
 
 module Tier : sig

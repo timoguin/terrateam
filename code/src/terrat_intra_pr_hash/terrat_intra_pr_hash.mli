@@ -6,8 +6,8 @@
     only. These rules replace that sha test with a file test: a dirspace keeps the result of its
     last run while the files which that dirspace uses keep the same hashes.
 
-    The rules are pure. They speak only of dirspaces, runs and layers, thus they need no database
-    and no VCS. *)
+    The rules are pure. They speak only of dirspaces, runs and the dirspaces a dirspace waits for,
+    thus they need no database and no VCS. *)
 
 (** One run of one dirspace, as the database recorded it. *)
 module Run : sig
@@ -16,8 +16,23 @@ module Run : sig
     created_at : string;
         (** The time of the work manifest, as [YYYY-MM-DDTHH:MM:SSZ]. The format has a constant
             width, thus a comparison of two of these strings is a comparison of two times. *)
+    during : (string * string) list;
+        (** The pairs of commits [(from, to)] that moved while the run operated: the heads at the
+            start and at the result of the run (RFD 2356). A change to a file of the dirspace
+            between the two commits of a pair makes the run stale. Empty for a run that ran before
+            the heads were recorded, or when nothing moved. *)
   }
   [@@deriving eq, ord, show]
+end
+
+(** Whether a run is a plan or an apply. The two kinds compare with different heads: the apply of a
+    merged pull request changed the infrastructure at its commit, and a later change to the
+    destination does not undo it. *)
+module Kind : sig
+  type t =
+    | Plan
+    | Apply
+  [@@deriving eq, show]
 end
 
 (** One plan of one dirspace. A plan which found no changes makes the dirspace applied, because
@@ -41,28 +56,37 @@ module Dirspace_state : sig
 end
 
 module Selection : sig
-  (** Both lists are in the order of {!Terrat_dirspace.compare} and hold no duplicate, thus the
-      result does not change with the order of the input. No dirspace is in both lists, thus the
-      caller does not have to know which of them wins. *)
+  (** The lists are in the order of {!Terrat_dirspace.compare} and hold no duplicate, thus the
+      result does not change with the order of the input. No dirspace is in both [to_run] and
+      [applied], thus the caller does not have to know which of them wins. *)
   type t = {
     to_run : Terrat_dirspace.t list;
         (** The dirspaces which must run. A dirspace is here when it has no plan which is still
             good, when its newest run failed, or when the user forced it. A dirspace which counts as
             applied is never here. *)
+    out_of_order : Terrat_dirspace.t list;
+        (** The dirspaces of [to_run] whose plan is good for their own files, but older than a run
+            of a dirspace they wait for. No file and no commit made that plan bad, thus a caller
+            that tells the user why a dirspace needs a plan gives these a reason of their own. *)
     applied : Terrat_dirspace.t list;
         (** The dirspaces which count as applied. The caller removes these from the work which is
-            left, thus the evaluation stays at the layer which it reached. *)
+            left, thus the evaluation stays where it reached in the tree. *)
   }
   [@@deriving eq, show]
 end
 
-(** [select ~changed_dirspaces ~force ~superseded ~last_run_failed ~layers states] is the dirspaces
-    to run and the dirspaces which count as applied.
+(** [select ~changed_since ~changed_between ~force ~superseded ~last_run_failed ~depends_on states]
+    is the dirspaces to run and the dirspaces which count as applied.
 
-    [changed_dirspaces sha] is the set of dirspaces which have at least one file with a different
-    hash at [sha] than at the head of the pull request now. The caller makes this set from a
-    comparison of the two stored trees, thus the cost is a function of the number of files which
-    changed and not of the number of files in the repository.
+    [changed_since kind run] is the set of dirspaces which have at least one file with a different
+    hash at the commit of [run] than at the head that a run of [kind] is compared with now. The
+    caller makes this set from a comparison of the two stored trees, thus the cost is a function of
+    the number of files which changed and not of the number of files in the repository.
+
+    [changed_between from to] is the set of dirspaces with a file that changed between the two
+    commits of a pair of {!Run.during}. A commit whose tree is not stored gives every dirspace: the
+    rules fail safe. Once the tree is stored, the same pair can give a smaller set, and a run which
+    was stale becomes good again (RFD 2356, Retroactive freshness).
 
     [force] is the set of dirspaces which a tag query of an explicit [terrateam plan] comment
     matched. A dirspace of [force] which is not in [states] does nothing: force planning reaches
@@ -80,14 +104,18 @@ end
     because the apply gate refuses it for this same reason and there must be one answer. It does not
     touch the applied test: a plan which failed takes nothing away from an apply which succeeded.
 
-    [layers] is the dirspaces of the pull request, in the order in which the layers must run. A
-    dirspace which is not in [layers] counts as a dirspace of the first layer.
+    [depends_on dirspace] is the dirspaces that [dirspace] waits for, transitively. A layered run is
+    a tree: a dirspace waits for the dirspaces it depends on and for nothing else, so two branches
+    of the tree are walked in any order. A dirspace that waits for nothing has an empty set.
 
-    A run of a dirspace is good when that dirspace is not in [changed_dirspaces] of the sha of that
-    run and not in [superseded]. From this:
+    A run of a dirspace is good when that dirspace is not in [superseded], not in [changed_since] of
+    that run, and not in [changed_between] of a pair of {!Run.during} of that run. From this:
 
     - A dirspace runs when [force] holds it, when [last_run_failed] holds it, or when it has no good
       plan.
+    - A plan is not good when an apply which is not older than the plan is not good. That apply used
+      the plan, and a stale apply is not valid (RFD 2356, Stale results considered invalid): the
+      dirspace must be planned again.
     - A dirspace which counts as applied never runs. It has nothing left to do, and this is what
       keeps the two lists apart.
     - A dirspace counts as applied when it has a good apply, or a good plan which found no changes.
@@ -95,17 +123,16 @@ end
       which is newer than the apply is work which nobody applied yet. Thus the rewind which a force
       starts outlives the evaluation which carries the tag query: [force] is empty again when the
       user applies, but the plan which the force made is still there.
-    - A plan and an apply count only when they are not older than each run of each layer before
-      them. Thus an explicit run of an early layer makes each later layer plan again and apply
-      again.
-    - A dirspace counts as applied only when [force] holds no dirspace of its layer or of a layer
-      before it. This makes the layers rewind at the moment of the force, before the forced run
-      exists. *)
+    - A plan and an apply count only when they are not older than each run of each dirspace the
+      dirspace waits for. A run of another branch of the tree says nothing about this dirspace.
+    - A dirspace counts as applied only when [force] holds neither it nor a dirspace it waits for.
+      This makes the tree rewind at the moment of the force, before the forced run exists. *)
 val select :
-  changed_dirspaces:(string -> Terrat_data.Dirspace_set.t) ->
+  changed_since:(Kind.t -> Run.t -> Terrat_data.Dirspace_set.t) ->
+  changed_between:(string -> string -> Terrat_data.Dirspace_set.t) ->
   force:Terrat_data.Dirspace_set.t ->
   superseded:Terrat_data.Dirspace_set.t ->
   last_run_failed:Terrat_data.Dirspace_set.t ->
-  layers:Terrat_dirspace.t list list ->
+  depends_on:(Terrat_dirspace.t -> Terrat_data.Dirspace_set.t) ->
   Dirspace_state.t list ->
   Selection.t

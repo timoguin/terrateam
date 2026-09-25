@@ -1019,6 +1019,70 @@ let layers_of config dirspace_configs =
     config.Config.dirspaces
     dirspace_configs
 
+(* The dirspaces each of [dirspace_configs] waits for, transitively, by the same edges
+   {!layers_of} uses.  A layer number cannot answer this: the layers of a run are one order over
+   every dirspace of it, and two branches of the tree that depend on nothing of each other land in
+   the same layers although neither waits for the other.
+
+   The closure is taken in layer order, so the dependencies of a dirspace are complete before it is
+   reached and each dirspace is visited one time. *)
+let dependencies_of config dirspace_configs =
+  let matches =
+    dirspace_configs
+    |> CCList.map (fun dc -> dc.Dirspace_config.dirspace)
+    |> CCList.sort_uniq ~cmp:Terrat_dirspace.compare
+  in
+  let match_set = Dirspace_set.of_list matches in
+  let topo =
+    Dirspace_map.of_list
+    @@ contracted_topo
+         ~edge:match_plan_after_dependency
+         config.Config.topology
+         config.Config.dirspaces
+         match_set
+         matches
+  in
+  (* [topo] is (dependency -> dependents), and this is the question the other way around. *)
+  let direct =
+    Dirspace_map.fold
+      (fun dependency dependents acc ->
+        CCListLabels.fold_left
+          ~f:(fun acc dependent ->
+            Dirspace_map.update
+              dependent
+              (fun current ->
+                Some
+                  (Dirspace_set.add
+                     dependency
+                     (CCOption.get_or ~default:Dirspace_set.empty current)))
+              acc)
+          ~init:acc
+          dependents)
+      topo
+      Dirspace_map.empty
+  in
+  CCListLabels.fold_left
+    ~f:(fun map layer ->
+      CCListLabels.fold_left
+        ~f:(fun map dirspace ->
+          let direct_dependencies =
+            Dirspace_map.get_or ~default:Dirspace_set.empty dirspace direct
+          in
+          let closure =
+            Dirspace_set.fold
+              (fun dependency acc ->
+                Dirspace_set.union
+                  acc
+                  (Dirspace_map.get_or ~default:Dirspace_set.empty dependency map))
+              direct_dependencies
+              direct_dependencies
+          in
+          if Dirspace_set.is_empty closure then map else Dirspace_map.add dirspace closure map)
+        ~init:map
+        layer)
+    ~init:Dirspace_map.empty
+    (layers_of_topology topo matches)
+
 let apply_layers_of config dirspace_configs =
   sort
     ~topo:`Contracted

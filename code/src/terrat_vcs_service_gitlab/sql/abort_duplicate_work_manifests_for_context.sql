@@ -43,6 +43,11 @@ jobs as (
 dirspaces as (
     select dir, workspace from unnest($dirs, $workspaces) as v(dir, workspace)
 ),
+-- The dirspaces that the pull request changes at its head now.
+changed_dirspaces as (
+    select dir, workspace
+    from unnest($changed_dirs, $changed_workspaces) as v(dir, workspace)
+),
 work_manifests_for_dirspace as (
     select distinct
         gwm.id
@@ -60,6 +65,25 @@ work_manifests_for_dirspace as (
     where gwm.state in ('queued', 'running')
           and jobs.params->>'type' = 'plan'
           and $run_type in ('autoplan', 'plan')
+-- Abort an older plan only when the new plan covers each of its dirspaces that
+-- the pull request still changes.  The result of an aborted plan is stored and
+-- not posted, thus a dirspace that the new plan does not plan would keep that
+-- result as its newest plan, which the user did not see.  A dirspace that the
+-- pull request no longer changes needs no plan, thus it does not keep the older
+-- plan alive.  An older plan that is not covered runs, and the new plan waits
+-- behind it on the dirspaces they share.
+          and not exists (
+            select 1
+            from work_manifest_dirspaceflows as other
+            where other.work_manifest = gwm.id
+                  and not exists (
+                    select 1
+                    from dirspaces as d
+                    where d.dir = other.path and d.workspace = other.workspace)
+                  and exists (
+                    select 1
+                    from changed_dirspaces as c
+                    where c.dir = other.path and c.workspace = other.workspace))
 )
 update work_manifests
 set state = 'aborted', completed_at = now()

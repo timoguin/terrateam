@@ -48,3 +48,19 @@ val drain :
   Pgsql_pool.t ->
   Uuidm.t ->
   unit Abb.Future.t
+
+(** As {!drain}, for the pull request [pull_number] of [repository]. An evaluation of a pull request
+    event can change the states of its dirspaces without a work manifest (RFD 2356), for example a
+    push that keeps the runs of a dirspace. Nothing happens when the pull request tracks no unified
+    comment. *)
+val drain_pull_request :
+  request_id:string ->
+  fetch_brand:
+    (Terrat_vcs_api_github.Client.t ->
+    Terrat_vcs_api_github.Repo.t ->
+    (Terrat_brand.t, Terrat_vcs_api.call_err) result Abb.Future.t) ->
+  Terrat_vcs_api_github.Config.t ->
+  Pgsql_pool.t ->
+  repository:int ->
+  pull_number:int ->
+  unit Abb.Future.t

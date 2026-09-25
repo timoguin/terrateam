@@ -38,18 +38,3 @@ val fetch_directory :
   string ->
   (Directory_entry.t list option, [> Terrat_vcs_api.call_err | `Listing_unavailable ]) result
   Abb.Future.t
-
-(** The same as {!fetch_branch_sha}, but the answer is kept for a short time.
-
-    Use this only where a slightly old SHA is acceptable, which is the repository configuration
-    load: it reads the configuration of the default branch, and that configuration changes
-    infrequently.
-
-    Do not use it to find the ref that a run executes against. That answer must be current. Use
-    {!fetch_branch_sha} there. *)
-val fetch_branch_sha_cached :
-  request_id:string ->
-  Client.t ->
-  Repo.t ->
-  Ref.t ->
-  (Ref.t option, [> Terrat_vcs_api.call_err ]) result Abb.Future.t

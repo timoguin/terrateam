@@ -379,9 +379,282 @@ let test_plan_complete2_brand =
       Oth.Assert.str_contains ~haystack:terrateam ~needle:"## Terrateam Plan Output";
       Oth.Assert.str_doesnt_contain ~haystack:terrateam ~needle:"Stategraph")
 
+(* The data of the stale message, rendered through the JSON the provider sends to the template, so
+   the template and the record cannot disagree about a name.  See RFD 2356. *)
+let stale_kv
+    ?(is_plan = false)
+    ?(files_unknown = false)
+    ?(is_layered_run = false)
+    ?(replan_dirs = [])
+    ?(branch_move = Some ("aaaa111", "bbbb222"))
+    ?dest_branch_move
+    dirspaces =
+  let module St = Terrat_vcs_provider2.Work_manifest_stale in
+  let move = CCOption.map (fun (from_sha, to_sha) -> { St.Move.from_sha; to_sha }) in
+  St.to_yojson
+    {
+      St.is_plan;
+      files_unknown;
+      run_sha = "aaaa111";
+      branch_move = move branch_move;
+      dest_branch_move = move dest_branch_move;
+      dirspaces = CCList.map (fun (dir, workspace) -> { St.Dirspace.dir; workspace }) dirspaces;
+      is_layered_run;
+      replan_dirs;
+    }
+
+(* A plan whose files changed must tell the user to plan again, and name what changed. *)
+let test_work_manifest_stale_plan =
+  Oth.test ~name:"Stale plan names the changed dirspaces and asks for a new plan" (fun _ ->
+      let body = render Tmpl.work_manifest_stale (stale_kv ~is_plan:true [ ("tf", "default") ]) in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            "Commits moved during this plan";
+            "aaaa111";
+            "bbbb222";
+            "| `tf` | `default` |";
+            "This plan is stale.";
+            "stategraph plan";
+          ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"The apply is complete";
+      ())
+
+(* A stale apply applied its commit and not the head: the message says so and asks for a new plan
+   and apply. *)
+let test_work_manifest_stale_apply =
+  Oth.test ~name:"Stale apply does not apply the head and asks for a new plan" (fun _ ->
+      let body = render Tmpl.work_manifest_stale (stale_kv [ ("tf", "default") ]) in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            "Commits moved during this apply";
+            "| `tf` | `default` |";
+            "The files of these directories are different at the head, thus the head is not \
+             applied.";
+            "Plan and apply these directories again.";
+            "stategraph plan";
+          ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"The apply is complete";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"You can continue";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"This plan is stale.";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"plan dir:";
+      ())
+
+(* An apply whose files cannot be compared does not apply the head either. *)
+let test_work_manifest_stale_apply_files_unknown =
+  Oth.test ~name:"Stale apply with unknown files does not apply the head" (fun _ ->
+      let body = render Tmpl.work_manifest_stale (stale_kv ~files_unknown:true []) in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"The files of the directories of this apply can be different at the head";
+      ())
+
+(* A move of the destination branch only names the commits of the destination branch: the branch of
+   the run did not move. *)
+let test_work_manifest_stale_dest_branch_move =
+  Oth.test ~name:"Stale message names the commits of the destination branch" (fun _ ->
+      let body =
+        render
+          Tmpl.work_manifest_stale
+          (stale_kv
+             ~branch_move:None
+             ~dest_branch_move:("cccc333", "dddd444")
+             [ ("tf", "default") ])
+      in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:
+          "The destination branch was at commit `cccc333` when the run started.  Its head is now \
+           `dddd444`.";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"The branch was at commit";
+      ())
+
+(* A tree that is not stored means nothing was compared, which the message must say instead of
+   listing directories. *)
+let test_work_manifest_stale_files_unknown =
+  Oth.test ~name:"Stale message when the files cannot be compared" (fun _ ->
+      let body = render Tmpl.work_manifest_stale (stale_kv ~files_unknown:true []) in
+      Oth.Assert.str_contains ~haystack:body ~needle:"cannot compare the files";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"| Directory | Workspace |";
+      ())
+
+(* A stale layer tells the user how to go back to it: one plan command per directory. *)
+let test_work_manifest_stale_layer =
+  Oth.test ~name:"Stale layer gives the commands to plan it again" (fun _ ->
+      let body =
+        render
+          Tmpl.work_manifest_stale
+          (stale_kv
+             ~is_layered_run:true
+             ~replan_dirs:[ "network"; "dns" ]
+             [ ("network", "default") ])
+      in
+      Oth.Assert.str_contains_all
+        ~haystack:body
+        ~needles:
+          [
+            "The layers that depend on them do not run until the head is applied.";
+            "stategraph plan dir:network";
+            "stategraph plan dir:dns";
+          ];
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"The next layers run";
+      ())
+
+(* The trigger word is in the template, so the brand rewrite reaches it. *)
+let test_work_manifest_stale_brand =
+  Oth.test ~name:"Stale message uses the trigger word of the brand" (fun _ ->
+      let body =
+        render_brand
+          Terrat_brand.Terrateam
+          Tmpl.work_manifest_stale
+          (stale_kv ~is_plan:true [ ("tf", "default") ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"terrateam plan";
+      ())
+
+(* The publisher adds the stale report to the data of the output comment as the key [stale]. *)
+let with_stale stale = function
+  | `Assoc fields -> `Assoc (CCList.Assoc.set ~eq:CCString.equal "stale" stale fields)
+  | kv -> kv
+
+(* The lines of the warning in [body]: from [> [!WARNING]] to the first blank line. *)
+let warning_lines body =
+  CCString.lines body
+  |> CCList.drop_while (fun line -> not (CCString.equal line "> [!WARNING]"))
+  |> CCList.take_while (fun line -> not (CCString.is_empty line))
+
+(* The last line of the warning links to the documentation of stale runs. *)
+let stale_docs_link brand =
+  "> [How "
+  ^ brand
+  ^ " handles commits that move during a run](https://docs.terrateam.io/workflows/stale-runs)"
+
+(* Every line of the warning is in the quote, else the forge shows the rest as normal text. *)
+let assert_warning ~needles body =
+  let lines = warning_lines body in
+  Oth.Assert.not_true (CCList.is_empty lines);
+  Oth.Assert.true_ (CCList.for_all (CCString.prefix ~pre:">") lines);
+  Oth.Assert.str_contains_all ~haystack:(CCString.concat "\n" lines) ~needles;
+  Oth.Assert.str_contains ~haystack:body ~needle:(stale_docs_link "Stategraph" ^ "\n\n")
+
+(* A stale apply shows the warning directly under the heading of the apply comment. *)
+let test_apply_complete2_stale =
+  Oth.test ~tags:[ "stale" ] ~name:"Apply complete: a stale apply shows a warning" (fun _ ->
+      let body =
+        render
+          Tmpl.apply_complete2
+          (with_stale
+             (stale_kv [ ("tf", "default") ])
+             (apply_complete2_kv ~compact_view:false ~num_dirspaces:1))
+      in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:
+          "## Applies :white_check_mark:\n\n> [!WARNING]\n> **Commits moved during this apply.**";
+      assert_warning
+        ~needles:
+          [
+            "The branch was at commit `aaaa111`";
+            "> | `tf` | `default` |";
+            "The files of these directories are different at the head, thus the head is not \
+             applied.";
+            "> stategraph plan";
+          ]
+        body;
+      ())
+
+(* A stale layer gives the commands to plan it again in the warning. *)
+let test_apply_complete2_stale_layer =
+  Oth.test ~tags:[ "stale" ] ~name:"Apply complete: a stale layer shows the plan commands" (fun _ ->
+      let body =
+        render
+          Tmpl.apply_complete2
+          (with_stale
+             (stale_kv
+                ~is_layered_run:true
+                ~replan_dirs:[ "network"; "dns" ]
+                [ ("network", "default") ])
+             (apply_complete2_kv ~compact_view:false ~num_dirspaces:1))
+      in
+      assert_warning ~needles:[ "> stategraph plan dir:network"; "> stategraph plan dir:dns" ] body;
+      ())
+
+(* A failed plan is stale too: the warning is under the heading of the failure. *)
+let test_plan_complete2_stale_failed =
+  Oth.test ~tags:[ "stale" ] ~name:"Plan complete: a failed stale plan shows a warning" (fun _ ->
+      let kv =
+        match plan_complete2_kv ~changes:[ true ] ~is_layered_run:false ~num_more_layers:0 () with
+        | `Assoc fields ->
+            `Assoc (CCList.Assoc.set ~eq:CCString.equal "overall_success" (`Bool false) fields)
+        | kv -> kv
+      in
+      let body =
+        render Tmpl.plan_complete2 (with_stale (stale_kv ~is_plan:true ~files_unknown:true []) kv)
+      in
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:
+          "## Plans :heavy_multiplication_x:\n\n> [!WARNING]\n> **Commits moved during this plan.**";
+      assert_warning ~needles:[ "cannot compare the files"; "This plan is stale." ] body;
+      ())
+
+(* Each stale message links to the documentation of stale runs, in the name of its brand.  The
+   link has the same address for both brands. *)
+let test_stale_docs_link =
+  Oth.test ~tags:[ "stale" ] ~name:"Stale messages link to the documentation" (fun _ ->
+      let link brand = CCString.drop 2 (stale_docs_link brand) in
+      let apply_kv =
+        with_stale
+          (stale_kv [ ("tf", "default") ])
+          (apply_complete2_kv ~compact_view:false ~num_dirspaces:1)
+      in
+      let stale_msg_kv = stale_kv [ ("tf", "default") ] in
+      CCList.iter
+        (fun (brand, name) ->
+          Oth.Assert.str_contains
+            ~haystack:(render_brand brand Tmpl.apply_complete2 apply_kv)
+            ~needle:(link name);
+          Oth.Assert.str_contains
+            ~haystack:(render_brand brand Tmpl.work_manifest_stale stale_msg_kv)
+            ~needle:(link name))
+        [ (Terrat_brand.Stategraph, "Stategraph"); (Terrat_brand.Terrateam, "Terrateam") ];
+      ())
+
+(* A result that is not stale has no warning. *)
+let test_plan_complete2_not_stale =
+  Oth.test
+    ~tags:[ "stale" ]
+    ~name:"Plan complete: a plan that is not stale has no warning"
+    (fun _ ->
+      let body =
+        render
+          Tmpl.plan_complete2
+          (with_stale
+             `Null
+             (plan_complete2_kv ~changes:[ true ] ~is_layered_run:false ~num_more_layers:0 ()))
+      in
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Commits moved";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"[!WARNING]";
+      ())
+
 let test =
   Oth.parallel
     [
+      test_work_manifest_stale_plan;
+      test_work_manifest_stale_apply;
+      test_work_manifest_stale_apply_files_unknown;
+      test_work_manifest_stale_dest_branch_move;
+      test_work_manifest_stale_files_unknown;
+      test_work_manifest_stale_layer;
+      test_work_manifest_stale_brand;
+      test_apply_complete2_stale;
+      test_stale_docs_link;
+      test_apply_complete2_stale_layer;
+      test_plan_complete2_stale_failed;
+      test_plan_complete2_not_stale;
       test_plan_complete2_brand;
       test_plan_complete2_no_changes_more_layers;
       test_plan_complete2_no_changes_last_layer;

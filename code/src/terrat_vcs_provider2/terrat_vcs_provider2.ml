@@ -239,6 +239,12 @@ module Missing_plan = struct
     | Never_planned
     | Invalidated_by_pull_request of int
     | Last_run_failed
+    | Stale
+      (* The commits of the plan moved while it ran and changed its files, or the files changed
+           since, thus the plan is not valid (RFD 2356). *)
+    | Out_of_dependency_order
+      (* A dirspace that this one depends on ran after the plan, thus the plan does not follow the
+           order of the layers.  The files of the plan did not change. *)
   [@@deriving show]
 
   type t = {
@@ -246,6 +252,81 @@ module Missing_plan = struct
     reason : reason;
   }
   [@@deriving show]
+end
+
+(* The runs of a dirspace of a pull request.  [state] holds the most recent successful runs, which
+   the intra-PR hash rules read.  A push makes a new head with no checks, and the check of a failed
+   run is written again on the new head (RFD 2356), thus [plan_failed] and [apply_failed] say
+   whether the most recent plan and the most recent apply failed. *)
+module Dirspace_runs = struct
+  type t = {
+    state : Terrat_intra_pr_hash.Dirspace_state.t;
+    plan_failed : bool;
+    apply_failed : bool;
+  }
+end
+
+(* The state of a dirspace of a pull request at its head, as the intra-PR hash rules decide it
+   (RFD 2356).  A run on an older commit can still count for the head, thus the unified summary
+   comment shows this state and not only the runs on the head. *)
+module Dirspace_summary = struct
+  type t =
+    | Applied
+    | Planned
+    | Failed
+    | Stale
+  [@@deriving show, eq]
+
+  let to_string = function
+    | Applied -> "applied"
+    | Planned -> "planned"
+    | Failed -> "failed"
+    | Stale -> "stale"
+
+  let of_string = function
+    | "applied" -> Some Applied
+    | "planned" -> Some Planned
+    | "failed" -> Some Failed
+    | "stale" -> Some Stale
+    | _ -> None
+end
+
+(* The content of the message a plan or an apply gets when the commits it used moved while it
+   operated and the files of its dirspaces changed.  It is the data of a template, thus a record
+   that derives its JSON. *)
+module Work_manifest_stale = struct
+  module Dirspace = struct
+    type t = {
+      dir : string;
+      workspace : string;
+    }
+    [@@deriving yojson, show, eq]
+  end
+
+  (** A branch that moved while a run operated. *)
+  module Move = struct
+    type t = {
+      from_sha : string;  (** The head when the run started. *)
+      to_sha : string;  (** The head when the result arrived. *)
+    }
+    [@@deriving yojson, show, eq]
+  end
+
+  type t = {
+    is_plan : bool;
+    files_unknown : bool;  (** The tree of a commit is not stored, thus nothing was compared. *)
+    run_sha : string;  (** The commit the run started on. *)
+    branch_move : Move.t option;
+        (** The branch of the run, if it moved: the pull request branch, or the destination branch
+            of a merged pull request. *)
+    dest_branch_move : Move.t option;
+        (** The destination branch of an open pull request, if it moved. The runner merges it, thus
+            its files are files of the run too. *)
+    dirspaces : Dirspace.t list;  (** The impacted dirspaces, empty when [files_unknown]. *)
+    is_layered_run : bool;
+    replan_dirs : string list;  (** The directories to plan again to go back to this layer. *)
+  }
+  [@@deriving yojson, show, eq]
 end
 
 module Msg = struct
@@ -332,6 +413,9 @@ module Msg = struct
                [apply_after] holds an apply back without holding the plan back. *)
         repo_config : Terrat_base_repo_config_v1.derived Terrat_base_repo_config_v1.t;
         result : Terrat_api_components_work_manifest_tf_operation_result2.t;
+        stale : Work_manifest_stale.t option;
+            (* The commits of the run moved and its files changed.  The output shows it as a
+               warning.  When no output comment is posted, the warning is posted alone. *)
         synthesized_config : Terrat_change_match3.Config.t;
         work_manifest : ('account, 'target) Terrat_work_manifest3.Existing.t;
       }
@@ -347,6 +431,7 @@ module Msg = struct
     | Tier_check of Terrat_tier.Check.t
     | Unlock_success
     | Work_manifest_run_failed of { run_id : string }
+    | Work_manifest_stale of Work_manifest_stale.t
 
   (* Both [no matching dirspaces] messages, in both services, say the same thing
      about the query that matched nothing, so they render from one payload. *)
@@ -515,8 +600,11 @@ module type S = sig
       Yojson.Safe.t ->
       (unit, [> `Error ]) result Abb.Future.t
 
+    (** Store the tree of a commit. [built_by_script] says the tree builder script made it; a tree
+        read from the forge did not, and the ids of the two do not compare. *)
     val store_repo_tree :
       request_id:string ->
+      built_by_script:bool ->
       t ->
       Api.Account.t ->
       Api.Ref.t ->
@@ -610,9 +698,11 @@ module type S = sig
       Abb.Future.t
 
     (** Whether a tree is stored for this ref. It tells a tree which was built and is empty apart
-        from a tree which was never built, which the rows alone cannot. *)
+        from a tree which was never built, which the rows alone cannot. With [script_only], only a
+        tree the tree builder script made answers. *)
     val query_repo_tree_built :
       request_id:string ->
+      script_only:bool ->
       t ->
       Api.Account.t ->
       Api.Ref.t ->
@@ -632,8 +722,9 @@ module type S = sig
       Api.Ref.t ->
       (string list, [> `Error ]) result Abb.Future.t
 
-    (** The most recent successful plan and the most recent successful apply of each given dirspace
-        of the context, each with the sha it ran at and the time of its work manifest.
+    (** The runs of each given dirspace of the context: the most recent successful plan and the most
+        recent successful apply, each with the sha it ran at and the time of its work manifest, and
+        whether the most recent plan and the most recent apply failed.
 
         This does not test the sha against the sha of the branch, which
         {!query_applied_dirspaces_for_context} does. Whether a run still counts is a question about
@@ -643,7 +734,23 @@ module type S = sig
       t ->
       (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
       Terrat_change.Dirspace.t list ->
-      (Terrat_intra_pr_hash.Dirspace_state.t list, [> `Error ]) result Abb.Future.t
+      (Dirspace_runs.t list, [> `Error ]) result Abb.Future.t
+
+    (** Store the states of the given dirspaces of the pull request of the context at its head
+        [sha], and refresh the unified summary comment when a state changed. The summary shows these
+        states, because a run on an older commit can still count for the head (RFD 2356).
+
+        [work_manifest] is the run whose result decided the states, or [None] when an evaluation
+        decided them. A run on the head that completes after a state decides the dirspace instead,
+        except the run that decided the state: it completes after its result stores the state. *)
+    val store_dirspace_summaries :
+      request_id:string ->
+      t ->
+      (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
+      sha:Api.Ref.t ->
+      work_manifest:Uuidm.t option ->
+      (Terrat_change.Dirspace.t * Dirspace_summary.t) list ->
+      (unit, [> `Error ]) result Abb.Future.t
 
     (* The next work manifest to start an action run for, with the compute node
        it belongs to.  A work manifest whose node already runs is not returned,
@@ -669,6 +776,47 @@ module type S = sig
        dispatcher. *)
     val work_manifest_can_run :
       request_id:string -> work_manifest_id:Uuidm.t -> t -> (bool, [> `Error ]) result Abb.Future.t
+
+    (** Record that [job_id] restarts [restart_of]. A drift whose files changed while its reconcile
+        ran is reconciled again by a new job, and the chain of these jobs limits how many times (RFD
+        2356). *)
+    val set_job_restart_of :
+      request_id:string ->
+      job_id:Uuidm.t ->
+      restart_of:Uuidm.t ->
+      t ->
+      (unit, [> `Error ]) result Abb.Future.t
+
+    (** Record that the job [job_id] continues the job [from_job_id]: it gets the same link to the
+        job that the chain restarts. The reconcile apply job of a drift continues its plan job, thus
+        the restarts of every reconcile of a chain count toward its limit (RFD 2356). *)
+    val inherit_job_restart_of :
+      request_id:string ->
+      job_id:Uuidm.t ->
+      from_job_id:Uuidm.t ->
+      t ->
+      (unit, [> `Error ]) result Abb.Future.t
+
+    (** The newest plan job that restarts [job_id], if any. *)
+    val query_job_restart :
+      request_id:string -> job_id:Uuidm.t -> t -> (Uuidm.t option, [> `Error ]) result Abb.Future.t
+
+    (** How many restarts lead to [job_id]: 0 for a job that restarts nothing. *)
+    val query_job_restart_depth :
+      request_id:string -> job_id:Uuidm.t -> t -> (int, [> `Error ]) result Abb.Future.t
+
+    (** Whether newer plans of the same pull request replace the plan of [job_id] for the work
+        manifest [work_manifest_id]. Two pushes close together can make two plan jobs; the older
+        plan is aborted at its start, or its late result is stored and not posted (RFD 2356). The
+        plan is replaced only when each of its dirspaces is in a plan work manifest, not aborted, of
+        a newer plan job. Then the newer result is the most recent plan of each dirspace, thus the
+        older plan, which the user did not see, is never applied. *)
+    val query_plan_superseded :
+      request_id:string ->
+      job_id:Uuidm.t ->
+      work_manifest_id:Uuidm.t ->
+      t ->
+      (bool, [> `Error ]) result Abb.Future.t
 
     val query_flow_state :
       request_id:string -> t -> Uuidm.t -> (string option, [> `Error ]) result Abb.Future.t
@@ -719,10 +867,15 @@ module type S = sig
       Abb.Future.t
 
     (* [job_id] is the job asking the question.  Work manifests belonging to it,
-       or to any job created after it, are never aborted. *)
+       or to any job created after it, are never aborted.  [changed_dirspaces] is
+       the dirspaces that the pull request changes at its head now.  A plan of an
+       older job is aborted when the new plan covers each of its dirspaces that is
+       still in [changed_dirspaces]: a dirspace that the pull request no longer
+       changes needs no plan (RFD 2356). *)
     val query_conflicting_work_manifests_in_repo_for_context :
       request_id:string ->
       job_id:Uuidm.t ->
+      changed_dirspaces:Terrat_change.Dirspace.t list ->
       t ->
       (Api.Pull_request.Id.t, Api.Ref.t) Terrat_job_context.Context.t ->
       Terrat_change.Dirspace.t list ->
@@ -893,6 +1046,20 @@ module type S = sig
       Uuidm.t ->
       unit Abb.Future.t
 
+    (** As {!drain_unified_comment}, for a pull request. An evaluation of a pull request event can
+        change the states of its dirspaces without a work manifest (RFD 2356). *)
+    val drain_unified_comment_for_pull_request :
+      request_id:string ->
+      fetch_brand:
+        (Api.Client.t ->
+        Api.Repo.t ->
+        (Terrat_brand.t, Terrat_vcs_api.call_err) result Abb.Future.t) ->
+      Api.Config.t ->
+      Pgsql_pool.t ->
+      Api.Repo.t ->
+      Api.Pull_request.Id.t ->
+      unit Abb.Future.t
+
     (** Mark the unified summary comment of the work manifest's pull request as needing a refresh,
         but only if the pull request already tracks one. Used by failure paths so aborted runs show
         up in the comment. *)
@@ -1051,6 +1218,41 @@ module type S = sig
 
     val update_run_id :
       request_id:string -> Db.t -> Uuidm.t -> string -> (unit, [> `Error ]) result Abb.Future.t
+
+    (** Record the commits that a run starts on, when the runner takes the work manifest.
+        [start_sha] is the commit that the runner checked out. [start_dest_sha] is the head of the
+        destination branch of an open pull request, which the runner merges when the operation
+        starts, thus a move of the destination during the run can make it stale too. A result
+        compares these commits with the heads at that time to decide whether the run is stale (RFD
+        2356). *)
+    val update_start_refs :
+      request_id:string ->
+      Db.t ->
+      Uuidm.t ->
+      start_sha:Api.Ref.t option ->
+      start_dest_sha:Api.Ref.t option ->
+      (unit, [> `Error ]) result Abb.Future.t
+
+    (** The commits recorded by {!update_start_refs}, as [(start_sha, start_dest_sha)]. A commit is
+        [None] for a work manifest that has not started, or that started before the server recorded
+        it. *)
+    val query_start_refs :
+      request_id:string ->
+      Db.t ->
+      Uuidm.t ->
+      (Api.Ref.t option * Api.Ref.t option, [> `Error ]) result Abb.Future.t
+
+    (** Record the heads that the result of a run was compared with: the head of the branch of the
+        run and, for an open pull request, the head of the destination branch. A later evaluation of
+        the pull request compares the same pairs of commits, thus it decides the staleness of the
+        run as the result did, or better once the missing trees exist (RFD 2356). *)
+    val update_result_refs :
+      request_id:string ->
+      Db.t ->
+      Uuidm.t ->
+      result_sha:Api.Ref.t option ->
+      result_dest_sha:Api.Ref.t option ->
+      (unit, [> `Error ]) result Abb.Future.t
 
     val update_changes :
       request_id:string ->

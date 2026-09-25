@@ -28,7 +28,7 @@ module Step = struct
     | Index
     | Plan
     | Unsafe_apply
-  [@@deriving show]
+  [@@deriving eq, show]
 
   let to_string = function
     | Apply -> "apply"

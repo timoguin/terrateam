@@ -26,7 +26,7 @@ module Db = struct
   let store_repo_config_history ~request_id db account repo ~branch ~sha json =
     raise (Failure "nyi")
 
-  let store_repo_tree ~request_id db account ref_ files = raise (Failure "nyi")
+  let store_repo_tree ~request_id ~built_by_script db account ref_ files = raise (Failure "nyi")
   let store_flow_state ~request_id db work_manifest_id state = raise (Failure "nyi")
 
   let store_dirspaceflows ~request_id ~base_ref ~branch_ref ~lock_policy db repo dirspaceflows =
@@ -43,11 +43,20 @@ module Db = struct
     raise (Failure "nyi")
 
   let query_repo_tree ?base_ref ~request_id db accoutn ref_ = raise (Failure "nyi")
-  let query_repo_tree_built ~request_id db account ref_ = raise (Failure "nyi")
+  let query_repo_tree_built ~request_id ~script_only db account ref_ = raise (Failure "nyi")
   let query_repo_tree_changes ~request_id ~base_ref db account ref_ = raise (Failure "nyi")
   let query_dirspace_runs_for_context ~request_id db context dirspaces = raise (Failure "nyi")
+
+  let store_dirspace_summaries ~request_id db context ~sha ~work_manifest summaries =
+    raise (Failure "nyi")
+
   let query_next_pending_work_manifest ?new_age ~request_id db = raise (Failure "nyi")
   let work_manifest_can_run ~request_id ~work_manifest_id db = raise (Failure "nyi")
+  let set_job_restart_of ~request_id ~job_id ~restart_of db = raise (Failure "nyi")
+  let inherit_job_restart_of ~request_id ~job_id ~from_job_id db = raise (Failure "nyi")
+  let query_job_restart ~request_id ~job_id db = raise (Failure "nyi")
+  let query_job_restart_depth ~request_id ~job_id db = raise (Failure "nyi")
+  let query_plan_superseded ~request_id ~job_id ~work_manifest_id db = raise (Failure "nyi")
   let query_flow_state ~request_id db work_manifest_id = raise (Failure "nyi")
   let delete_flow_state ~request_id db work_manifest_id = raise (Failure "nyi")
   let query_pull_request_out_of_change_applies ~request_id db pull_request = raise (Failure "nyi")
@@ -69,6 +78,7 @@ module Db = struct
   let query_conflicting_work_manifests_in_repo_for_context
       ~request_id
       ~job_id
+      ~changed_dirspaces
       db
       context
       dirspaces
@@ -119,6 +129,15 @@ module Comment = struct
   let publish_comment ~request_id ~brand client user pull_request msg = raise (Failure "nyi")
 
   let drain_unified_comment ~request_id ~fetch_brand config storage work_manifest_id =
+    raise (Failure "nyi")
+
+  let drain_unified_comment_for_pull_request
+      ~request_id
+      ~fetch_brand
+      config
+      storage
+      repo
+      pull_request_id =
     raise (Failure "nyi")
 
   let mark_unified_comment_dirty ~request_id db work_manifest_id = raise (Failure "nyi")
@@ -175,6 +194,15 @@ module Work_manifest = struct
   let query_by_run_id ~request_id db run_id = raise (Failure "nyi")
   let update_state ~request_id db work_manifest_id state = raise (Failure "nyi")
   let update_run_id ~request_id db work_manifest_id run_id = raise (Failure "nyi")
+
+  let update_start_refs ~request_id db work_manifest_id ~start_sha ~start_dest_sha =
+    raise (Failure "nyi")
+
+  let query_start_refs ~request_id db work_manifest_id = raise (Failure "nyi")
+
+  let update_result_refs ~request_id db work_manifest_id ~result_sha ~result_dest_sha =
+    raise (Failure "nyi")
+
   let update_changes ~request_id db work_manifest_id dirspaceflows = raise (Failure "nyi")
   let update_denied_dirspaces ~request_id db work_manifest_id denies = raise (Failure "nyi")
   let update_steps ~request_id db work_manifest_id steps = raise (Failure "nyi")
