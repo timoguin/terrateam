@@ -4,7 +4,7 @@
    A [`Rerun] is not a failure. It is a task saying it committed something and
    that the evaluation has to be driven again, because a guard of its own will
    answer differently on the second pass. The applicative in
-   [Abbs_future_combinators] keeps the error of its LEFT operand and throws the
+   [Abbs_fc] keeps the error of its LEFT operand and throws the
    right one away, so a destination-branch tree that finished while the branch
    half of the evaluation was still suspended lost its [`Rerun], the driver
    never re-drove, and the work manifest stayed in [running] for ever.
@@ -90,7 +90,7 @@ let test_two_reruns_join =
     ~expected:(`Rerun [ "repo_tree:1:aaa"; "repo_tree:1:bbb"; "repo_tree:1:ccc" ])
 
 (* Everything that is not a rerun keeps the left, which is what
-   [Abbs_future_combinators] does and what the rest of the evaluator relies on.
+   [Abbs_fc] does and what the rest of the evaluator relies on.
    This module changes the rerun case and nothing else. *)
 let test_without_a_rerun_the_left_wins =
   merge_test
@@ -103,7 +103,7 @@ let test_without_a_rerun_the_left_wins =
 
 (* The production case: [can_run_plan] combines a suspended [branch_dirspaces]
    with a [dest_branch_dirspaces] that has just stored the destination tree.
-   [Abbs_future_combinators.Result.all2] answers [`Suspend_eval] here. *)
+   [Abbs_fc.Result.all2] answers [`Suspend_eval] here. *)
 let test_all2_keeps_the_rerun =
   Oth_abb.test ~name:"all2: a suspended left does not swallow a rerunning right" (fun () ->
       let open Abb.Future.Infix_monad in
@@ -157,7 +157,7 @@ let test_chain_keeps_a_rerun_in_the_last_position =
       Abb.Future.return ())
 
 (* An [Error] on one side must not abort or skip the other: that is the
-   behaviour [Abbs_future_combinators] documents, and it is the only reason the
+   behaviour [Abbs_fc] documents, and it is the only reason the
    right side's [`Rerun] is there to be merged at all.  Both sides yield to the
    scheduler so that "it ran" means it ran during the evaluation, not when the
    future was built. *)
@@ -196,6 +196,6 @@ let () =
   Random.self_init ();
   Oth_abb.run
     ~file:__FILE__
-    ~setup:(fun () -> Abbs_future_combinators.return_ok ())
+    ~setup:(fun () -> Abbs_fc.return_ok ())
     ~teardown:(fun () -> Abb.Future.return ())
     (fun () -> test)

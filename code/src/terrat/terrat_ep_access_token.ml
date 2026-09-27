@@ -4,8 +4,8 @@ module Logs = (val Logs.src_log src : Logs.LOG)
 
 let ensure_has_access_token_id user ctx =
   match Terrat_user.access_token_id user with
-  | Some access_token_id -> Abbs_future_combinators.return_ok access_token_id
-  | None -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+  | Some access_token_id -> Abbs_fc.return_ok access_token_id
+  | None -> Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)
 
 module Refresh = struct
   module Sql = struct
@@ -22,7 +22,7 @@ module Refresh = struct
 
   let post _config storage =
     Brtl_ep.run_result_json ~f:(fun ctx ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_session.with_session ~caps:[ Terrat_user.Capability.Access_token_refresh ] ctx
         >>= fun user ->
         ensure_has_access_token_id user ctx
@@ -36,7 +36,7 @@ module Refresh = struct
                 access_token_id
               >>= function
               | [] ->
-                  Abbs_future_combinators.return_ok
+                  Abbs_fc.return_ok
                     (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
               | capabilities :: _ ->
                   let user = Terrat_user.make ~id:(Terrat_user.id user) ?capabilities () in
@@ -62,7 +62,7 @@ module Refresh = struct
                   (Terrat_user.id user)
                   Terrat_user.Token.pp_to_token_err
                   err);
-            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+            Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m ->
                 m
@@ -72,5 +72,5 @@ module Refresh = struct
                   (Terrat_user.id user)
                   Pgsql_pool.pp_err
                   err);
-            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
+            Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
 end

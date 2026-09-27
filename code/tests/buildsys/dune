@@ -2,7 +2,7 @@
  (names test_bounded_suspendable_executor test_excel test_excel_with_state)
  (libraries
   abb_bounded_suspendable_executor
-  abb_future_combinators
+  abb_fc
   abb_scheduler_select
   buildsys
   containers

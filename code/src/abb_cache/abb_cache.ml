@@ -1,6 +1,6 @@
 module Make (Abb : Abb_intf.S) = struct
   module Abb_io_file = Abb_io_file.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   module type S = sig
     type k

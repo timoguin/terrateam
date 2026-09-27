@@ -93,7 +93,7 @@ let get _config storage _origin work_manifest_id path ctx =
   | Ok [] -> Abb.Future.return (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
   | Ok (_ :: _) -> (
       let fetch () =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let url = Uri.with_path (Uri.of_string "https://github.com") path in
         Http.get url
         >>= function
@@ -110,7 +110,7 @@ let get _config storage _origin work_manifest_id path ctx =
             Abb.File.rename ~src:(body_path ^ ".tmp") ~dst:body_path
             >>| fun () -> { V.body_path; headers = headers_of_interest }
         | resp, _ ->
-            Abbs_future_combinators.return_err
+            Abbs_fc.return_err
               (`Curl_err
                  (Printf.sprintf
                     "Bad response: %s"
@@ -127,13 +127,13 @@ let get _config storage _origin work_manifest_id path ctx =
                 let rec loop () =
                   Abb.File.read fin ~buf ~pos:0 ~len:(Bytes.length buf)
                   >>= function
-                  | Ok 0 -> Abbs_future_combinators.return_ok ()
+                  | Ok 0 -> Abbs_fc.return_ok ()
                   | Ok n ->
                       Brtl_rspnc.Http.Response_io.write_body writer (Bytes.sub_string buf 0 n)
                       >>= fun () -> loop ()
                   | Error _ ->
                       Logs.err (fun m -> m "%s : GET : STREAM_ERROR" (Brtl_ctx.token ctx));
-                      Abbs_future_combinators.return_ok ()
+                      Abbs_fc.return_ok ()
                 in
                 loop ())
             >>= fun _ -> Abb.Future.return ()

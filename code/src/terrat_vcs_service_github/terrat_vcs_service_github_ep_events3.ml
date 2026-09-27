@@ -124,7 +124,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
      needs that answer, not just success: an installation that was there all
      along is not the failure the retry exists for. *)
   let insert_installation_if_missing config storage ~installation_id ~login ~target_type ~sender =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Pgsql_pool.with_conn storage ~f:(fun db ->
         Pgsql_io.Prepared_stmt.fetch
           db
@@ -145,9 +145,9 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                   target_type
                   (Terrat_config.default_tier @@ P.Api.Config.config config)
                   sender
-                >>= fun () -> Abbs_future_combinators.return_ok `Inserted
+                >>= fun () -> Abbs_fc.return_ok `Inserted
             | [] -> assert false)
-        | _ :: _ -> Abbs_future_combinators.return_ok `Present)
+        | _ :: _ -> Abbs_fc.return_ok `Present)
 
   (* An event that names an installation this system never recorded fails on the
      missing row, so the row is written and the event evaluated again.  That
@@ -174,7 +174,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
 
   let process_installation _request_id config storage = function
     | Gw.Installation_event.Installation_created created ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Prmths.Counter.inc_one (Metrics.installation_events_total "created");
         let installation = created.Gw.Installation_created.installation in
         Logs.info (fun m ->
@@ -208,7 +208,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                       (Terrat_config.default_tier @@ P.Api.Config.config config)
                       created.Gw.Installation_created.sender.Gw.User.login
                 | [] -> assert false)
-            | _ :: _ -> Abbs_future_combinators.return_ok ())
+            | _ :: _ -> Abbs_fc.return_ok ())
     | Gw.Installation_event.Installation_deleted deleted ->
         let installation = deleted.Gw.Installation_deleted.installation in
         Logs.info (fun m ->
@@ -235,7 +235,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               installation.Gw.Installation.id
               installation.Gw.Installation.account.Gw.User.login
               installation_event.Gw.Installation_new_permissions_accepted.sender.Gw.User.login);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Installation_event.Installation_suspend suspended ->
         let installation = suspended.Gw.Installation_suspend.installation in
         let module I = Gw.Installation_suspend.Installation_ in
@@ -506,16 +506,16 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | Gw.Pull_request_event.Pull_request_closed _ -> failwith "Invalid pull_request_closed event"
     | Gw.Pull_request_event.Pull_request_assigned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_ASSIGNED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_auto_merge_disabled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_AUTO_MERGE_DISABLED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_auto_merge_enabled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_AUTO_MERGE_ENABLED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_converted_to_draft _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_CONVERTED_TO_DRAFT" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_edited
         {
           Gw.Pull_request_edited.installation =
@@ -569,25 +569,25 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               Evaluator2.Pull_request_event.Sync)
     | Gw.Pull_request_event.Pull_request_edited _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_EDITED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_labeled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_LABELED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_locked _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_LOCKED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_milestoned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_MILESTONED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_ready_for_review _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_READY_FOR_REVIEW" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_request_removed _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_REQUEST_REMOVED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_requested _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_REQUESTED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_stacked _ ->
         (* A pull request joined or left a stack.  Nothing to run: joining a stack
            moves the base branch and leaving one moves it back, and GitHub reports
@@ -595,19 +595,19 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
            because an action no decoder knows fails the whole payload, which
            answers GitHub with a 500 and makes it deliver the event again. *)
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_STACKED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_unassigned _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNASSIGNED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_unlabeled _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNLABELED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_unlocked _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_UNLOCKED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Pull_request_event.Pull_request_review_submitted _ ->
         Logs.debug (fun m -> m "%s : NOOP : PULL_REQUEST_REVIEW_SUBMITTED" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
 
   (* A reply that cannot learn the brand of its repository is not published.  The
      provider keeps the answer of a repository for a minute, so a burst of
@@ -630,10 +630,10 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
         | Ok _ as r -> Abb.Future.return r
         | Error _ ->
             Logs.err (fun m -> m "%s : FETCH_BRAND : ERROR" request_id);
-            Abbs_future_combinators.return_err `Error)
+            Abbs_fc.return_err `Error)
     | Error _ ->
         Logs.err (fun m -> m "%s : FETCH_BRAND : CREATE_CLIENT : ERROR" request_id);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let process_issue_comment request_id config storage exec = function
     | Gw.Issue_comment_event.Issue_comment_created
@@ -641,7 +641,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
       when Terrat_comment.is_from_self comment_body ->
         Logs.debug (fun m -> m "%s : NOOP : COMMENT_FROM_SELF" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "from_self");
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Issue_comment_event.Issue_comment_created
         {
           Gw.Issue_comment_created.installation =
@@ -693,11 +693,11 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
                   (Evaluator2.Pull_request_event.Comment { comment_id; comment }))
         | Error `Not_terrateam ->
             Prmths.Counter.inc_one (Metrics.comment_events_total "not_terrateam");
-            Abbs_future_combinators.return_ok ()
+            Abbs_fc.return_ok ()
         | Error (`Tag_query_error (_, err)) -> (
             Prmths.Counter.inc_one (Metrics.comment_events_total "tag_query");
-            let open Abbs_future_combinators.Infix_result_monad in
-            Abbs_future_combinators.Result.all2
+            let open Abbs_fc.Infix_result_monad in
+            Abbs_fc.Result.all2
               (Pgsql_pool.with_conn storage ~f:(fun db ->
                    fetch_brand ~request_id config db ~installation_id repository))
               (Terrat_github.get_installation_access_token
@@ -708,7 +708,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
             match Snabela.apply (Tmpl.terrateam_comment_tag_query_error brand) kv with
             | Ok body ->
                 Logs.info (fun m -> m "%s : COMMENT_ERROR : TAG_QUERY_ERROR : %s" request_id err);
-                Abbs_future_combinators.Result.ignore
+                Abbs_fc.Result.ignore
                 @@ Terrat_github.with_client
                      (P.Api.Config.vcs_config config)
                      (`Token access_token)
@@ -720,19 +720,19 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
             | Error (#Snabela.err as err) ->
                 Logs.err (fun m ->
                     m "%s : TMPL_ERROR : TAG_QUERY_ERROR : %s" request_id (Snabela.show_err err));
-                Abbs_future_combinators.return_ok ())
+                Abbs_fc.return_ok ())
         | Error (`Unknown_action action) ->
             Prmths.Counter.inc_one (Metrics.comment_events_total "unknown_action");
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Logs.info (fun m -> m "%s : COMMENT_ERROR : UNKNOWN_ACTION : %s" request_id action);
-            Abbs_future_combinators.Result.all2
+            Abbs_fc.Result.all2
               (Pgsql_pool.with_conn storage ~f:(fun db ->
                    fetch_brand ~request_id config db ~installation_id repository))
               (Terrat_github.get_installation_access_token
                  (P.Api.Config.vcs_config config)
                  installation_id)
             >>= fun (brand, access_token) ->
-            Abbs_future_combinators.Result.ignore
+            Abbs_fc.Result.ignore
             @@ Terrat_github.with_client
                  (P.Api.Config.vcs_config config)
                  (`Token access_token)
@@ -747,19 +747,19 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
     | Gw.Issue_comment_event.Issue_comment_created _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_CREATED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Issue_comment_event.Issue_comment_deleted _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_DELETED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Issue_comment_event.Issue_comment_edited _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE_COMMENT_EDITED" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | Gw.Issue_comment_event.Issue_any _ ->
         Logs.debug (fun m -> m "%s : NOOP : ISSUE" request_id);
         Prmths.Counter.inc_one (Metrics.comment_events_total "noop");
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
 
   (* A job that ends in any of these posts no result, so its work manifest is
      dead and has to be ended.  A concurrency group, a user cancel and a queue
@@ -813,7 +813,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               ~repo
               ~run_id:(CCInt.to_string run_id)
               ())
-    | _ -> Abbs_future_combinators.return_ok ()
+    | _ -> Abbs_fc.return_ok ()
 
   let process_push_event request_id config storage exec event =
     let repository = event.Gw.Push_event.repository in
@@ -859,7 +859,7 @@ module Make (P : Terrat_vcs_provider2_github.S) = struct
               ())
     | Some _ | None ->
         Logs.debug (fun m -> m "%s : PUSH_EVENT : NOOP" request_id);
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
 
   let handle_error ctx = function
     | #Pgsql_pool.err as err ->

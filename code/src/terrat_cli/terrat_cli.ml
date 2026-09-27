@@ -286,7 +286,7 @@ struct
               let header = Jwt.Header.create (Jwt.Signer.to_string signer) in
               let jwt = Jwt.of_header_and_payload signer header payload in
               let token = Jwt.token jwt in
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               let client = Terrat_github.create github (`Bearer token) in
               Githubc2_abb.call
                 client
@@ -298,7 +298,7 @@ struct
                   let installation_token = Githubc2_components.Installation_token.value token in
                   print_endline
                     installation_token.Githubc2_components.Installation_token.Primary.token;
-                  Abbs_future_combinators.return_ok ()
+                  Abbs_fc.return_ok ()
               | (`Unauthorized _ | `Forbidden _ | `Not_found _ | `Unprocessable_entity _) as err ->
                   failwith (Terrat_github.show_get_installation_access_token_err err))
           | None -> assert false)

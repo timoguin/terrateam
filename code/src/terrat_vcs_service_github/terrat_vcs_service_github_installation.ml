@@ -1,4 +1,3 @@
-let terrateam_github_action_workflow_path = ".github/workflows/terrateam.yml"
 let chunk_size = 500
 
 module Sql = struct
@@ -21,8 +20,10 @@ module Id = struct
   let make = CCFun.id
 end
 
+module Api = Terrat_vcs_api_github
+
 type refresh_repos_err =
-  [ Terrat_github.get_installation_access_token_err
+  [ Terrat_vcs_api.call_err
   | Terrat_github.get_installation_repos_err
   | Pgsql_pool.err
   | Pgsql_io.err
@@ -36,57 +37,51 @@ type refresh_repos_err' =
 [@@deriving show]
 
 let refresh_repos ~request_id ~config ~storage installation_id =
-  let open Abbs_future_combinators.Infix_result_monad in
-  Terrat_github.get_installation_access_token
-    (Terrat_vcs_service_github_provider.Api.Config.vcs_config config)
-    installation_id
-  >>= fun access_token ->
-  let client =
-    Terrat_github.create
-      (Terrat_vcs_service_github_provider.Api.Config.vcs_config config)
-      (`Token access_token)
-  in
-  Terrat_github.get_installation_repos client
+  let open Abbs_fc.Infix_result_monad in
+  Pgsql_pool.with_conn storage ~f:(fun db ->
+      Api.create_client ~request_id config (Api.Account.make installation_id) db)
+  >>= fun client ->
+  Terrat_github.get_installation_repos (Api.Client.to_native client)
   >>= fun repositories ->
   let module R = Githubc2_components.Repository in
   let module Rp = R.Primary in
   let module U = Githubc2_components.Simple_user in
   let module Up = U.Primary in
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.List.map
+  Abbs_fc.List.map
     ~f:(fun
         {
           R.primary =
             {
-              R.Primary.owner = { U.primary = { U.Primary.login = owner; _ }; _ };
-              name = repo;
+              R.Primary.id;
+              owner = { U.primary = { U.Primary.login = owner; _ }; _ };
+              name;
               default_branch;
               _;
             };
           _;
         }
       ->
-      Terrat_github.fetch_file
-        ~owner
-        ~repo
-        ~ref_:default_branch
-        ~path:terrateam_github_action_workflow_path
+      Api.find_known_workflow_file
+        ~request_id
         client
+        (Api.Repo.make ~id:(CCInt64.to_int id) ~name ~owner ())
+        (Api.Ref.of_string default_branch)
       >>= function
       | Ok (Some _) -> Abb.Future.return true
       | Ok None -> Abb.Future.return false
-      | Error (#Terrat_github.fetch_file_err as err) ->
+      | Error (#Terrat_vcs_api.call_err as err) ->
           Logs.err (fun m ->
               m
-                "INSTALLATION : %s : REFRESH_REPOS : FETCH_FILE : %a"
+                "INSTALLATION : %s : REFRESH_REPOS : FIND_KNOWN_WORKFLOW_FILE : %a"
                 request_id
-                Terrat_github.pp_fetch_file_err
+                Terrat_vcs_api.pp_call_err
                 err);
           Abb.Future.return false)
     repositories
   >>= fun repos_setup ->
   let installation_id = CCInt64.of_int installation_id in
-  Abbs_future_combinators.List_result.iter
+  Abbs_fc.List_result.iter
     ~f:(fun (repositories, repos_setup) ->
       Pgsql_pool.with_conn storage ~f:(fun db ->
           Pgsql_io.Prepared_stmt.execute
@@ -108,13 +103,9 @@ let refresh_repos_task request_id config storage installation_id task =
       refresh_repos ~request_id ~config ~storage installation_id)
   >>= function
   | Ok () -> Abb.Future.return ()
-  | Error (#Terrat_github.get_installation_access_token_err as err) ->
+  | Error (#Terrat_vcs_api.call_err as err) ->
       Logs.err (fun m ->
-          m
-            "INSTALLATION : %s : REFRESH_REPOS : %a"
-            request_id
-            Terrat_github.pp_get_installation_access_token_err
-            err);
+          m "INSTALLATION : %s : REFRESH_REPOS : %a" request_id Terrat_vcs_api.pp_call_err err);
       Abb.Future.return ()
   | Error (#Terrat_github.get_installation_repos_err as err) ->
       Logs.err (fun m ->
@@ -140,10 +131,10 @@ let refresh_repos' ~request_id ~config ~storage ?user_id installation_id =
       ?user_id
       ()
   in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_pool.with_conn storage ~f:(fun db -> Terrat_task.store db task)
   >>= fun task ->
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.ignore
+  Abbs_fc.ignore
     (Abb.Future.fork (refresh_repos_task request_id config storage installation_id task))
-  >>= fun () -> Abbs_future_combinators.return_ok task
+  >>= fun () -> Abbs_fc.return_ok task

@@ -498,8 +498,8 @@ let is_probe = function
   | Element.Query _ -> false
 
 let run_on_conn db elements =
-  let open Abbs_future_combinators.Infix_result_monad in
-  Abbs_future_combinators.List_result.map
+  let open Abbs_fc.Infix_result_monad in
+  Abbs_fc.List_result.map
     ~f:(function
       | Element.Probe -> Abb.Future.return (Ok (encode Element.Probe []))
       | Element.Query filter as element -> query db filter >>| fun rows -> encode element rows)

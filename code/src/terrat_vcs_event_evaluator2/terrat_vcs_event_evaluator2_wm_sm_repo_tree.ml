@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Msg = Terrat_vcs_provider2.Msg
 
 module Make
@@ -279,7 +279,7 @@ struct
             (S.Api.Account.Id.to_string @@ S.Api.Account.id account)
             (S.Api.Ref.to_string branch_ref)
         in
-        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_future_combinators.return_ok ()
+        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_fc.return_ok ()
          else (
            Logs.info (fun m ->
                m
@@ -361,7 +361,7 @@ struct
       ~branch_ref
       ~branch
       ~create (* A step that prepares a job has no dirspace, so it spends no budget. *)
-      ~max_workspaces:(fun () -> Abbs_future_combinators.return_ok None)
+      ~max_workspaces:(fun () -> Abbs_fc.return_ok None)
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~branch ~branch_ref)

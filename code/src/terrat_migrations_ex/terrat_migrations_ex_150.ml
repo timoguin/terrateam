@@ -248,21 +248,21 @@ module Sql = struct
 end
 
 let rec fill_in storage update while_ =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_pool.with_conn storage ~f:(fun db ->
       Pgsql_io.tx db ~f:(fun () ->
           while_ db
           >>= function
           | `Cont -> update db >>| fun () -> `Cont
-          | `Done -> Abbs_future_combinators.return_ok `Done))
+          | `Done -> Abbs_fc.return_ok `Done))
   >>= function
   | `Cont -> fill_in storage update while_
-  | `Done -> Abbs_future_combinators.return_ok ()
+  | `Done -> Abbs_fc.return_ok ()
 
 let update' sql db = Pgsql_io.Prepared_stmt.execute db sql
 
 let while' sql db =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_io.Prepared_stmt.fetch db sql ~f:CCFun.id
   >>| function
   | [] -> `Done
@@ -305,7 +305,7 @@ let fill_in_work_manifests_pull_requests (_config, storage) =
     (while' Sql.work_manifests_pull_requests_while_)
 
 let fill_in_all ctx =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   fill_in_change_dirspace ctx
   >>= fun () ->
   fill_in_code_indexes ctx

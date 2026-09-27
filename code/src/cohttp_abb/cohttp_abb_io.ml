@@ -3,7 +3,7 @@ let src = Logs.Src.create "cohttp_abb.io"
 module Logs = (val Logs.src_log src : Logs.LOG)
 
 module Make (Abb : Abb_intf.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
   module Buffered = Abb_io_buffered.Make (Abb.Future)
 
   type +'a t = 'a Abb.Future.t

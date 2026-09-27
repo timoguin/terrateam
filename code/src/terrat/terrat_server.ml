@@ -109,7 +109,7 @@ let start_telemetry config =
   match Terrat_config.telemetry config with
   | Terrat_config.Telemetry.Disabled ->
       Logs.info (fun m -> m "Telemetry disabled");
-      Abbs_future_combinators.unit
+      Abbs_fc.unit
   | Terrat_config.Telemetry.Anonymous uri as tc ->
       let open Abb.Future.Infix_monad in
       Logs.info (fun m -> m "Telemetry enabled with endpoint %a" Uri.pp uri);
@@ -120,8 +120,7 @@ let start_telemetry config =
               (Terrat_telemetry.Event.Start
                  { app_type = "github"; app_id = Terrat_config.Github.app_id github })
         | None -> Abb.Future.return ())
-      >>= fun () ->
-      Abbs_future_combinators.ignore (Abb.Future.fork (Terrat_telemetry.start_ping_loop config))
+      >>= fun () -> Abbs_fc.ignore (Abb.Future.fork (Terrat_telemetry.start_ping_loop config))
 
 let run ~infracost config storage services =
   let open Abb.Future.Infix_monad in

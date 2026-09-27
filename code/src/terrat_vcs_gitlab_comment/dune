@@ -2,7 +2,7 @@
  (name terrat_vcs_gitlab_comment)
  (wrapped false)
  (libraries
-  abb_future_combinators
+  abb_fc
   logs
   minijinja
   pgsql_io

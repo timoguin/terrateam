@@ -28,13 +28,13 @@ module Provider :
   let match_user ~request_id client repo user =
     let module M = Terrat_base_repo_config_v1.Access_control.Match in
     function
-    | M.User value -> Abbs_future_combinators.return_ok (CCString.equal value user)
+    | M.User value -> Abbs_fc.return_ok (CCString.equal value user)
     | M.Team value -> (
         let open Abb.Future.Infix_monad in
         Api.is_member_of_team ~request_id ~team:value ~user:(Api.User.make user) repo client
         >>= function
-        | Ok res -> Abbs_future_combinators.return_ok res
-        | Error _ -> Abbs_future_combinators.return_err `Error)
+        | Ok res -> Abbs_fc.return_ok res
+        | Error _ -> Abbs_fc.return_err `Error)
     | M.Role value -> (
         let open Abb.Future.Infix_monad in
         match CCList.find_idx CCFun.(fst %> CCString.equal value) repo_permission_levels with
@@ -46,13 +46,13 @@ module Provider :
                 | Some (idx_role, _) ->
                     (* Test if their actual role has an index less than or
                            equal to the index of the role in the query. *)
-                    Abbs_future_combinators.return_ok (idx_role <= idx)
-                | None -> Abbs_future_combinators.return_ok false)
-            | Ok None -> Abbs_future_combinators.return_ok false
-            | Error _ -> Abbs_future_combinators.return_err `Error)
+                    Abbs_fc.return_ok (idx_role <= idx)
+                | None -> Abbs_fc.return_ok false)
+            | Ok None -> Abbs_fc.return_ok false
+            | Error _ -> Abbs_fc.return_err `Error)
         | None -> raise (Failure "nyi")
         (* Abb.Future.return (Error (`Invalid_query query)) *))
-    | M.Any -> Abbs_future_combinators.return_ok true
+    | M.Any -> Abbs_fc.return_ok true
 
   module Gate = struct
     module Sql = struct
@@ -126,16 +126,16 @@ module Provider :
         pull_number
         sha
       >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
+      | Ok () -> Abbs_fc.return_ok ()
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
 
     let eval ~request_id client dirspaces pull_request db =
       let module Match_set = CCSet.Make (Terrat_base_repo_config_v1.Access_control.Match) in
       let module Match_map = CCMap.Make (Terrat_base_repo_config_v1.Access_control.Match) in
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let repo = Terrat_pull_request.repo pull_request in
         let repo_id = CCInt64.of_int @@ Api.Repo.id @@ Terrat_pull_request.repo pull_request in
         let pull_number = CCInt64.of_int @@ Terrat_pull_request.id pull_request in
@@ -206,9 +206,9 @@ module Provider :
         (* Given all of the queries and all approvers, match an approver against
            the query.  This way we can go from query -> list of users who match
            it. *)
-        Abbs_future_combinators.List_result.map
+        Abbs_fc.List_result.map
           ~f:(fun q ->
-            Abbs_future_combinators.List_result.map
+            Abbs_fc.List_result.map
               ~f:(fun approver ->
                 match_user ~request_id client repo approver q
                 >>| function
@@ -362,19 +362,19 @@ module Provider :
       let open Abb.Future.Infix_monad in
       run
       >>= function
-      | Ok res -> Abbs_future_combinators.return_ok res
+      | Ok res -> Abbs_fc.return_ok res
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | Error (`Vcs_api_timeout_err operation) ->
           Logs.err (fun m -> m "%s : VCS_API_TIMEOUT : %s" request_id operation);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | Error (`Vcs_api_rate_limit_err operation) ->
           Logs.err (fun m -> m "%s : VCS_API_RATE_LIMIT : %s" request_id operation);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | Error `Error ->
           Logs.err (fun m -> m "%s" request_id);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
   end
 
   module Work_manifest = Terrat_vcs_service_github_provider.Work_manifest
@@ -387,7 +387,7 @@ module Provider :
        content requests that a probe of each name made, which is the larger
        half of the requests of one configuration load. *)
     let fetch_centralized_repo_configs request_id client centralized_repo repo =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match centralized_repo with
       | Some (remote_repo, branch) ->
           let centralized_repo = Api.Remote_repo.to_repo remote_repo in
@@ -402,18 +402,18 @@ module Provider :
           let fetch ~directory ~basename =
             Rc.fetch_config ~request_id client centralized_repo branch listings ~directory ~basename
           in
-          Abbs_future_combinators.Result.all5
+          Abbs_fc.Result.all5
             (fetch ~directory:"config" ~basename:"defaults")
             (fetch ~directory:"config" ~basename:"overrides")
             (fetch ~directory:repo_directory ~basename:"defaults")
             (fetch ~directory:repo_directory ~basename:"overrides")
             (fetch ~directory:repo_directory ~basename:"config")
-      | None -> Abbs_future_combinators.return_ok (None, None, None, None, None)
+      | None -> Abbs_fc.return_ok (None, None, None, None, None)
 
     let maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo =
       match centralized_repo with
       | Some remote_repo -> (
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Api.fetch_branch_sha_cached
             ~request_id
             client
@@ -422,7 +422,7 @@ module Provider :
           >>| function
           | Some branch_sha -> Some (remote_repo, branch_sha)
           | None -> None)
-      | None -> Abbs_future_combinators.return_ok None
+      | None -> Abbs_fc.return_ok None
 
     module Brand =
       Terrat_vcs_provider2.Brand.Make
@@ -432,12 +432,12 @@ module Provider :
         end)
 
     let centralized ~request_id client repo =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo)
       >>= fun centralized_repo ->
       maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo
       >>= function
-      | None -> Abbs_future_combinators.return_ok (None, None)
+      | None -> Abbs_fc.return_ok (None, None)
       | Some (remote_repo, branch) ->
           let centralized_repo = Api.Remote_repo.to_repo remote_repo in
           let repo_directory = "config/" ^ Api.Repo.name repo in
@@ -465,12 +465,12 @@ module Provider :
         repo
 
     let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Result.all2
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Result.all2
         (Api.fetch_remote_repo ~request_id client repo)
         (Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo))
       >>= fun (remote_repo, centralized_repo) ->
-      Abbs_future_combinators.Result.all2
+      Abbs_fc.Result.all2
         (Api.fetch_branch_sha_cached
            ~request_id
            client
@@ -481,7 +481,7 @@ module Provider :
       let default_branch_ref =
         CCOption.get_or ~default:(Api.Remote_repo.default_branch remote_repo) default_branch_sha
       in
-      Abbs_future_combinators.Result.all3
+      Abbs_fc.Result.all3
         (fetch_centralized_repo_configs request_id client centralized_repo repo)
         (Rc.fetch ~request_id client repo default_branch_ref)
         (Rc.fetch ~request_id client repo ref_)
@@ -494,16 +494,16 @@ module Provider :
                 repo_config )
             ->
       let wrap_err fname =
-        Abbs_future_combinators.Result.map_err ~f:(function
+        Abbs_fc.Result.map_err ~f:(function
           | `Repo_config_schema_err err -> `Repo_config_schema_err (fname, err)
           | #Terrat_base_repo_config_v1.of_version_1_err as err -> err)
       in
       let validate_configs =
-        Abbs_future_combinators.List_result.iter ~f:(function
+        Abbs_fc.List_result.iter ~f:(function
           | Some (fname, json) ->
               wrap_err fname (Abb.Future.return (Terrat_base_repo_config_v1.of_version_1_json json))
               >>| fun _ -> ()
-          | None -> Abbs_future_combinators.return_ok ())
+          | None -> Abbs_fc.return_ok ())
       in
       let get_json = function
         | None -> `Assoc []
@@ -592,7 +592,7 @@ module Provider :
           >>= fun repo_config ->
           Abb.Future.return (merge ~base:repo_config repo_overrides)
           >>= fun repo_config ->
-          Abbs_future_combinators.Infix_result_app.(
+          Abbs_fc.Infix_result_app.(
             (fun default_repo_config repo_config -> (default_repo_config, repo_config))
             <$> wrap_err
                   "default"
@@ -632,7 +632,7 @@ module Provider :
 
     let is_ci_changed ~request_id client repo diff =
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Api.find_workflow_file ~request_id repo client
         >>| function
         | Some path ->
@@ -652,7 +652,7 @@ module Provider :
       run
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error _ -> Abbs_future_combinators.return_err `Error
+      | Error _ -> Abbs_fc.return_err `Error
   end
 
   module Commit_check = Terrat_vcs_service_github_provider.Commit_check

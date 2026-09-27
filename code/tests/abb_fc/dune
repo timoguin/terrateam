@@ -1,6 +1,6 @@
 (tests
  (names applicative basic)
- (libraries oth abb_intf abb_fut abb_future_combinators)
+ (libraries abb_fc abb_fut abb_intf oth)
  ; basic.ml has unused-open / unused-value-declaration that would block
  ; the dev profile build (used when DUNE_PROFILE=dev is set). Suppress
  ; those two warnings here; the rest of the strict regime stays on.

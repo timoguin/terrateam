@@ -4,7 +4,7 @@
  (libraries
   abb
   abb_cache
-  abb_future_combinators
+  abb_fc
   abb_happy_eyeballs
   abb_io
   abb_service_local

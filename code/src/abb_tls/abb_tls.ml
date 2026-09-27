@@ -3,7 +3,7 @@ type err = [ `Error ] [@@deriving show, eq]
 external int_of_fd : Unix.file_descr -> int = "%identity"
 
 module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
   module Buffered = Abb_io_buffered.Make (Abb.Future)
 
   (* libtls holds the descriptor NUMBER it was handed at [connect_socket] time,

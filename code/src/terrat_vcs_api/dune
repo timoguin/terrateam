@@ -2,7 +2,7 @@
  (name terrat_vcs_api)
  (libraries
   abb
-  abb_future_combinators
+  abb_fc
   containers
   pgsql_io
   terrat_api

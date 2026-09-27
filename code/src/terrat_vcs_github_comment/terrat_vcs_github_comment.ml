@@ -160,12 +160,12 @@ module S = struct
       workspace
     >>= function
     | Ok r ->
-        Abbs_future_combinators.return_ok
+        Abbs_fc.return_ok
           (CCOption.of_list r
           |> CCOption.flat_map CCFun.(Int64.to_string %> Api.Comment.Id.of_string))
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let query_els_for_comment_id t comment_id =
     let open Abb.Future.Infix_monad in
@@ -209,15 +209,15 @@ module S = struct
               create_el t ~applied ~work_manifest_id dirspace steps)
             split
         in
-        Abbs_future_combinators.return_ok els
+        Abbs_fc.return_ok els
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let upsert_comment_id t els comment_id =
     let open Abb.Future.Infix_monad in
     let cid = Api.Comment.Id.to_string comment_id |> Int64.of_string in
-    Abbs_future_combinators.List_result.map
+    Abbs_fc.List_result.map
       ~f:(fun el ->
         let { Terrat_dirspace.dir; workspace } = el.dirspace in
         Pgsql_io.Prepared_stmt.fetch
@@ -230,10 +230,10 @@ module S = struct
           workspace)
       els
     >>= function
-    | Ok _ -> Abbs_future_combinators.return_ok ()
+    | Ok _ -> Abbs_fc.return_ok ()
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m -> m "%s : ERROR : %a" t.request_id Pgsql_io.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let delete_comment t comment_id =
     let request_id = t.request_id in
@@ -339,12 +339,11 @@ module S = struct
     let request_id = t.request_id in
     Api.comment_on_pull_request ~request_id t.client t.pull_request body
     >>= function
-    | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
+    | Ok comment_id -> Abbs_fc.return_ok comment_id
     (* A body the VCS never answered for, or refused for a rate limit, is not a
        body that is too big, so rendering a smaller one buys nothing but another
        call timeout or another refusal. *)
-    | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
-        Abbs_future_combinators.return_err `Error
+    | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) -> Abbs_fc.return_err `Error
     | Error `Error -> (
         let body =
           Publisher_tools.create_run_output
@@ -372,9 +371,8 @@ module S = struct
             m "%s : RENDERED_LENGTH %i : COMPACTED %b" t.request_id content_length compact);
         Api.comment_on_pull_request ~request_id t.client t.pull_request body
         >>= function
-        | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
-        | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
-            Abbs_future_combinators.return_err `Error
+        | Ok comment_id -> Abbs_fc.return_ok comment_id
+        | Error (`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) -> Abbs_fc.return_err `Error
         | Error `Error ->
             let by_scope = [] in
             let body =

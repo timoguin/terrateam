@@ -27,7 +27,7 @@ type run_err =
 
 module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
   module Happy_eyeballs = Abb_happy_eyeballs.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
   module Io = Cohttp_abb_io.Make (Abb)
   module Buffered = Abb_io_buffered.Make (Abb.Future)
   module Buffered_of = Abb_io_buffered.Of (Abb)

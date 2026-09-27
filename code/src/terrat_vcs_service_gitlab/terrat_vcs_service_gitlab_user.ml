@@ -125,18 +125,18 @@ module Oauth = struct
     | Error err -> Error err
 
   let access_token ~config db user =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Pgsql_io.Prepared_stmt.fetch
       db
       (Sql.select_user_token ())
       ~f:(fun token expired refresh_token -> (token, expired, refresh_token))
       (Terrat_user.id user)
     >>= function
-    | [] -> Abbs_future_combinators.return_err (`User_not_found user)
+    | [] -> Abbs_fc.return_err (`User_not_found user)
     | (_, true, refresh_token) :: _ ->
         refresh ~config refresh_token
         >>= fun oauth ->
-        Abbs_future_combinators.to_result (Abb.Sys.time ())
+        Abbs_fc.to_result (Abb.Sys.time ())
         >>= fun now ->
         let expiration =
           CCOption.map
@@ -157,7 +157,7 @@ module Oauth = struct
           oauth.Response.refresh_token
           refresh_expiration
         >>| fun () -> oauth.Response.access_token
-    | (token, _, _) :: _ -> Abbs_future_combinators.return_ok token
+    | (token, _, _) :: _ -> Abbs_fc.return_ok token
 end
 
 module Sql = struct
@@ -194,7 +194,7 @@ type query_user_id_err =
 type query_user_id_ex_err = Pgsql_io.err [@@deriving show]
 
 let query_user_id' db user =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_io.Prepared_stmt.fetch
     db
     (Sql.select_gitlab_user_id ())
@@ -205,7 +205,7 @@ let query_user_id' db user =
   | user_id :: _ -> Some (CCInt64.to_int user_id)
 
 let query_user_id db user =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   query_user_id' db user
   >>? function
   | Some user_id -> Ok user_id

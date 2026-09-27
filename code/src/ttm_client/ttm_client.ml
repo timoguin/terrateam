@@ -15,7 +15,7 @@ type t = {
 }
 
 let create' ?call_timeout ~api_key ~base_url () =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   try
     let client =
       Openapic_abb.create ~user_agent:"Ttm Client" ?call_timeout ~base_url (`Bearer api_key)
@@ -33,8 +33,7 @@ let create' ?call_timeout ~api_key ~base_url () =
               Openapic_abb.create ~user_agent:"Ttm Client" ?call_timeout ~base_url (`Bearer token);
           }
     | `Forbidden -> Error `Refresh_token_err
-  with Create_err_exn err ->
-    Abbs_future_combinators.return_err (err : create_err :> [> create_err ])
+  with Create_err_exn err -> Abbs_fc.return_err (err : create_err :> [> create_err ])
 
 let create ?call_timeout ?api_key ~base_url () =
   try
@@ -49,13 +48,12 @@ let create ?call_timeout ?api_key ~base_url () =
     let client =
       Openapic_abb.create ~user_agent:"Ttm Client" ?call_timeout ~base_url (`Bearer api_key)
     in
-    Abbs_future_combinators.return_ok { base_url; api_key; call_timeout; client }
-  with Create_err_exn err ->
-    Abbs_future_combinators.return_err (err : create_err :> [> create_err ])
+    Abbs_fc.return_ok { base_url; api_key; call_timeout; client }
+  with Create_err_exn err -> Abbs_fc.return_err (err : create_err :> [> create_err ])
 
 let call ?(tries = 3) t req =
-  let open Abbs_future_combinators.Infix_result_monad in
-  Abbs_future_combinators.retry
+  let open Abbs_fc.Infix_result_monad in
+  Abbs_fc.retry
     ~f:(fun () ->
       Openapic_abb.call t.client req
       >>= function
@@ -65,13 +63,12 @@ let call ?(tries = 3) t req =
           >>| fun c ->
           t.client <- c.client;
           resp
-      | resp -> Abbs_future_combinators.return_ok resp)
+      | resp -> Abbs_fc.return_ok resp)
     ~while_:
-      (Abbs_future_combinators.finite_tries tries (function
+      (Abbs_fc.finite_tries tries (function
         | Error `Refresh_token_err -> false
         | Error _ -> true
         | Ok resp ->
             (* Retry on server side failures or forbidden on the remote side *)
             Openapi.Response.(status resp >= 500 || status resp = 403)))
-    ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
+    ~betwixt:(Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))

@@ -43,23 +43,23 @@ module Sql = struct
 end
 
 let rec run_batch storage update while_ =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_pool.with_conn storage ~f:(fun db ->
       Pgsql_io.tx db ~f:(fun () ->
           while_ db
           >>= function
           | `Cont -> update db >>| fun () -> `Cont
-          | `Done -> Abbs_future_combinators.return_ok `Done))
+          | `Done -> Abbs_fc.return_ok `Done))
   >>= function
   | `Cont -> run_batch storage update while_
-  | `Done -> Abbs_future_combinators.return_ok ()
+  | `Done -> Abbs_fc.return_ok ()
 
 let update' sql db =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_io.Prepared_stmt.fetch db ~f:(fun x -> x) sql >>| fun _ -> ()
 
 let while' sql db =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_io.Prepared_stmt.fetch db sql ~f:CCFun.id
   >>| function
   | [] -> `Done

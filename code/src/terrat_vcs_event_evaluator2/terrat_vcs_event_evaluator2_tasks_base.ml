@@ -32,7 +32,7 @@ struct
               Logs.err (fun m ->
                   m "%s : BACKTRACE: %s" (Builder.log_id s) (Printexc.raw_backtrace_to_string bt)))
             bt_opt;
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | `Exn (exn, bt_opt) ->
           Logs.err (fun m -> m "%s : %s" (Builder.log_id s) (Printexc.to_string exn));
           CCOption.iter
@@ -40,10 +40,10 @@ struct
               Logs.err (fun m ->
                   m "%s : BACKTRACE: %s" (Builder.log_id s) (Printexc.raw_backtrace_to_string bt)))
             bt_opt;
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | `Aborted ->
           Logs.err (fun m -> m "%s : ABORTED" (Builder.log_id s));
-          Abbs_future_combinators.return_err `Error)
+          Abbs_fc.return_err `Error)
     @@ Abbs_time_it.run'
          (fun ret t ->
            Metrics.Task_exec_duration.observe (Metrics.exec_duration name) t;
@@ -83,8 +83,8 @@ struct
     let open Abb.Future.Infix_monad in
     f msg
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Silent_failure
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Error -> Abbs_fc.return_err `Silent_failure
 
   (* Commit checks are not the user's only channel, so unlike [publish_comment']
      a failure here is worth a comment of its own.
@@ -93,15 +93,15 @@ struct
      forcing anyone that reads them afterwards to fetch them again for no
      benefit. *)
   let create_commit_checks' f branch_ref = function
-    | [] -> Abbs_future_combinators.return_ok ()
+    | [] -> Abbs_fc.return_ok ()
     | checks -> (
         let open Abb.Future.Infix_monad in
         f branch_ref checks
         >>= function
-        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Ok () -> Abbs_fc.return_ok ()
         | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-            Abbs_future_combinators.return_err err
-        | Error `Error -> Abbs_future_combinators.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
+            Abbs_fc.return_err err
+        | Error `Error -> Abbs_fc.return_err (`Vcs_api_err "CREATE_COMMIT_CHECKS"))
 
   let time_it s l f =
     Abbs_time_it.run (fun time -> Logs.info (fun m -> l m (Builder.log_id s) time)) f
@@ -120,7 +120,7 @@ struct
         S.Db.query_repo_tree_changes ~request_id:(Builder.log_id s) ~base_ref db account branch_ref)
 
   let abort_work_manifest s db work_manifest_id run_id =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     time_it
       s
       (fun m log_id time ->
@@ -165,7 +165,7 @@ struct
      [repo_tree_branch] task does.  With it on, only a tree build work manifest stores a tree, and
      starting one here would make the caller wait, which it must not. *)
   let ensure_repo_tree s ~missing_tree ~tree_builder ~account ref_ =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Builder.run_db s ~f:(fun db ->
         S.Db.query_repo_tree_built
           ~request_id:(Builder.log_id s)
@@ -176,11 +176,11 @@ struct
           account
           ref_)
     >>= function
-    | true -> Abbs_future_combinators.return_ok true
+    | true -> Abbs_fc.return_ok true
     | false -> (
         match missing_tree with
-        | `Unknown -> Abbs_future_combinators.return_ok false
-        | `Fetch _ when tree_builder -> Abbs_future_combinators.return_ok false
+        | `Unknown -> Abbs_fc.return_ok false
+        | `Fetch _ when tree_builder -> Abbs_fc.return_ok false
         | `Fetch (client, repo) ->
             time_it
               s
@@ -208,11 +208,10 @@ struct
      through the change match to reach an answer that is only "unknown". *)
   let changed_between s ~missing_tree ~config ~repo_config_raw ~account ~from_ref ~to_ref =
     let module V1 = Terrat_base_repo_config_v1 in
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let tree_builder = (V1.tree_builder repo_config_raw).V1.Tree_builder.enabled in
     let config_builder = (V1.config_builder repo_config_raw).V1.Config_builder.enabled in
-    if S.Api.Ref.equal from_ref to_ref then
-      Abbs_future_combinators.return_ok (Some Terrat_data.Dirspace_set.empty)
+    if S.Api.Ref.equal from_ref to_ref then Abbs_fc.return_ok (Some Terrat_data.Dirspace_set.empty)
     else
       (if config_builder then
          Builder.run_db s ~f:(fun db ->
@@ -222,13 +221,13 @@ struct
                account
                (build_config_cache_ref to_ref repo_config_raw))
          >>| CCOption.is_some
-       else Abbs_future_combinators.return_ok true)
+       else Abbs_fc.return_ok true)
       >>= fun config_built ->
       (if config_built then ensure_repo_tree s ~missing_tree ~tree_builder ~account from_ref
-       else Abbs_future_combinators.return_ok false)
+       else Abbs_fc.return_ok false)
       >>= fun from_stored ->
       (if from_stored then ensure_repo_tree s ~missing_tree ~tree_builder ~account to_ref
-       else Abbs_future_combinators.return_ok false)
+       else Abbs_fc.return_ok false)
       >>= fun to_stored ->
       if to_stored then
         Builder.run_db s ~f:(fun db ->
@@ -244,7 +243,7 @@ struct
               (S.Api.Ref.to_string to_ref)
               config_built
               from_stored);
-        Abbs_future_combinators.return_ok None)
+        Abbs_fc.return_ok None)
 
   let dirspace_check_threshold = 50
 
@@ -271,7 +270,7 @@ struct
   (* A precheck answers before the tree, the config and the index exist, and a
      read of the matches would build all three. *)
   let create_completed_apply_check s { Builder.Bs.Fetcher.fetch } =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     fetch Keys.account
     >>= fun account ->
     fetch Keys.repo

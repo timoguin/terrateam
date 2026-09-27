@@ -6,7 +6,7 @@ module Fut = Abb_fut.Make (struct
   type t = unit
 end)
 
-module Fut_comb = Abb_future_combinators.Make (Fut)
+module Fut_comb = Abb_fc.Make (Fut)
 
 let test_success =
   Oth.test ~name:"App success" (fun _ ->

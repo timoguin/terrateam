@@ -29,7 +29,7 @@ end
 
 let send' telemetry_config event =
   match telemetry_config with
-  | Terrat_config.Telemetry.Disabled -> Abbs_future_combinators.unit
+  | Terrat_config.Telemetry.Disabled -> Abbs_fc.unit
   | Terrat_config.Telemetry.Anonymous uri -> (
       match event with
       | Event.Start { app_type; app_id } ->
@@ -42,8 +42,8 @@ let send' telemetry_config event =
           Logs.info (fun m -> m "ANONYMOUS : EVENT : START");
           (* For some reason, on dev ngrok this request hangs if it is HTTP2,
              but forcing it to HTTP/1.1 works. *)
-          Abbs_future_combinators.ignore
-            (Abbs_future_combinators.timeout
+          Abbs_fc.ignore
+            (Abbs_fc.timeout
                ~timeout:(Abb.Sys.sleep 1.0)
                (Http.post
                   ~options:Http.Options.(with_opt (Http_version `Http1_1) default)
@@ -64,8 +64,8 @@ let send' telemetry_config event =
           Logs.info (fun m -> m "ANONYMOUS : EVENT : RUN");
           (* For some reason, on dev ngrok this request hangs if it is HTTP2,
              but forcing it to HTTP/1.1 works. *)
-          Abbs_future_combinators.ignore
-            (Abbs_future_combinators.timeout
+          Abbs_fc.ignore
+            (Abbs_fc.timeout
                ~timeout:(Abb.Sys.sleep 1.0)
                (Http.post
                   ~options:Http.Options.(with_opt (Http_version `Http1_1) default)
@@ -80,16 +80,15 @@ let send' telemetry_config event =
           Logs.info (fun m -> m "ANONYMOUS : EVENT : PING");
           (* For some reason, on dev ngrok this request hangs if it is HTTP2,
              but forcing it to HTTP/1.1 works. *)
-          Abbs_future_combinators.ignore
-            (Abbs_future_combinators.timeout
+          Abbs_fc.ignore
+            (Abbs_fc.timeout
                ~timeout:(Abb.Sys.sleep 1.0)
                (Http.post
                   ~options:Http.Options.(with_opt (Http_version `Http1_1) default)
                   ~headers:http_headers
                   uri)))
 
-let send telemetry_config event =
-  Abbs_future_combinators.ignore (Abb.Future.fork (send' telemetry_config event))
+let send telemetry_config event = Abbs_fc.ignore (Abb.Future.fork (send' telemetry_config event))
 
 let rec start_ping_loop config =
   let open Abb.Future.Infix_monad in

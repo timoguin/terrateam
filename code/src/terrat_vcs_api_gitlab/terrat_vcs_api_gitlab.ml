@@ -53,7 +53,7 @@ let thirty_seconds = Duration.(to_f (of_sec 30))
    printed in the comment the user sees. *)
 let vcs_api_timeout_err ~request_id operation =
   Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
-  Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
+  Abbs_fc.return_err (`Vcs_api_timeout_err operation)
 
 (* A call GitLab refused for a rate limit, where the wait it asked for is longer
    than the call timeout.  It is reported apart from [`Error] so that the user is
@@ -62,7 +62,7 @@ let vcs_api_timeout_err ~request_id operation =
    comment the user sees. *)
 let vcs_api_rate_limit_err ~request_id operation =
   Logs.err (fun m -> m "%s : %s : RATE_LIMIT" request_id operation);
-  Abbs_future_combinators.return_err (`Vcs_api_rate_limit_err operation)
+  Abbs_fc.return_err (`Vcs_api_rate_limit_err operation)
 
 let is_rate_limit_status status = status = 403 || status = 429
 
@@ -133,7 +133,7 @@ let retry_wait ~max_wait default_wait res =
 
 let call ?(tries = 3) t req =
   let max_wait = CCOption.get_or ~default:thirty_seconds (Openapic_abb.call_timeout t) in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
       let open Abb.Future.Infix_monad in
       Openapic_abb.call t req
@@ -159,18 +159,18 @@ let call ?(tries = 3) t req =
                  it, thus give up now rather than sleep and overrun. *)
               Logs.warn (fun m -> m "RATE_LIMIT : ERR : wait=%0.2f : max_wait=%0.2f" wait max_wait);
               Prmths.Counter.inc_one Metrics.rate_limit_err_total;
-              Abbs_future_combinators.return_err `Rate_limit_err
+              Abbs_fc.return_err `Rate_limit_err
           | `Wait _ | `No_wait -> Abb.Future.return res)
         (rate_limit_headers res))
     ~while_:
-      (Abbs_future_combinators.finite_tries tries (function
+      (Abbs_fc.finite_tries tries (function
         (* Must precede the [Error _] arm: [`Rate_limit_err] is a member of
            [Openapic_abb.call_err], and retrying it would sleep for nothing. *)
         | Error `Rate_limit_err -> false
         | Error _ -> true
         | Ok resp -> Openapi.Response.status resp >= 500 || is_rate_limit_error resp))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
+      (Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
            let open Abb.Future.Infix_monad in
            retry_wait ~max_wait n res >>= Abb.Sys.sleep))
@@ -304,7 +304,7 @@ end
 let fetch_branch_sha ~request_id client repo ref_ =
   let run =
     let module Gl = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryBranchesBranch in
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~branch:ref_))
@@ -323,7 +323,7 @@ let fetch_branch_sha ~request_id client repo ref_ =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_BRANCH_SHA : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* GitLab keeps no cache: the answer is always current, which is correct for every caller. *)
 let fetch_branch_sha_cached = fetch_branch_sha
@@ -335,7 +335,7 @@ let commits_page_size = 100
 let fetch_branch_commits ~request_id client repo ref_ =
   let run =
     let module Gl = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryCommits in
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(
@@ -348,8 +348,8 @@ let fetch_branch_commits ~request_id client repo ref_ =
     >>= fun resp ->
     let module C = Gitlabc_components_api_entities_commit in
     match Openapi.Response.value resp with
-    | `OK commits -> Abbs_future_combinators.return_ok (CCList.map (fun { C.id; _ } -> id) commits)
-    | (`Bad_request | `Unauthorized | `Not_found) as err -> Abbs_future_combinators.return_err err
+    | `OK commits -> Abbs_fc.return_ok (CCList.map (fun { C.id; _ } -> id) commits)
+    | (`Bad_request | `Unauthorized | `Not_found) as err -> Abbs_fc.return_err err
   in
   let open Abb.Future.Infix_monad in
   run
@@ -359,15 +359,15 @@ let fetch_branch_commits ~request_id client repo ref_ =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_COMMITS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_BRANCH_COMMITS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error (`Bad_request | `Unauthorized | `Not_found) ->
       Logs.err (fun m -> m "%s : FETCH_BRANCH_COMMITS : REFUSED" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_file ~request_id client repo ref_ path =
   let run =
     let module Gl = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryFilesFilePath in
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~file_path:path ~ref_))
@@ -387,11 +387,11 @@ let fetch_file ~request_id client repo ref_ path =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_FILE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_FILE : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_remote_repo' ~request_id:_ client repo =
   let module Gl = Gitlabc_projects.GetApiV4ProjectsId in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let id = CCInt.to_string @@ Repo.id repo in
   call client.Client.client Gl.(make (Parameters.make ~id ()))
   >>| fun resp ->
@@ -403,11 +403,11 @@ let fetch_remote_repo ~request_id client repo =
   let open Abb.Future.Infix_monad in
   fetch_remote_repo' ~request_id client repo
   >>= function
-  | Ok (Some repo) -> Abbs_future_combinators.return_ok repo
+  | Ok (Some repo) -> Abbs_fc.return_ok repo
   | Ok None ->
       Logs.err (fun m ->
           m "%s : FETCH_REMOTE_REPO : repo=%s : `Not_found" request_id (Repo.to_string repo));
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_REMOTE_REPO"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_REMOTE_REPO"
   | Error (#Openapic_abb.call_err as err) ->
@@ -418,7 +418,7 @@ let fetch_remote_repo ~request_id client repo =
             (Repo.to_string repo)
             Openapic_abb.pp_call_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* A project is read by its path, [owner/name], which the client sends
    percent-encoded.  The tree of [config] is read recursively, one page at a
@@ -437,13 +437,13 @@ let fetch_centralized_repo ~request_id client owner =
       ~f:(fun holds resp ->
         match Openapi.Response.value resp with
         | `OK tree ->
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (holds
               || CCList.exists
                    (fun { T.path; type_; _ } ->
                      CCString.equal type_ "blob" && Cr.is_config_path path)
                    tree)
-        | `Not_found -> Abbs_future_combinators.return_ok holds)
+        | `Not_found -> Abbs_fc.return_ok holds)
       Glt.(
         make
           (Parameters.make
@@ -455,11 +455,11 @@ let fetch_centralized_repo ~request_id client owner =
   in
   let lookup name =
     let run =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       call client.Client.client Gl.(make (Parameters.make ~id:(owner ^ "/" ^ name) ()))
       >>= fun resp ->
       match Openapi.Response.value resp with
-      | `Not_found -> Abbs_future_combinators.return_ok None
+      | `Not_found -> Abbs_fc.return_ok None
       | `OK remote_repo ->
           holds_config remote_repo >>| fun holds -> if holds then Some remote_repo else None
     in
@@ -478,14 +478,14 @@ let fetch_centralized_repo ~request_id client owner =
               name
               Openapic_abb.pp_call_err
               err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
   in
   Cr.select lookup
 
 let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   let module R = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryCompare in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let id = CCInt.to_string @@ Repo.id repo in
     call client.Client.client R.(make (Parameters.make ~from:base_ref ~to_:branch_ref ~id ()))
     >>| fun resp ->
@@ -510,12 +510,12 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_DIFF_FILES"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF_FILES"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_DIFF_FILES : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let create_client ~request_id config account db =
   let open Abb.Future.Infix_monad in
@@ -538,7 +538,7 @@ let create_client ~request_id config account db =
   >>= function
   | Ok [] ->
       Logs.err (fun m -> m "%s : GITLAB_ACCESS_TOKEN_NOT_FOUND" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Ok (access_token :: _) ->
       let gitlab_client =
         Openapic_abb.create
@@ -547,15 +547,15 @@ let create_client ~request_id config account db =
           ~base_url:(Terrat_config.Gitlab.api_base_url vcs_config)
           (`Bearer access_token)
       in
-      Abbs_future_combinators.return_ok (Client.make ~account ~config ~client:gitlab_client ())
+      Abbs_fc.return_ok (Client.make ~account ~config ~client:gitlab_client ())
   | Error (#Pgsql_io.err as err) ->
       Logs.err (fun m -> m "%s : %a" request_id Pgsql_io.pp_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_tree ~request_id client repo ref_ =
   let module Gl = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryTree in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Openapic_abb.collect_all
       ~page:Openapic_abb.Page.gitlab
       client.Client.client
@@ -584,18 +584,18 @@ let fetch_tree ~request_id client repo ref_ =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_TREE" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_TREE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_TREE : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let comment_on_pull_request ~request_id client pull_request body =
   let module Gl =
     Gitlabc_projects_merge_requests.PostApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNotesId
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let body = { Gl.Request_body.body = Terrat_comment.add_self_marker body } in
     call
       client.Client.client
@@ -616,13 +616,13 @@ let comment_on_pull_request ~request_id client pull_request body =
   | Ok _id as r -> Abb.Future.return r
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let delete_pull_request_comment ~request_id:_ _client _pull_request _comment_id =
   raise (Failure "nyi")
@@ -635,7 +635,7 @@ let fetch_diff ~request_id ~client ~repo merge_request_iid =
     Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIidDiffs
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Openapic_abb.collect_all
       ~page:Openapic_abb.Page.gitlab
       client.Client.client
@@ -659,42 +659,40 @@ let fetch_diff ~request_id ~client ~repo merge_request_iid =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_DIFF" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_DIFF : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request' ~request_id:_ ~client ~repo merge_request_iid =
   let module Gl = Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIid in
   let module Mr = Gitlabc_components_api_entities_mergerequest in
-  let open Abbs_future_combinators.Infix_result_monad in
-  Abbs_future_combinators.retry
+  let open Abbs_fc.Infix_result_monad in
+  Abbs_fc.retry
     ~f:(fun () ->
       call
         client.Client.client
         Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~merge_request_iid ())))
     ~while_:
-      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+      (Abbs_fc.finite_tries fetch_pull_request_tries (function
         | Ok resp -> (
             match Openapi.Response.value resp with
             | `OK { Mr.diff_refs = None; _ } -> true
             | _ -> false)
         | Error _ -> true))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
-           Abb.Sys.sleep (CCFloat.min n 8.0)))
+      (Abbs_fc.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep (CCFloat.min n 8.0)))
   >>= fun resp ->
   match Openapi.Response.value resp with
-  | `OK ({ Mr.diff_refs = Some diff_refs; _ } as mr) ->
-      Abbs_future_combinators.return_ok (diff_refs, mr)
+  | `OK ({ Mr.diff_refs = Some diff_refs; _ } as mr) -> Abbs_fc.return_ok (diff_refs, mr)
   | `OK { Mr.diff_refs = None; _ } -> assert false
-  | `Not_found -> Abbs_future_combinators.return_err `Not_found
+  | `Not_found -> Abbs_fc.return_err `Not_found
 
 let fetch_pull_request ~request_id _account client repo merge_request_iid =
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
-    Abbs_future_combinators.Infix_result_app.(
+    let open Abbs_fc.Infix_result_monad in
+    Abbs_fc.Infix_result_app.(
       (fun mr diff -> (mr, diff))
       <$> fetch_pull_request' ~request_id ~client ~repo merge_request_iid
       <*> fetch_diff ~request_id ~client ~repo merge_request_iid)
@@ -754,17 +752,16 @@ let fetch_pull_request ~request_id _account client repo merge_request_iid =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Not_found ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : `Not_found" request_id);
-      Abbs_future_combinators.return_err `Error
-  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-      Abbs_future_combinators.return_err err
+      Abbs_fc.return_err `Error
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) -> Abbs_fc.return_err err
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let react_to_comment ~request_id client pull_request comment_id =
   let module Gl =
@@ -772,7 +769,7 @@ let react_to_comment ~request_id client pull_request comment_id =
     .PostApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(
@@ -793,17 +790,17 @@ let react_to_comment ~request_id client pull_request comment_id =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "REACT_TO_COMMENT"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "REACT_TO_COMMENT"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : REACT_TO_COMMENT : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let create_commit_checks ~request_id ~brand client repo ref_ checks =
   let module Gl = Gitlabc_projects_statuses.PostApiV4ProjectsIdStatusesSha in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let module Glg = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryCommitsShaStatuses in
     let module Glc = Gitlabc_components_api_entities_commitstatus in
     let module Glp = Gitlabc_projects_pipelines.GetApiV4ProjectsIdPipelines in
@@ -830,12 +827,12 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
       >>= function
       | Ok resp -> (
           match Openapi.Response.value resp with
-          | `OK ({ Glpb.id; _ } :: _) -> Abbs_future_combinators.return_ok id
-          | `OK [] -> Abbs_future_combinators.return_ok None
+          | `OK ({ Glpb.id; _ } :: _) -> Abbs_fc.return_ok id
+          | `OK [] -> Abbs_fc.return_ok None
           | `Unauthorized | `Forbidden ->
               Logs.info (fun m ->
                   m "%s : CREATE_COMMIT_CHECKS : MR_PIPELINE_LOOKUP_FAILED : auth" request_id);
-              Abbs_future_combinators.return_ok None)
+              Abbs_fc.return_ok None)
       | Error err ->
           Logs.info (fun m ->
               m
@@ -843,12 +840,12 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
                 request_id
                 Openapic_abb.pp_call_err
                 err);
-          Abbs_future_combinators.return_ok None
+          Abbs_fc.return_ok None
     in
     lookup_mr_pipeline_id ()
     >>= fun mr_pipeline_id ->
     (match mr_pipeline_id with
-      | Some _ -> Abbs_future_combinators.return_ok (mr_pipeline_id, "mr_pipeline")
+      | Some _ -> Abbs_fc.return_ok (mr_pipeline_id, "mr_pipeline")
       | None ->
           Openapic_abb.collect_all
             ~page:Openapic_abb.Page.gitlab
@@ -881,7 +878,7 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
           (CCOption.map_or ~default:"" CCInt.to_string pipeline_id));
     let module C = Terrat_commit_check in
     let module Body = Gitlabc_components_postapiv4projectsidstatusessha in
-    Abbs_future_combinators.List_result.iter
+    Abbs_fc.List_result.iter
       ~f:(fun { C.status; title; description; _ } ->
         let body =
           {
@@ -928,20 +925,20 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : CREATE_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_commit_checks ~request_id client repo ref_ =
   let module Gl = Gitlabc_projects_repository.GetApiV4ProjectsIdRepositoryCommitsShaStatuses in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let module C = Terrat_commit_check in
     let module Glc = Gitlabc_components_api_entities_commitstatus in
     Openapic_abb.collect_all
@@ -974,14 +971,14 @@ let fetch_commit_checks ~request_id client repo ref_ =
   | Ok _ as r -> Abb.Future.return r
   | Error `Error ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_COMMIT_CHECKS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* GitLab computes the merge asynchronously and reports [checking] until it is done, so this call
    waits for it.  It is its own request, and not part of [fetch_pull_request], because only the
@@ -990,7 +987,7 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
   let module Gl = Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIid in
   let module Mr = Gitlabc_components_api_entities_mergerequest in
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
       Logs.info (fun m ->
           m
@@ -1002,15 +999,14 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
         client.Client.client
         Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~merge_request_iid ())))
     ~while_:
-      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+      (Abbs_fc.finite_tries fetch_pull_request_tries (function
         | Ok resp -> (
             match Openapi.Response.value resp with
             | `OK { Mr.detailed_merge_status = Some "checking"; _ } -> true
             | _ -> false)
         | Error _ -> true))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
-           Abb.Sys.sleep (CCFloat.min n 8.0)))
+      (Abbs_fc.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep (CCFloat.min n 8.0)))
   >>= function
   | Ok resp -> (
       match Openapi.Response.value resp with
@@ -1021,7 +1017,7 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
                 request_id
                 merge_request_iid
                 (CCOption.get_or ~default:"<none>" detailed_merge_status));
-          Abbs_future_combinators.return_ok
+          Abbs_fc.return_ok
             (CCOption.map
                (fun status ->
                  CCList.mem
@@ -1029,19 +1025,19 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
                    status
                    [ "mergeable"; "ci_still_running"; "ci_must_pass" ])
                detailed_merge_status)
-      | `Not_found -> Abbs_future_combinators.return_err `Error)
+      | `Not_found -> Abbs_fc.return_err `Error)
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
   | Error _ ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_MERGEABLE" request_id);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_approvals' ~request_id repo pull_number client =
   let module Gl =
     Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIidApprovals
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(make (Parameters.make ~id:(Repo.id repo) ~merge_request_iid:pull_number))
@@ -1064,20 +1060,20 @@ let fetch_pull_request_approvals' ~request_id repo pull_number client =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_APPROVALS : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_APPROVALS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_APPROVALS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_APPROVALS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_reviews' ~request_id repo pull_number client =
   let module Gl =
     Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIidReviewers
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(
@@ -1104,17 +1100,17 @@ let fetch_pull_request_reviews' ~request_id repo pull_number client =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : FETCH_PULL_REQUEST_REVIEWS : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REVIEWS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_reviews ~request_id repo pull_number client =
   let run =
-    Abbs_future_combinators.Infix_result_app.(
+    Abbs_fc.Infix_result_app.(
       ( @ )
       <$> fetch_pull_request_approvals' ~request_id repo pull_number client
       <*> fetch_pull_request_reviews' ~request_id repo pull_number client)
@@ -1123,16 +1119,15 @@ let fetch_pull_request_reviews ~request_id repo pull_number client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-      Abbs_future_combinators.return_err err
-  | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) -> Abbs_fc.return_err err
+  | Error `Error -> Abbs_fc.return_err `Error
 
 let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
   let module Gl =
     Gitlabc_projects_merge_requests.GetApiV4ProjectsIdMergeRequestsMergeRequestIidReviewers
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(
@@ -1156,18 +1151,18 @@ let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err ->
       vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* GitLab has no equivalent of GitHub's [reviewDecision], so there is no verdict
    to report and [require_completed_reviews] keeps using requested reviewers. *)
-let fetch_pull_request_review_decision ~request_id:_ _ _ _ = Abbs_future_combinators.return_ok None
+let fetch_pull_request_review_decision ~request_id:_ _ _ _ = Abbs_fc.return_ok None
 
 let merge_pull_request ~request_id ?(retain_pr_title = false) client pull_request merge_strategy =
   let module Gl =
@@ -1199,7 +1194,7 @@ let merge_pull_request ~request_id ?(retain_pr_title = false) client pull_reques
     }
   in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(
@@ -1225,20 +1220,20 @@ let merge_pull_request ~request_id ?(retain_pr_title = false) client pull_reques
        | `Conflict json
        | `Unprocessable_entity json ) as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err (`Merge_err (Yojson.Safe.pretty_to_string json))
+      Abbs_fc.return_err (`Merge_err (Yojson.Safe.pretty_to_string json))
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "MERGE_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : MERGE_PULL_REQUEST : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let delete_branch ~request_id client repo branch =
   let module Gl = Gitlabc_projects_repository.DeleteApiV4ProjectsIdRepositoryBranchesBranch in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call
       client.Client.client
       Gl.(make (Parameters.make ~id:(CCInt.to_string @@ Repo.id repo) ~branch))
@@ -1253,18 +1248,18 @@ let delete_branch ~request_id client repo branch =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Gl.Responses.t as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Gl.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "DELETE_BRANCH"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "DELETE_BRANCH"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : DELETE_BRANCH : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_member_of_team ~request_id:_ ~team ~user client =
   let module Glu = Gitlabc_users.GetApiV4Users in
   let module Glg = Gitlabc_groups_members.GetApiV4GroupsIdMembersUserId in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call client.Client.client Glu.(make (Parameters.make ~username:(Some (User.to_string user)) ()))
     >>= fun resp ->
     let module U = Gitlabc_components_api_entities_userbasic in
@@ -1276,17 +1271,17 @@ let fetch_member_of_team ~request_id:_ ~team ~user client =
         match Openapi.Response.value resp with
         | `OK m -> Some m
         | `Not_found -> None)
-    | `OK [] -> Abbs_future_combinators.return_ok None
+    | `OK [] -> Abbs_fc.return_ok None
   in
   let open Abb.Future.Infix_monad in
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error (#Openapic_abb.call_err as err) -> Abbs_future_combinators.return_err err
+  | Error (#Openapic_abb.call_err as err) -> Abbs_fc.return_err err
 
 let is_member_of_team ~request_id ~team ~user _repo client =
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     fetch_member_of_team ~request_id ~team ~user client >>| fun res -> CCOption.is_some res
   in
   let open Abb.Future.Infix_monad in
@@ -1297,13 +1292,13 @@ let is_member_of_team ~request_id ~team ~user _repo client =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "IS_MEMBER_OF_TEAM"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : IS_MEMBER_OF_TEAM : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let get_repo_role ~request_id repo user client =
   let module Glu = Gitlabc_users.GetApiV4Users in
   let module Glp = Gitlabc_projects_members.GetApiV4ProjectsIdMembersAllUserId in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call client.Client.client Glu.(make (Parameters.make ~username:(Some (User.to_string user)) ()))
     >>= fun resp ->
     let module U = Gitlabc_components_api_entities_userbasic in
@@ -1331,7 +1326,7 @@ let get_repo_role ~request_id repo user client =
             in
             al
         | `Not_found -> None)
-    | `OK [] -> Abbs_future_combinators.return_err `Not_found
+    | `OK [] -> Abbs_fc.return_err `Not_found
   in
   let open Abb.Future.Infix_monad in
   run
@@ -1339,18 +1334,18 @@ let get_repo_role ~request_id repo user client =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Glp.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Glp.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "GET_REPO_ROLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_REPO_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_REPO_ROLE : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let get_org_role ~request_id ~org user client =
   let module Glu = Gitlabc_users.GetApiV4Users in
   let module Glg = Gitlabc_groups_members.GetApiV4GroupsIdMembersUserId in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     call client.Client.client Glu.(make (Parameters.make ~username:(Some (User.to_string user)) ()))
     >>= fun resp ->
     let module U = Gitlabc_components_api_entities_userbasic in
@@ -1370,7 +1365,7 @@ let get_org_role ~request_id ~org user client =
             in
             role
         | `Not_found -> None)
-    | `OK [] -> Abbs_future_combinators.return_ok None
+    | `OK [] -> Abbs_fc.return_ok None
   in
   let open Abb.Future.Infix_monad in
   run
@@ -1378,12 +1373,14 @@ let get_org_role ~request_id ~org user client =
   | Ok _ as r -> Abb.Future.return r
   | Error (#Glg.Responses.t as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Glg.Responses.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "GET_ORG_ROLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "GET_ORG_ROLE"
   | Error (#Openapic_abb.call_err as err) ->
       Logs.err (fun m -> m "%s : GET_ORG_ROLE : %a" request_id Openapic_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
-let find_workflow_file ~request_id:_ _repo _client =
-  Abbs_future_combinators.return_ok (Some ".gitlab-ci.yml")
+let find_workflow_file ~request_id:_ _repo _client = Abbs_fc.return_ok (Some ".gitlab-ci.yml")
+
+let find_known_workflow_file ~request_id:_ _client _repo _ref =
+  Abbs_fc.return_ok (Some ".gitlab-ci.yml")

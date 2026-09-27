@@ -13,7 +13,7 @@
    Schedulers without [`Multi_domain] cannot exhibit the hazard, so the suite fast-succeeds there. *)
 module Make (Abb : Abb_intf.S) = struct
   module Oth_abb = Abb_test_oth.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   let is_multi_domain =
     CCList.mem ~eq:Abb_intf.Scheduler_capability.equal `Multi_domain Abb.Scheduler.capabilities

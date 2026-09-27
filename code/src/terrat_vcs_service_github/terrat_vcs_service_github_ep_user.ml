@@ -27,7 +27,7 @@ module Whoami = struct
 
   let get _config storage =
     Brtl_ep.run_result_json ~f:(fun ctx ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_session.with_session ctx
         >>= fun user ->
         let run =
@@ -49,22 +49,20 @@ module Whoami = struct
                   (Brtl_ctx.token ctx)
                   Uuidm.pp
                   (Terrat_user.id user));
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
         | Ok (Some (username, avatar_url)) ->
             let body =
               Terrat_api_components.Github_user.(
                 { avatar_url; username } |> to_yojson |> Yojson.Safe.to_string)
             in
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m -> m "%s : WHOAMI : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_io.err as err) ->
             Logs.err (fun m -> m "%s : WHOAMI : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
 end
 
@@ -123,7 +121,7 @@ module Installations = struct
   end
 
   let get' config storage user =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Terrat_vcs_service_github_user.get_token config storage user
     >>= fun token ->
     Terrat_github.with_client
@@ -163,7 +161,7 @@ module Installations = struct
 
   let get config storage =
     Brtl_ep.run_result_json ~f:(fun ctx ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_session.with_session ctx
         >>= fun user ->
         let open Abb.Future.Infix_monad in
@@ -174,8 +172,7 @@ module Installations = struct
               Terrat_api_user.List_github_installations.Responses.OK.(
                 { installations } |> to_yojson |> Yojson.Safe.to_string)
             in
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Error (`Refresh_err _ as err) ->
             Logs.err (fun m ->
                 m
@@ -183,22 +180,20 @@ module Installations = struct
                   (Brtl_ctx.token ctx)
                   Terrat_vcs_service_github_user.pp_err
                   err);
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
         | Error `Bad_refresh_token ->
             Logs.err (fun m ->
                 m "%s : GET : INSTALLATIONS : BAD_REFRESH_TOKEN" (Brtl_ctx.token ctx));
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Forbidden "") ctx)
         | Error (#Pgsql_pool.err as err) ->
             Logs.err (fun m ->
                 m "%s : GET : INSTALLATIONS : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Pgsql_io.err as err) ->
             Logs.err (fun m ->
                 m "%s : GET : INSTALLATIONS : %a" (Brtl_ctx.token ctx) Pgsql_io.pp_err err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Terrat_github.get_user_installations_err as err) ->
             Logs.err (fun m ->
@@ -207,7 +202,7 @@ module Installations = struct
                   (Brtl_ctx.token ctx)
                   Terrat_github.pp_get_user_installations_err
                   err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
         | Error (#Terrat_vcs_service_github_user.err as err) ->
             Logs.err (fun m ->
@@ -216,6 +211,6 @@ module Installations = struct
                   (Brtl_ctx.token ctx)
                   Terrat_vcs_service_github_user.pp_err
                   err);
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))
 end

@@ -220,7 +220,7 @@ module Make (M : M with type db = Pgsql_io.t) = struct
 
   let query ~request_id ~installation_id ~repo_id ~pull_request_id db =
     let module Tac = Terrat_api_components in
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     M.query_stacks ~request_id ~installation_id ~repo_id ~pull_request_id db
     >>= function
     | Some stacks ->
@@ -243,36 +243,32 @@ module Make (M : M with type db = Pgsql_io.t) = struct
           }
         in
         Some stacks
-    | None -> Abbs_future_combinators.return_ok None
+    | None -> Abbs_fc.return_ok None
 
   let enforce_installation_access user installation_id db ctx =
     M.enforce_installation_access ~request_id:(Brtl_ctx.token ctx) user installation_id db
 
   let get _config storage installation_id repo_id pull_request_id =
     Brtl_ep.run_result_json ~f:(fun ctx ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_session.with_session ctx
         >>= fun user ->
         let open Abb.Future.Infix_monad in
         Pgsql_pool.with_conn storage ~f:(fun db ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             enforce_installation_access user installation_id db ctx
             >>= fun () ->
             query ~request_id:(Brtl_ctx.token ctx) ~installation_id ~repo_id ~pull_request_id db)
         >>= function
         | Ok (Some stacks) ->
             let body = Yojson.Safe.to_string @@ Terrat_api_components.Stacks.to_yojson stacks in
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK body) ctx)
         | Ok None ->
-            Abbs_future_combinators.return_ok
-              (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
-        | Error `Forbidden ->
-            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
-        | Error `Error ->
-            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+            Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Not_found "") ctx)
+        | Error `Forbidden -> Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)
+        | Error `Error -> Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
         | Error #Pgsql_pool.err ->
-            Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
+            Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx))
 
   module Rt = struct
     let stacks () =

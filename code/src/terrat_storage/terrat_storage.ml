@@ -1,7 +1,7 @@
 let src = Logs.Src.create "storage"
 
 module Logs = (val Logs.src_log src : Logs.LOG)
-module Fc = Abbs_future_combinators
+module Fc = Abbs_fc
 
 module Queue_time_histogram = Prmths.Histogram (struct
   let spec = Prmths.Histogram_spec.of_list [ 0.01; 0.1; 0.25; 0.5; 1.0; 2.5; 5.0; 7.5; 10.0; 15.0 ]
@@ -30,10 +30,10 @@ let metrics Pgsql_pool.Metrics.{ num_conns; idle_conns; queue_time } =
   Prmths.Gauge.set Metrics.num_conns (CCFloat.of_int num_conns);
   Prmths.Gauge.set Metrics.num_idle_conns (CCFloat.of_int idle_conns);
   CCOption.iter (Queue_time_histogram.observe Metrics.queue_time) queue_time;
-  Abbs_future_combinators.unit
+  Abbs_fc.unit
 
 let on_connect ?(settings = []) idle_tx_timeout lock_timeout conn =
-  Abbs_future_combinators.ignore
+  Abbs_fc.ignore
     (let go () =
        let open Fc.Infix_result_monad in
        Pgsql_io.Prepared_stmt.execute

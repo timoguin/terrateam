@@ -366,34 +366,33 @@ struct
 
     let rec drift config storage exec =
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.ignore
-        (Evaluator2.run_missing_drift_schedules ~config ~storage ~exec ())
+      Abbs_fc.ignore (Evaluator2.run_missing_drift_schedules ~config ~storage ~exec ())
       >>= fun () -> Abb.Sys.sleep one_hour >>= fun () -> drift config storage exec
 
     let rec flow_state_cleanup config storage =
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (Evaluator.run_flow_state_cleanup
            (Evaluator.Ctx.make ~config ~storage ~request_id:(Ouuid.to_string (Ouuid.v4 ())) ()))
       >>= fun () -> Abb.Sys.sleep one_hour >>= fun () -> flow_state_cleanup config storage
 
     let rec plan_cleanup config storage =
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (Evaluator.run_plan_cleanup
            (Evaluator.Ctx.make ~config ~storage ~request_id:(Ouuid.to_string (Ouuid.v4 ())) ()))
       >>= fun () -> Abb.Sys.sleep one_hour >>= fun () -> plan_cleanup config storage
 
     let rec repo_config_cleanup config storage =
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (Evaluator.run_repo_config_cleanup
            (Evaluator.Ctx.make ~config ~storage ~request_id:(Ouuid.to_string (Ouuid.v4 ())) ()))
       >>= fun () -> Abb.Sys.sleep one_hour >>= fun () -> repo_config_cleanup config storage
 
     let rec repo_tree_cleanup config storage =
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (Evaluator.run_repo_tree_cleanup
            (Evaluator.Ctx.make ~config ~storage ~request_id:(Ouuid.to_string (Ouuid.v4 ())) ()))
       >>= fun () -> Abb.Sys.sleep one_hour >>= fun () -> repo_tree_cleanup config storage
@@ -412,7 +411,7 @@ struct
         <*> Abb.Future.fork (repo_config_cleanup config storage)
         <*> Abb.Future.fork (repo_tree_cleanup config storage))
       >>= fun (drift, flow_state_cleanup, plan_cleanup, repo_config_cleanup, repo_tree_cleanup) ->
-      Abbs_future_combinators.return_ok
+      Abbs_fc.return_ok
         {
           config;
           storage;
@@ -439,7 +438,7 @@ struct
 
     let get_user t user_id =
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_pool.with_conn t.storage ~f:(fun db ->
             Pgsql_io.Prepared_stmt.fetch db Sql.select_github_user2_exists ~f:CCFun.id user_id
             >>| function
@@ -452,9 +451,9 @@ struct
       | Ok _ as ret -> Abb.Future.return ret
       | Error (#Pgsql_pool.err as err) ->
           Logs.err (fun m -> m "GET_USER : user_id=%a : %a" Uuidm.pp user_id Pgsql_pool.pp_err err);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "GET_USER : user_id=%a : %a" Uuidm.pp user_id Pgsql_io.pp_err err);
-          Abbs_future_combinators.return_err `Error
+          Abbs_fc.return_err `Error
   end
 end

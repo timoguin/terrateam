@@ -2,7 +2,7 @@ module Unix = UnixLabels
 
 module Make (Abb : Abb_intf.S) = struct
   module Oth_abb = Abb_test_oth.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   (* Regression test for the capture-eagerly invariant on [Socket.Tcp.send]
      (RFD 675, "Capture-eagerly invariant for unpinned_ctx").

@@ -1,19 +1,17 @@
 let post config storage =
   Brtl_ep.run_result_json ~f:(fun ctx ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Terrat_session.with_session ctx
       >>= fun _ ->
       let open Abb.Future.Infix_monad in
       Terrat_session.rem_session ~cookie_name:(Terrat_config.session_cookie_name config) storage ctx
       >>= function
-      | Ok ctx ->
-          Abbs_future_combinators.return_ok
-            (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
+      | Ok ctx -> Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`OK "") ctx)
       | Error (#Pgsql_pool.err as err) ->
           Logs.err (fun m -> m "LOGOUT : ERROR : %s" (Pgsql_pool.show_err err));
-          Abbs_future_combinators.return_ok
+          Abbs_fc.return_ok
             (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx)
       | Error (#Pgsql_io.err as err) ->
           Logs.err (fun m -> m "LOGOUT : ERROR : %s" (Pgsql_io.show_err err));
-          Abbs_future_combinators.return_ok
+          Abbs_fc.return_ok
             (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Internal_server_error "") ctx))

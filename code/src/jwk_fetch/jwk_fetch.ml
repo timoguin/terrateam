@@ -19,7 +19,7 @@ let get_max_age cache_control =
   | None -> 0
 
 let fetch uri =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Http.Client.get uri
   >>? function
   | resp, body when resp.Http.Response.status = `OK -> (

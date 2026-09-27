@@ -285,6 +285,16 @@ module Client = struct
         v
   end)
 
+  module Find_known_workflow_file_cache = Abbs_cache.Expiring.Make (struct
+    type k = Account.t * Repo.t * Ref.t [@@deriving eq]
+    type v = string option
+    type err = Terrat_github.fetch_file_err
+    type args = unit -> (v, err) result Abb.Future.t
+
+    let fetch f = f ()
+    let weight _ = 1
+  end)
+
   (* Only [fetch_branch_sha_cached] reads this. *)
   module Fetch_branch_sha_cache = Abbs_cache.Expiring.Make (struct
     type k = Account.t * Repo.t * Ref.t [@@deriving eq]
@@ -373,6 +383,16 @@ module Client = struct
           capacity = 5000;
         }
 
+    let find_known_workflow_file_cache =
+      Find_known_workflow_file_cache.create
+        {
+          Abbs_cache.Expiring.on_hit = on_hit "find_known_workflow_file";
+          on_miss = on_miss "find_known_workflow_file";
+          on_evict = on_evict "find_known_workflow_file";
+          duration = Duration.of_min 1;
+          capacity = 10_000;
+        }
+
     let fetch_centralized_repo_cache =
       Fetch_centralized_repo_cache.create
         {
@@ -406,6 +426,7 @@ module Client = struct
     fetch_file_by_rev_cache : Fetch_file_cache.By_rev.t;
     fetch_repo_cache : Fetch_repo_cache.t;
     fetch_tree_by_rev_cache : Fetch_tree_cache.By_rev.t;
+    find_known_workflow_file_cache : Find_known_workflow_file_cache.t;
   }
 
   let make ~account ~client ~config () =
@@ -419,6 +440,7 @@ module Client = struct
       fetch_file_by_rev_cache = Globals.fetch_file_by_rev_cache;
       fetch_repo_cache = Globals.fetch_repo_cache;
       fetch_tree_by_rev_cache = Globals.fetch_tree_by_rev_cache;
+      find_known_workflow_file_cache = Globals.find_known_workflow_file_cache;
     }
 
   let to_native t = t.client
@@ -431,7 +453,7 @@ end
 let vcs_api_timeout_err ~request_id operation =
   Prmths.Counter.inc_one Metrics.github_errors_total;
   Logs.err (fun m -> m "%s : %s : TIMEOUT" request_id operation);
-  Abbs_future_combinators.return_err (`Vcs_api_timeout_err operation)
+  Abbs_fc.return_err (`Vcs_api_timeout_err operation)
 
 (* A call GitHub refused for a rate limit, where the wait it asked for is longer
    than the call timeout.  It is reported apart from [`Error] so that the user is
@@ -441,7 +463,7 @@ let vcs_api_timeout_err ~request_id operation =
 let vcs_api_rate_limit_err ~request_id operation =
   Prmths.Counter.inc_one Metrics.github_errors_total;
   Logs.err (fun m -> m "%s : %s : RATE_LIMIT" request_id operation);
-  Abbs_future_combinators.return_err (`Vcs_api_rate_limit_err operation)
+  Abbs_fc.return_err (`Vcs_api_rate_limit_err operation)
 
 (* The branch does not exist is [Ok None], not an error, so that it is a value a
    cache can keep. *)
@@ -461,13 +483,13 @@ let fetch_branch_sha' client repo ref_ =
   | Error (#Terrat_github.fetch_branch_err as err) -> Error err
 
 let fetch_branch_sha_res ~request_id = function
-  | Ok sha -> Abbs_future_combinators.return_ok sha
+  | Ok sha -> Abbs_fc.return_ok sha
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_BRANCH_SHA"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_SHA"
   | Error (#Terrat_github.fetch_branch_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_BRANCH_SHA : %a" request_id Terrat_github.pp_fetch_branch_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_branch_sha ~request_id client repo ref_ =
   let open Abb.Future.Infix_monad in
@@ -491,8 +513,7 @@ let fetch_branch_commits ~request_id client repo ref_ =
   >>= function
   | Ok commits ->
       let module C = Githubc2_components.Commit in
-      Abbs_future_combinators.return_ok
-        (CCList.map (fun { C.primary = { C.Primary.sha; _ }; _ } -> sha) commits)
+      Abbs_fc.return_ok (CCList.map (fun { C.primary = { C.Primary.sha; _ }; _ } -> sha) commits)
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_BRANCH_COMMITS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_BRANCH_COMMITS"
   | Error (#Terrat_github.fetch_branch_commits_err as err) ->
@@ -502,7 +523,7 @@ let fetch_branch_commits ~request_id client repo ref_ =
             request_id
             Terrat_github.pp_fetch_branch_commits_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_directory ~request_id client repo ref_ path =
   let module D = Githubc2_components.Content_directory.Items in
@@ -536,7 +557,7 @@ let fetch_directory ~request_id client repo ref_ path =
      is what the 404 means as well, and [Terrat_github.fetch_directory] already
      answers [None] for that.  A repository that names a file [.terrateam] must
      not fail every configuration load. *)
-  | Error `Not_directory -> Abbs_future_combinators.return_ok None
+  | Error `Not_directory -> Abbs_fc.return_ok None
   (* The contents endpoint refuses to list a directory that holds too many
      entries.  The caller must read the names it wants directly. *)
   | Error (`Forbidden _ as err) ->
@@ -546,13 +567,13 @@ let fetch_directory ~request_id client repo ref_ path =
             request_id
             Terrat_github.pp_fetch_directory_err
             err);
-      Abbs_future_combinators.return_err `Listing_unavailable
+      Abbs_fc.return_err `Listing_unavailable
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_DIRECTORY"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIRECTORY"
   | Error (#Terrat_github.fetch_directory_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_DIRECTORY : %a" request_id Terrat_github.pp_fetch_directory_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_file ~request_id client repo ref_ path =
   let module C = Githubc2_components.Content_file in
@@ -576,16 +597,14 @@ let fetch_file ~request_id client repo ref_ path =
    else fetch ())
   >>= function
   | Ok (Some { C.primary = { C.Primary.encoding = "base64"; content; _ }; _ }) ->
-      Abbs_future_combinators.return_ok
-        (Some (Base64.decode_exn (CCString.replace ~sub:"\n" ~by:"" content)))
-  | Ok (Some { C.primary = { C.Primary.content; _ }; _ }) ->
-      Abbs_future_combinators.return_ok (Some content)
-  | Ok None -> Abbs_future_combinators.return_ok None
+      Abbs_fc.return_ok (Some (Base64.decode_exn (CCString.replace ~sub:"\n" ~by:"" content)))
+  | Ok (Some { C.primary = { C.Primary.content; _ }; _ }) -> Abbs_fc.return_ok (Some content)
+  | Ok None -> Abbs_fc.return_ok None
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_FILE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_FILE"
   | Error (#Terrat_github.fetch_file_err as err) ->
       Logs.info (fun m -> m "%s : FETCH_FILE : %a" request_id Terrat_github.pp_fetch_file_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_remote_repo ~request_id client repo =
   let open Abb.Future.Infix_monad in
@@ -603,10 +622,10 @@ let fetch_remote_repo ~request_id client repo =
   | Error (#Terrat_github.fetch_repo_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_REMOTE_REPO : %a" request_id Terrat_github.pp_fetch_repo_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let create_client' config { Account.installation_id } =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Terrat_github.get_installation_access_token config.Config.github installation_id
   >>| fun access_token ->
   let github_client = Terrat_github.create config.Config.github (`Token access_token) in
@@ -623,21 +642,19 @@ let create_client ~request_id config account _db =
     | Error (#Terrat_github.get_installation_access_token_err as err) ->
         Logs.err (fun m ->
             m "%s: ERROR : %a" request_id Terrat_github.pp_get_installation_access_token_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
   in
   Client.Client_cache.fetch Client.Globals.client_cache account fetch
   >>= function
-  | Ok github_client ->
-      Abbs_future_combinators.return_ok (Client.make ~account ~client:github_client ~config ())
-  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-      Abbs_future_combinators.return_err err
-  | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Ok github_client -> Abbs_fc.return_ok (Client.make ~account ~client:github_client ~config ())
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) -> Abbs_fc.return_err err
+  | Error `Error -> Abbs_fc.return_err `Error
 
 let fetch_tree ~request_id client repo ref_ =
   let open Abb.Future.Infix_monad in
   let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
   let fetch () =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Terrat_github.get_tree
       ~owner:repo.Repo.owner
       ~repo:repo.Repo.name
@@ -663,12 +680,12 @@ let fetch_tree ~request_id client repo ref_ =
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_TREE"
   | Error (#Terrat_github.get_tree_err as err) ->
       Logs.info (fun m -> m "%s : FETCH_TREE : %a" request_id Terrat_github.pp_get_tree_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* Read through [Fetch_repo_cache] so that a repository that exists keeps the
    lifetime of any other repository metadata. *)
 let fetch_centralized_repo ~request_id client owner =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Cr = Terrat_vcs_api.Centralized_repo in
   let fetch_remote_repo name =
     let open Abb.Future.Infix_monad in
@@ -677,19 +694,19 @@ let fetch_centralized_repo ~request_id client owner =
       (client.Client.account, (owner, name))
       (fun () -> Terrat_github.fetch_repo ~owner ~repo:name client.Client.client)
     >>= function
-    | Ok remote_repo -> Abbs_future_combinators.return_ok (Some remote_repo)
-    | Error (`Not_found _) -> Abbs_future_combinators.return_ok None
+    | Ok remote_repo -> Abbs_fc.return_ok (Some remote_repo)
+    | Error (`Not_found _) -> Abbs_fc.return_ok None
     | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_CENTRALIZED_REPO"
     | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_CENTRALIZED_REPO"
     | Error (#Terrat_github.fetch_repo_err as err) ->
         Logs.info (fun m ->
             m "%s : FETCH_CENTRALIZED_REPO : %a" request_id Terrat_github.pp_fetch_repo_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
   in
   (* One recursive read of the tree answers this for a repository of any shape,
      and it is kept by revision in [Fetch_tree_cache]. *)
   let holds_config repo ref_ =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
     fetch_tree ~request_id client repo ref_
     >>| CCList.exists (fun { Files.Items.path; _ } -> Cr.is_config_path path)
@@ -697,12 +714,12 @@ let fetch_centralized_repo ~request_id client owner =
   let lookup name =
     fetch_remote_repo name
     >>= function
-    | None -> Abbs_future_combinators.return_ok None
+    | None -> Abbs_fc.return_ok None
     | Some remote_repo -> (
         let repo = Remote_repo.to_repo remote_repo in
         fetch_branch_sha_cached ~request_id client repo (Remote_repo.default_branch remote_repo)
         >>= function
-        | None -> Abbs_future_combinators.return_ok None
+        | None -> Abbs_fc.return_ok None
         | Some ref_ ->
             holds_config repo ref_ >>| fun holds -> if holds then Some remote_repo else None)
   in
@@ -713,7 +730,7 @@ let fetch_centralized_repo ~request_id client owner =
     (fun () -> Cr.select lookup)
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error (#Terrat_vcs_api.call_err as err) -> Abbs_future_combinators.return_err err
+  | Error (#Terrat_vcs_api.call_err as err) -> Abbs_fc.return_err err
 
 let comment_on_pull_request ~request_id client pull_request body =
   let open Abb.Future.Infix_monad in
@@ -724,14 +741,14 @@ let comment_on_pull_request ~request_id client pull_request body =
     ~body:(Terrat_comment.add_self_marker body)
     client.Client.client
   >>= function
-  | Ok id -> Abbs_future_combinators.return_ok id
+  | Ok id -> Abbs_fc.return_ok id
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "COMMENT_ON_PULL_REQUEST"
   | Error (#Terrat_github.publish_comment_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
           m "%s : COMMENT_ON_PULL_REQUEST : %a" request_id Terrat_github.pp_publish_comment_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let delete_pull_request_comment ~request_id client pull_request comment_id =
   let open Abb.Future.Infix_monad in
@@ -741,7 +758,7 @@ let delete_pull_request_comment ~request_id client pull_request comment_id =
     ~comment_id
     client.Client.client
   >>= function
-  | Ok () -> Abbs_future_combinators.return_ok ()
+  | Ok () -> Abbs_fc.return_ok ()
   | Error (#Terrat_github.delete_comment_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.err (fun m ->
@@ -752,7 +769,7 @@ let delete_pull_request_comment ~request_id client pull_request comment_id =
             err);
       (* Ignore all errors as this can fail for a bunch of reasons and we don't
          want to block the actual commenting *)
-      Abbs_future_combinators.return_ok ()
+      Abbs_fc.return_ok ()
 
 let minimize_pull_request_comment ~request_id client pull_request comment_id =
   let open Abb.Future.Infix_monad in
@@ -773,7 +790,7 @@ let minimize_pull_request_comment ~request_id client pull_request comment_id =
             err);
       (* Ignore all errors as this can fail for a bunch of reasons and we don't
          want to block the actual commenting *)
-      Abbs_future_combinators.return_ok ()
+      Abbs_fc.return_ok ()
 
 let diff_of_github_diff =
   CCList.map
@@ -794,7 +811,7 @@ let diff_of_github_diff =
 
 let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Terrat_github.fetch_diff_files
       ~owner:(Repo.owner repo)
       ~repo:(Repo.name repo)
@@ -810,15 +827,15 @@ let fetch_diff_files ~request_id ~base_ref ~branch_ref repo client =
   run
   >>= function
   | Ok _ as r -> Abb.Future.return r
-  | Error `Error -> Abbs_future_combinators.return_err `Error
+  | Error `Error -> Abbs_fc.return_err `Error
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_DIFF_FILES"
   | Error (#Terrat_github.fetch_diff_files_err as err) ->
       Logs.info (fun m ->
           m "%s : FETCH_DIFF_FILES : %a" request_id Terrat_github.pp_fetch_diff_files_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_diff ~client ~owner ~repo pull_number =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Terrat_github.fetch_pull_request_files ~owner ~repo ~pull_number client.Client.client
   >>| fun github_diff ->
   let diff = diff_of_github_diff github_diff in
@@ -827,8 +844,8 @@ let fetch_diff ~client ~owner ~repo pull_number =
 let fetch_pull_request' request_id _account client repo pull_request_id =
   let owner = repo.Repo.owner in
   let repo_name = repo.Repo.name in
-  let open Abbs_future_combinators.Infix_result_monad in
-  Abbs_future_combinators.Infix_result_app.(
+  let open Abbs_fc.Infix_result_monad in
+  Abbs_fc.Infix_result_app.(
     (fun resp diff -> (resp, diff))
     <$> Terrat_github.fetch_pull_request
           ~owner
@@ -916,7 +933,7 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
   let f () =
     fetch ()
     >>= function
-    | Ok ret -> Abbs_future_combinators.return_ok ret
+    | Ok ret -> Abbs_fc.return_ok ret
     | Error
         ( `Not_found _
         | `Internal_server_error _
@@ -926,7 +943,7 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
     | Error `Error ->
         Prmths.Counter.inc_one Metrics.github_errors_total;
         Logs.err (fun m -> m "%s : ERROR : repo=%s : ERROR" request_id (Repo.to_string repo));
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
     | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST"
     | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST"
     | Error (#Terrat_github.fetch_pull_request_err as err) ->
@@ -938,28 +955,27 @@ let fetch_pull_request ~request_id account client repo pull_request_id =
               (Repo.to_string repo)
               Terrat_github.pp_fetch_pull_request_err
               err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
   in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f
     ~while_:
-      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+      (Abbs_fc.finite_tries fetch_pull_request_tries (function
         | Error _ -> true
         | Ok _ -> false))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
+      (Abbs_fc.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
            Prmths.Counter.inc_one Metrics.fetch_pull_request_errors_total;
            Abb.Sys.sleep (CCFloat.min n 8.0)))
   >>= function
-  | Ok ret -> Abbs_future_combinators.return_ok ret
+  | Ok ret -> Abbs_fc.return_ok ret
   | Error (`Not_found _)
   | Error (`Internal_server_error _)
   | Error `Not_modified
   | Error (`Service_unavailable _)
   | Error (`Not_acceptable _)
-  | Error `Error -> Abbs_future_combinators.return_err `Error
-  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-      Abbs_future_combinators.return_err err
+  | Error `Error -> Abbs_fc.return_err `Error
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) -> Abbs_fc.return_err err
 
 (* GitHub computes the merge asynchronously and answers [unknown] until it is done, so this call
    waits for it.  It is its own request, and not part of [fetch_pull_request], because only the
@@ -988,7 +1004,7 @@ let fetch_pull_request_mergeable ~request_id repo pull_request_id client =
     | Error `Error ->
         Prmths.Counter.inc_one Metrics.github_errors_total;
         Logs.err (fun m -> m "%s : ERROR : repo=%s : ERROR" request_id (Repo.to_string repo));
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
     | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
     | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
     | Error (#Terrat_github.fetch_pull_request_err as err) ->
@@ -1000,16 +1016,16 @@ let fetch_pull_request_mergeable ~request_id repo pull_request_id client =
               (Repo.to_string repo)
               Terrat_github.pp_fetch_pull_request_err
               err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
   in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f
     ~while_:
-      (Abbs_future_combinators.finite_tries fetch_pull_request_tries (function
+      (Abbs_fc.finite_tries fetch_pull_request_tries (function
         | Error _ -> true
         | Ok pr -> CCString.equal "unknown" (mergeable_state pr)))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
+      (Abbs_fc.series ~start:2.0 ~step:(( *. ) 1.5) (fun n _ ->
            Prmths.Counter.inc_one Metrics.fetch_pull_request_errors_total;
            Abb.Sys.sleep (CCFloat.min n 8.0)))
   >>= function
@@ -1023,10 +1039,9 @@ let fetch_pull_request_mergeable ~request_id repo pull_request_id client =
             (Pull_request.Id.to_string pull_request_id)
             (mergeable_state pr)
             (CCOption.map_or ~default:"<none>" Bool.to_string mergeable));
-      Abbs_future_combinators.return_ok mergeable
-  | Error `Error -> Abbs_future_combinators.return_err `Error
-  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) ->
-      Abbs_future_combinators.return_err err
+      Abbs_fc.return_ok mergeable
+  | Error `Error -> Abbs_fc.return_err `Error
+  | Error ((`Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err) -> Abbs_fc.return_err err
 
 let react_to_comment ~request_id client pull_request comment_id =
   let open Abb.Future.Infix_monad in
@@ -1037,13 +1052,13 @@ let react_to_comment ~request_id client pull_request comment_id =
     ~comment_id
     client.Client.client
   >>= function
-  | Ok () -> Abbs_future_combinators.return_ok ()
+  | Ok () -> Abbs_fc.return_ok ()
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "REACT_TO_COMMENT"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "REACT_TO_COMMENT"
   | Error (#Terrat_github.publish_reaction_err as err) ->
       Logs.info (fun m ->
           m "%s : REACT_TO_COMMENT : %a" request_id Terrat_github.pp_publish_reaction_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let create_commit_checks ~request_id ~brand client repo ref_ checks =
   let open Abb.Future.Infix_monad in
@@ -1071,13 +1086,13 @@ let create_commit_checks ~request_id ~brand client repo ref_ checks =
     ~checks
     client.Client.client
   >>= function
-  | Ok () -> Abbs_future_combinators.return_ok ()
+  | Ok () -> Abbs_fc.return_ok ()
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "CREATE_COMMIT_CHECKS"
   | Error (#Githubc2_abb.call_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.err (fun m -> m "%s : ERROR : %a" request_id Githubc2_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_commit_checks ~request_id client repo ref_ =
   let open Abb.Future.Infix_monad in
@@ -1095,7 +1110,7 @@ let fetch_commit_checks ~request_id client repo ref_ =
   >>= function
   | Ok checks ->
       (* Normalize fetched titles so internal comparisons accept both brands. *)
-      Abbs_future_combinators.return_ok
+      Abbs_fc.return_ok
         (CCList.map
            (fun c ->
              {
@@ -1113,7 +1128,7 @@ let fetch_commit_checks ~request_id client repo ref_ =
             request_id
             Terrat_vcs_api_github_commit_check.pp_list_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_reviews ~request_id repo pull_request_id client =
   let open Abb.Future.Infix_monad in
@@ -1124,7 +1139,7 @@ let fetch_pull_request_reviews ~request_id repo pull_request_id client =
   >>= function
   | Ok reviews ->
       let module Prr = Githubc2_components.Pull_request_review in
-      Abbs_future_combinators.return_ok
+      Abbs_fc.return_ok
         (CCList.map
            (fun Prr.{ primary = Primary.{ node_id; state; user; _ }; _ } ->
              Terrat_pull_request_review.
@@ -1146,12 +1161,12 @@ let fetch_pull_request_reviews ~request_id repo pull_request_id client =
   | Error (#Terrat_github.Pull_request_reviews.list_err as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m -> m "%s : %a" request_id Terrat_github.Pull_request_reviews.pp_list_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
   let module Resp = Githubc2_pulls.List_requested_reviewers.Responses in
   let run =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Githubc2_abb.call
       client.Client.client
       Githubc2_pulls.List_requested_reviewers.(
@@ -1177,12 +1192,12 @@ let fetch_pull_request_requested_reviews ~request_id repo pull_number client =
   | Error (#Resp.t as err) ->
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m -> m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS : %a" request_id Resp.pp err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REQUESTED_REVIEWS"
   | Error (#Githubc2_abb.call_err as err) ->
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REQUESTED_REVIEWS: %a" request_id Githubc2_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let fetch_pull_request_review_decision ~request_id repo pull_number client =
   let module D = Terrat_pull_request_review.Decision in
@@ -1193,17 +1208,17 @@ let fetch_pull_request_review_decision ~request_id repo pull_number client =
     ~pull_number
     client.Client.client
   >>= function
-  | Ok None -> Abbs_future_combinators.return_ok None
-  | Ok (Some "APPROVED") -> Abbs_future_combinators.return_ok (Some D.Approved)
-  | Ok (Some "CHANGES_REQUESTED") -> Abbs_future_combinators.return_ok (Some D.Changes_requested)
-  | Ok (Some "REVIEW_REQUIRED") -> Abbs_future_combinators.return_ok (Some D.Review_required)
+  | Ok None -> Abbs_fc.return_ok None
+  | Ok (Some "APPROVED") -> Abbs_fc.return_ok (Some D.Approved)
+  | Ok (Some "CHANGES_REQUESTED") -> Abbs_fc.return_ok (Some D.Changes_requested)
+  | Ok (Some "REVIEW_REQUIRED") -> Abbs_fc.return_ok (Some D.Review_required)
   | Ok (Some decision) ->
       (* A value outside the documented enum means GitHub changed the API under
          us.  Erroring is safer than guessing which way it should resolve. *)
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.err (fun m ->
           m "%s : FETCH_PULL_REQUEST_REVIEW_DECISION : UNKNOWN : %s" request_id decision);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_REVIEW_DECISION"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_REVIEW_DECISION"
   | Error (#Terrat_github.fetch_pull_request_review_decision_err as err) ->
@@ -1214,7 +1229,7 @@ let fetch_pull_request_review_decision ~request_id repo pull_number client =
             request_id
             Terrat_github.pp_fetch_pull_request_review_decision_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 (* The merge of a pull request.
 
@@ -1262,14 +1277,14 @@ let merge_async_message ~default result = CCOption.get_or ~default (fst (merge_a
    waited on for ever, because the merge may yet land and asking again is safe
    only through the 409 that says one is already enqueued. *)
 let poll_merge_async request_id client repo pull_number uuid =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module R = Githubc2_components.Pull_request_merge_async_result in
   let num_tries = 10 in
   let settled = function
     | Ok (`Pending _) -> false
     | Ok (`Settled _) | Error _ -> true
   in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
       let open Abb.Future.Infix_monad in
       Githubc2_abb.call
@@ -1286,14 +1301,13 @@ let poll_merge_async request_id client repo pull_number uuid =
                     request_id
                     uuid
                     (merge_async_message ~default:"merged" result));
-              Abbs_future_combinators.return_ok (`Settled ())
+              Abbs_fc.return_ok (`Settled ())
           | `OK ({ R.status = `Failed; _ } as result) ->
-              Abbs_future_combinators.return_err
+              Abbs_fc.return_err
                 (`Merge_err (merge_async_message ~default:"The merge failed." result))
-          | `OK ({ R.status = `Pending; _ } as result) ->
-              Abbs_future_combinators.return_ok (`Pending result)
+          | `OK ({ R.status = `Pending; _ } as result) -> Abbs_fc.return_ok (`Pending result)
           | `Forbidden err | `Not_found err ->
-              Abbs_future_combinators.return_err
+              Abbs_fc.return_err
                 (merge_err_of_basic_error "GitHub would not report the result of the merge." err))
       | Error `Timeout -> vcs_api_timeout_err ~request_id "MERGE_PULL_REQUEST_ASYNC_RESULT"
       | Error (#Githubc2_abb.call_err as err) ->
@@ -1303,21 +1317,19 @@ let poll_merge_async request_id client repo pull_number uuid =
                 request_id
                 Githubc2_abb.pp_call_err
                 err);
-          Abbs_future_combinators.return_err
-            (`Merge_err "GitHub sent a response that could not be read."))
-    ~while_:(Abbs_future_combinators.finite_tries num_tries (fun r -> not (settled r)))
-    ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
+          Abbs_fc.return_err (`Merge_err "GitHub sent a response that could not be read."))
+    ~while_:(Abbs_fc.finite_tries num_tries (fun r -> not (settled r)))
+    ~betwixt:(Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
   >>= function
-  | `Settled () -> Abbs_future_combinators.return_ok ()
+  | `Settled () -> Abbs_fc.return_ok ()
   | `Pending _ ->
       (* Do not send the merge again.  It may still land, and a second request is
          only safe because of the 409 that says one is already enqueued. *)
-      Abbs_future_combinators.return_err
+      Abbs_fc.return_err
         (`Merge_err "The merge did not finish in time.  Look at the pull request for its state.")
 
 let merge_pull_request_async request_id client pull_request ~merge_method ~commit_title =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module R = Githubc2_components.Pull_request_merge_async_result in
   let repo = Terrat_pull_request.repo pull_request in
   let pull_number = Terrat_pull_request.id pull_request in
@@ -1345,38 +1357,36 @@ let merge_pull_request_async request_id client pull_request ~merge_method ~commi
      was treated. *)
   let settle result =
     match result.R.status with
-    | `Merged | `Enqueued -> Abbs_future_combinators.return_ok ()
+    | `Merged | `Enqueued -> Abbs_fc.return_ok ()
     | `Pending -> (
         match snd (merge_async_detail result) with
         | Some uuid -> poll_merge_async request_id client repo pull_number uuid
         | None ->
-            Abbs_future_combinators.return_err
+            Abbs_fc.return_err
               (`Merge_err "GitHub accepted the merge but gave no way to follow it."))
     | `Failed ->
-        Abbs_future_combinators.return_err
-          (`Merge_err (merge_async_message ~default:"The merge failed." result))
+        Abbs_fc.return_err (`Merge_err (merge_async_message ~default:"The merge failed." result))
   in
   match Openapi.Response.value resp with
   | `OK result | `Accepted result | `Conflict result -> settle result
   | `Bad_request result ->
       (* The pull request is not ready to be merged.  A required check that GitHub
          has not caught up with is the usual cause, so this is worth another try. *)
-      Abbs_future_combinators.return_err
+      Abbs_fc.return_err
         (`Merge_retry
            (merge_async_message ~default:"The pull request is not ready to merge." result))
   | `Not_found _ ->
       (* This GitHub does not have the asynchronous merge endpoint. *)
-      Abbs_future_combinators.return_err `Async_unsupported
+      Abbs_fc.return_err `Async_unsupported
   | `Forbidden err ->
-      Abbs_future_combinators.return_err
-        (merge_err_of_basic_error "GitHub would not permit the merge." err)
+      Abbs_fc.return_err (merge_err_of_basic_error "GitHub would not permit the merge." err)
   | `Unprocessable_entity err ->
       let module Ve = Githubc2_components.Validation_error in
       let { Ve.primary = { Ve.Primary.message; _ }; _ } = err in
-      Abbs_future_combinators.return_err (`Merge_err message)
+      Abbs_fc.return_err (`Merge_err message)
 
 let merge_pull_request_sync client pull_request ~merge_method ~commit_title =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let repo = Terrat_pull_request.repo pull_request in
   let pull_number = Terrat_pull_request.id pull_request in
   let module Mna = Githubc2_pulls.Merge.Responses.Method_not_allowed in
@@ -1393,24 +1403,22 @@ let merge_pull_request_sync client pull_request ~merge_method ~commit_title =
         Parameters.(make ~owner:repo.Repo.owner ~repo:repo.Repo.name ~pull_number))
   >>= fun resp ->
   match Openapi.Response.value resp with
-  | `OK _ -> Abbs_future_combinators.return_ok ()
+  | `OK _ -> Abbs_fc.return_ok ()
   | `Method_not_allowed { Mna.primary = { Mna.Primary.message = Some message; _ }; _ }
-    when CCString.equal "Merge already in progress" message -> Abbs_future_combinators.return_ok ()
+    when CCString.equal "Merge already in progress" message -> Abbs_fc.return_ok ()
   | `Method_not_allowed { Mna.primary = { Mna.Primary.message; _ }; _ } ->
-      Abbs_future_combinators.return_err
+      Abbs_fc.return_err
         (`Merge_err (CCOption.get_or ~default:"GitHub would not merge the pull request." message))
   | `Conflict { Cf.primary = { Cf.Primary.message; _ }; _ } ->
       (* The head moved, or a check has not settled.  Both are worth another try. *)
-      Abbs_future_combinators.return_err
+      Abbs_fc.return_err
         (`Merge_retry (CCOption.get_or ~default:"The pull request is not ready to merge." message))
   | `Forbidden err ->
-      Abbs_future_combinators.return_err
-        (merge_err_of_basic_error "GitHub would not permit the merge." err)
+      Abbs_fc.return_err (merge_err_of_basic_error "GitHub would not permit the merge." err)
   | `Not_found err ->
-      Abbs_future_combinators.return_err
-        (merge_err_of_basic_error "GitHub could not find the pull request." err)
+      Abbs_fc.return_err (merge_err_of_basic_error "GitHub could not find the pull request." err)
   | `Unprocessable_entity { Ve.primary = { Ve.Primary.message; _ }; _ } ->
-      Abbs_future_combinators.return_err (`Merge_err message)
+      Abbs_fc.return_err (`Merge_err message)
 
 let merge_pull_request' ?(retain_pr_title = false) request_id client pull_request merge_strategy =
   let module Ms = Terrat_base_repo_config_v1.Automerge.Merge_strategy in
@@ -1483,7 +1491,7 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
      Note [finite_tries] permits one attempt more than the count it is given. *)
   let num_tries = 6 in
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
       merge_pull_request' ?retain_pr_title request_id client pull_request merge_strategy
       >>= function
@@ -1494,8 +1502,7 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
               m "%s : MERGE_PULL_REQUEST : %a" request_id Githubc2_abb.pp_call_err err);
           (* GitHub answered with something this client cannot read.  That is still
              a merge that did not happen, and the user is owed a reason. *)
-          Abbs_future_combinators.return_err
-            (`Merge_err "GitHub sent a response that could not be read.")
+          Abbs_fc.return_err (`Merge_err "GitHub sent a response that could not be read.")
       | Error ((`Merge_err _ | `Merge_retry _) as err) ->
           Logs.info (fun m ->
               m
@@ -1504,22 +1511,21 @@ let merge_pull_request ~request_id ?retain_pr_title client pull_request merge_st
                 (match err with
                 | `Merge_err message -> "MERGE_ERR : " ^ message
                 | `Merge_retry message -> "MERGE_RETRY : " ^ message));
-          Abbs_future_combinators.return_err err
+          Abbs_fc.return_err err
       | Error (`Vcs_api_timeout_err _) as err -> Abb.Future.return err)
     ~while_:
-      (Abbs_future_combinators.finite_tries num_tries (function
+      (Abbs_fc.finite_tries num_tries (function
         | Error (`Merge_retry _) -> true
         | Ok _ | Error _ -> false))
-    ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
+    ~betwixt:(Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ -> Abb.Sys.sleep n))
   >>= function
   (* The tries ran out on a merge that was never ready.  Tell the user why rather
      than letting it become an internal error nobody sees. *)
-  | Error (`Merge_retry message) -> Abbs_future_combinators.return_err (`Merge_err message)
+  | Error (`Merge_retry message) -> Abbs_fc.return_err (`Merge_err message)
   | (Ok () | Error (`Merge_err _ | `Error | `Vcs_api_timeout_err _)) as r -> Abb.Future.return r
 
 let delete_branch' request_id client repo branch =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Logs.info (fun m ->
       m
         "%s : DELETE_PULL_REQUEST_BRANCH : %s : %s : %s"
@@ -1566,8 +1572,8 @@ let delete_branch ~request_id client repo branch =
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
           m "%s : DELETE_PULL_REQUEST_BRANCH : %a" request_id Githubc2_abb.pp_call_err err);
-      Abbs_future_combinators.return_err `Error
-  | Error `Error -> Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
+  | Error `Error -> Abbs_fc.return_err `Error
 
 let is_member_of_team ~request_id ~team ~user repo client =
   let open Abb.Future.Infix_monad in
@@ -1584,7 +1590,7 @@ let is_member_of_team ~request_id ~team ~user repo client =
             request_id
             Terrat_github.pp_get_team_membership_in_org_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let get_repo_role ~request_id repo user client =
   let open Abb.Future.Infix_monad in
@@ -1605,7 +1611,7 @@ let get_repo_role ~request_id repo user client =
             request_id
             Terrat_github.pp_get_repo_collaborator_permission_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let get_org_role ~request_id ~org user client =
   let open Abb.Future.Infix_monad in
@@ -1618,7 +1624,7 @@ let get_org_role ~request_id ~org user client =
       Prmths.Counter.inc_one Metrics.github_errors_total;
       Logs.info (fun m ->
           m "%s : GET_ORG_ROLE : %a" request_id Terrat_github.pp_get_org_membership_err err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
 
 let find_workflow_file ~request_id repo client =
   let open Abb.Future.Infix_monad in
@@ -1637,4 +1643,24 @@ let find_workflow_file ~request_id repo client =
             request_id
             Terrat_github.pp_get_installation_access_token_err
             err);
-      Abbs_future_combinators.return_err `Error
+      Abbs_fc.return_err `Error
+
+let find_known_workflow_file ~request_id client repo ref_ =
+  let open Abb.Future.Infix_monad in
+  Client.Find_known_workflow_file_cache.fetch
+    client.Client.find_known_workflow_file_cache
+    (client.Client.account, repo, ref_)
+    (fun () ->
+      Terrat_github.find_known_workflow_file
+        ~owner:(Repo.owner repo)
+        ~repo:(Repo.name repo)
+        ~ref_
+        client.Client.client)
+  >>= function
+  | Ok _ as res -> Abb.Future.return res
+  | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FIND_KNOWN_WORKFLOW_FILE"
+  | Error `Timeout -> vcs_api_timeout_err ~request_id "FIND_KNOWN_WORKFLOW_FILE"
+  | Error (#Terrat_github.fetch_file_err as err) ->
+      Logs.info (fun m ->
+          m "%s : FIND_KNOWN_WORKFLOW_FILE : %a" request_id Terrat_github.pp_fetch_file_err err);
+      Abbs_fc.return_err `Error

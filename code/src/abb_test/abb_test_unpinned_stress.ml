@@ -1,6 +1,6 @@
 module Make (Abb : Abb_intf.S) = struct
   module Oth_abb = Abb_test_oth.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   (* Build a deterministic random source per scenario from a fixed seed.
      Avoids Random.self_init so repeat runs are reproducible. *)

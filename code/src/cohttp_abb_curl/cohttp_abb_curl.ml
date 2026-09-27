@@ -1,5 +1,5 @@
 module Abb = Abb_scheduler_select
-module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+module Fut_comb = Abb_fc.Make (Abb.Future)
 module Http = Cohttp_abb.Make (Abb)
 
 let run_client () =

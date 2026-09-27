@@ -33,9 +33,7 @@ module Comment_api : sig
     'a Api.Pull_request.t ->
     string ->
     string ->
-    ( Api.Comment.Id.t,
-      [> `Error | `Vcs_api_rate_limit_err of string ] )
-    Abbs_future_combinators.Infix_result_monad.t
+    (Api.Comment.Id.t, [> `Error | `Vcs_api_rate_limit_err of string ]) Abbs_fc.Infix_result_monad.t
 
   val apply_template_and_publish :
     request_id:string ->
@@ -44,9 +42,7 @@ module Comment_api : sig
     string ->
     Snabela.t ->
     Snabela.Kv.t Snabela.Kv.Map.t ->
-    ( Api.Comment.Id.t,
-      [> `Error | `Vcs_api_rate_limit_err of string ] )
-    Abbs_future_combinators.Infix_result_monad.t
+    (Api.Comment.Id.t, [> `Error | `Vcs_api_rate_limit_err of string ]) Abbs_fc.Infix_result_monad.t
 
   val apply_template_and_publish_jinja :
     request_id:string ->
@@ -55,9 +51,7 @@ module Comment_api : sig
     string ->
     string ->
     Yojson.Safe.t ->
-    ( Api.Comment.Id.t,
-      [> `Error | `Vcs_api_rate_limit_err of string ] )
-    Abbs_future_combinators.Infix_result_monad.t
+    (Api.Comment.Id.t, [> `Error | `Vcs_api_rate_limit_err of string ]) Abbs_fc.Infix_result_monad.t
 end
 
 module Publisher_tools : sig

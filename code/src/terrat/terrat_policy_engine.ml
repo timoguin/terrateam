@@ -21,8 +21,8 @@ let run f =
   let open Abb.Future.Infix_monad in
   bind (return ()) f { ops = [] }
   >>= function
-  | Ok r, p -> Abbs_future_combinators.return_ok (r, CCList.rev p.ops)
-  | Error err, p -> Abbs_future_combinators.return_err (`Error (err, CCList.rev p.ops))
+  | Ok r, p -> Abbs_fc.return_ok (r, CCList.rev p.ops)
+  | Error err, p -> Abbs_fc.return_err (`Error (err, CCList.rev p.ops))
 
 module Syntax = struct
   let ( let* ) = bind

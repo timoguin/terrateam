@@ -354,9 +354,9 @@ module Comment_api = struct
     let open Abb.Future.Infix_monad in
     Api.comment_on_pull_request ~request_id client pull_request body
     >>= function
-    | Ok comment_id -> Abbs_future_combinators.return_ok comment_id
-    | Error (`Vcs_api_rate_limit_err _ as err) -> Abbs_future_combinators.return_err err
-    | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_future_combinators.return_err `Error
+    | Ok comment_id -> Abbs_fc.return_ok comment_id
+    | Error (`Vcs_api_rate_limit_err _ as err) -> Abbs_fc.return_err err
+    | Error (`Error | `Vcs_api_timeout_err _) -> Abbs_fc.return_err `Error
 
   let apply_template_and_publish ~request_id client pull_request msg_type template kv =
     Logs.info (fun m -> m "%s : PUBLISH : %s" request_id msg_type);
@@ -364,7 +364,7 @@ module Comment_api = struct
     | Ok body -> comment_on_pull_request ~request_id client pull_request msg_type body
     | Error (#Snabela.err as err) ->
         Logs.err (fun m -> m "%s : TEMPLATE_ERROR : %a" request_id Snabela.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let apply_template_and_publish_jinja ~request_id client pull_request msg_type template kv =
     Logs.info (fun m -> m "%s : PUBLISH : %s" request_id msg_type);
@@ -372,7 +372,7 @@ module Comment_api = struct
     | Ok body -> comment_on_pull_request ~request_id client pull_request msg_type body
     | Error err ->
         Logs.err (fun m -> m "%s : TEMPLATE_ERROR : %s" request_id err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 end
 
 module Publisher_tools = struct

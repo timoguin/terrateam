@@ -2,7 +2,7 @@
  (name oth_abb)
  (libraries
   abb_bounded_executor
-  abb_future_combinators
+  abb_fc
   abb_intf
   abb_time
   containers

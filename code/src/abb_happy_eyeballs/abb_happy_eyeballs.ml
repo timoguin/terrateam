@@ -7,7 +7,7 @@ type connect_err =
 let default_connect_timeout = Duration.of_ms 100
 
 module Make (Abb : Abb_intf.S) = struct
-  module Abb_fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Abb_fut_comb = Abb_fc.Make (Abb.Future)
 
   let try_connect ip port =
     let tcp =

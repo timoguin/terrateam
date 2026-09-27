@@ -69,7 +69,7 @@ let proxy storage api_key infracost_uri path ctx =
                   Sql.verify_work_manifest
                   ~f:CCFun.id
                   work_manifest_id)
-        | None -> Abbs_future_combinators.return_err `Bad_work_manifest)
+        | None -> Abbs_fc.return_err `Bad_work_manifest)
       >>= function
       | Ok (_ :: _) -> (
           let uri = Uri.with_path infracost_uri (Uri.path infracost_uri ^ "/" ^ path) in
@@ -92,7 +92,7 @@ let proxy storage api_key infracost_uri path ctx =
               >>= fun now' ->
               let wait_time = now' -. now in
               (if wait_time < api_call_timeout then
-                 Abbs_future_combinators.timeout
+                 Abbs_fc.timeout
                    ~timeout:(Abb.Sys.sleep (api_call_timeout -. wait_time))
                    (Http.Client.post ~headers ~body uri)
                else Abb.Future.return `Timeout)
@@ -240,7 +240,7 @@ let price_book ~pricing storage path ctx =
                   Sql.verify_work_manifest
                   ~f:CCFun.id
                   work_manifest_id)
-        | None -> Abbs_future_combinators.return_err `Bad_work_manifest)
+        | None -> Abbs_fc.return_err `Bad_work_manifest)
       >>= function
       | Ok (_ :: _) -> (
           match path with
@@ -286,11 +286,11 @@ let post infracost storage path =
           Prmths.Counter.inc_one Metrics.requests_total;
           Metrics.DefaultHistogram.time Metrics.duration_seconds (fun () ->
               Prmths.Gauge.track_inprogress Metrics.requests_concurrent (fun () ->
-                  Abbs_future_combinators.with_finally
+                  Abbs_fc.with_finally
                     (fun () -> post' backend storage path ctx)
                     ~finally:(fun () ->
                       Logs.info (fun m -> m "%s : FINISH" request_id);
-                      Abbs_future_combinators.unit)))
+                      Abbs_fc.unit)))
       | None ->
           Logs.info (fun m -> m "%s : DISABLED" request_id);
           response `Bad_request "" ctx)

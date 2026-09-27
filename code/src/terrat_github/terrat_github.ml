@@ -4,9 +4,26 @@ module Logs = (val Logs.src_log src : Logs.LOG)
 
 let thirty_seconds = Duration.(to_f (of_sec 30))
 let three_minutes = Duration.(to_f (of_min 3))
-let terrateam_workflow_name = "Terrateam Workflow"
-let terrateam_workflow_path = ".github/workflows/terrateam.yml"
 let installation_expiration_sec = three_minutes
+
+module Workflow = struct
+  type t = {
+    names : string list;
+    path : string;
+  }
+
+  let stategraph = { names = [ "Stategraph" ]; path = ".github/workflows/stategraph.yml" }
+  let terrateam = { names = [ "Terrateam Workflow" ]; path = ".github/workflows/terrateam.yml" }
+  let known = [ stategraph; terrateam ]
+
+  let matches known (_, name, path) =
+    CCString.equal path known.path || CCList.mem ~eq:CCString.equal name known.names
+
+  let select ?override_path workflows =
+    match override_path with
+    | Some override -> CCList.find_opt (fun (_, _, path) -> CCString.equal path override) workflows
+    | None -> CCList.find_map (fun known -> CCList.find_opt (matches known) workflows) known
+end
 
 module Metrics = struct
   module Call_retry_wait_histograph = Prmths.Histogram (struct
@@ -275,7 +292,7 @@ let retry_wait ~max_wait default_wait res =
 
 let call ?(tries = 3) t req =
   let max_wait = CCOption.get_or ~default:thirty_seconds (Githubc2_abb.call_timeout t) in
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
       let open Abb.Future.Infix_monad in
       Githubc2_abb.call t req
@@ -301,24 +318,24 @@ let call ?(tries = 3) t req =
                  it, thus give up now rather than sleep and overrun. *)
               Logs.warn (fun m -> m "RATE_LIMIT : ERR : wait=%0.2f : max_wait=%0.2f" wait max_wait);
               Prmths.Counter.inc_one Metrics.rate_limit_err_total;
-              Abbs_future_combinators.return_err `Rate_limit_err
+              Abbs_fc.return_err `Rate_limit_err
           | `Wait _ | `No_wait -> Abb.Future.return res)
         (rate_limit_headers res))
     ~while_:
-      (Abbs_future_combinators.finite_tries tries (function
+      (Abbs_fc.finite_tries tries (function
         (* Must precede the [Error _] arm: [`Rate_limit_err] is a member of
            [Githubc2_abb.call_err], and retrying it would sleep for nothing. *)
         | Error `Rate_limit_err -> false
         | Error _ -> true
         | Ok resp -> Openapi.Response.status resp >= 500 || is_secondary_rate_limit_error resp))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
+      (Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n res ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
            let open Abb.Future.Infix_monad in
            retry_wait ~max_wait n res >>= Abb.Sys.sleep))
 
 let user ~config ~access_token () =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Prmths.Counter.inc_one (Metrics.fn_call_total "user");
   let client = create config (`Token access_token) in
   call client (Githubc2_users.Get_authenticated.make ())
@@ -348,7 +365,7 @@ let get_installation_access_token
   let header = Jwt.Header.create (Jwt.Signer.to_string signer) in
   let jwt = Jwt.of_header_and_payload signer header payload in
   let token = Jwt.token jwt in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let client = create config (`Bearer token) in
   call
     client
@@ -365,7 +382,7 @@ let get_installation_access_token
 
 let fetch_repo ~owner ~repo client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_repo");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call client Githubc2_repos.Get.(make (Parameters.make ~owner ~repo))
   >>? fun resp ->
   match Openapi.Response.value resp with
@@ -374,7 +391,7 @@ let fetch_repo ~owner ~repo client =
 
 let fetch_branch ~owner ~repo ~branch client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_branch");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call client Githubc2_repos.Get_branch.(make (Parameters.make ~branch ~owner ~repo))
   >>? fun resp ->
   match Openapi.Response.value resp with
@@ -387,7 +404,7 @@ let commits_page_size = 100
 
 let fetch_branch_commits ~owner ~repo ~branch client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_branch_commits");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_repos.List_commits.(
@@ -399,7 +416,7 @@ let fetch_branch_commits ~owner ~repo ~branch client =
 
 let fetch_file ~owner ~repo ~ref_ ~path client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_file");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_repos.Get_content.(make (Parameters.make ~owner ~repo ~ref_:(Some ref_) ~path ()))
@@ -413,7 +430,7 @@ let fetch_file ~owner ~repo ~ref_ ~path client =
 
 let fetch_directory ~owner ~repo ~ref_ ~path client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_directory");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_repos.Get_content.(make (Parameters.make ~owner ~repo ~ref_:(Some ref_) ~path ()))
@@ -440,16 +457,16 @@ let fetch_diff_files ~owner ~repo ~base_ref ~branch_ref client =
       let module C = Githubc2_components.Commit_comparison in
       match Openapi.Response.value resp with
       | `OK { C.primary = { C.Primary.files; _ }; _ } ->
-          Abbs_future_combinators.return_ok (CCOption.get_or ~default:[] files @ acc)
+          Abbs_fc.return_ok (CCOption.get_or ~default:[] files @ acc)
       | (`Not_found _ | `Internal_server_error _ | `Service_unavailable _) as err ->
-          Abbs_future_combinators.return_err err)
+          Abbs_fc.return_err err)
     (* GitHub's API takes the pair as one path segment, [base...head]. *)
     Githubc2_repos.Compare_commits.(
       make Parameters.(make ~owner ~repo ~basehead:(base_ref ^ "..." ^ branch_ref) ~per_page:250 ()))
 
 let fetch_pull_request ~owner ~repo ~pull_number client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_pull_request");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call client Githubc2_pulls.Get.(make Parameters.(make ~owner ~repo ~pull_number))
   >>? fun resp ->
   match Openapi.Response.value resp with
@@ -461,7 +478,7 @@ let fetch_pull_request ~owner ~repo ~pull_number client =
     | `Service_unavailable _ ) as err -> Error err
 
 let get_user_installations client =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module R = Githubc2_apps.List_installations_for_authenticated_user.Responses in
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_user_installations");
   call
@@ -482,9 +499,9 @@ let get_installation_repos client =
     ~f:(fun acc resp ->
       match Openapi.Response.value resp with
       | `OK { R.OK.primary = { R.OK.Primary.repositories; _ }; _ } ->
-          Abbs_future_combinators.return_ok (acc @ repositories)
+          Abbs_fc.return_ok (acc @ repositories)
       | (`Forbidden _ | `Not_found _ | `Not_modified | `Unauthorized _) as err ->
-          Abbs_future_combinators.return_err err)
+          Abbs_fc.return_err err)
     Githubc2_apps.List_repos_accessible_to_installation.(make Parameters.(make ()))
 
 let list_workflows ~owner ~repo client =
@@ -506,64 +523,55 @@ let list_workflows ~owner ~repo client =
                 (id, name, path))
               workflows
           in
-          Abbs_future_combinators.return_ok (workflows @ acc))
+          Abbs_fc.return_ok (workflows @ acc))
     Githubc2_actions.List_repo_workflows.(make (Parameters.make ~per_page:100 ~owner ~repo ()))
 
+let find_known_workflow_file ~owner ~repo ~ref_ client =
+  let open Abbs_fc.Infix_result_monad in
+  let rec go = function
+    | [] -> Abb.Future.return (Ok None)
+    | { Workflow.path; _ } :: rest -> (
+        fetch_file ~owner ~repo ~ref_ ~path client
+        >>= function
+        | Some _ -> Abb.Future.return (Ok (Some path))
+        | None -> go rest)
+  in
+  go Workflow.known
+
 let find_workflow_file ~owner ~repo client =
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       list_workflows ~owner ~repo client
-      >>| fun workflows ->
-      match
-        CCList.filter
-          (fun (_, name, path) ->
-            CCString.equal name terrateam_workflow_name
-            || CCString.equal path terrateam_workflow_path)
-          workflows
-      with
-      | (_, _, path) :: _ -> Some path
-      | [] -> None)
+      >>| fun workflows -> CCOption.map (fun (_, _, path) -> path) (Workflow.select workflows))
     ~while_:
-      (Abbs_future_combinators.finite_tries 3 (function
+      (Abbs_fc.finite_tries 3 (function
         | Ok (Some _) -> false
         | Ok None | Error _ -> true))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
+      (Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
            Abb.Sys.sleep n))
 
 let load_workflow ?override_path ~owner ~repo client =
-  Abbs_future_combinators.retry
+  Abbs_fc.retry
     ~f:(fun () ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       list_workflows ~owner ~repo client
       >>| fun workflows ->
-      match
-        CCList.filter
-          (fun (_, name, path) ->
-            (* If override path is specified, choose it, or if override_path is
-               none, then match against the default *)
-            CCOption.map_or ~default:false (CCString.equal path) override_path
-            || CCOption.is_none override_path
-               && (CCString.equal name terrateam_workflow_name
-                  || CCString.equal path terrateam_workflow_path))
-          workflows
-      with
-      | (id, _, _) :: _ -> Some id
-      | [] -> None)
+      CCOption.map (fun (id, _, _) -> id) (Workflow.select ?override_path workflows))
     ~while_:
-      (Abbs_future_combinators.finite_tries 3 (function
+      (Abbs_fc.finite_tries 3 (function
         | Ok (Some _) -> false
         | Ok None | Error _ -> true))
     ~betwixt:
-      (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
+      (Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
            Prmths.Counter.inc_one Metrics.call_retries_total;
            Abb.Sys.sleep n))
 
 let publish_comment ~owner ~repo ~pull_number ~body client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "publish_comment");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_issues.Create_comment.(
@@ -589,15 +597,15 @@ let delete_comment ~owner ~repo ~comment_id client =
   >>= function
   | Ok resp -> (
       match Openapi.Response.value resp with
-      | `No_content -> Abbs_future_combinators.return_ok ())
+      | `No_content -> Abbs_fc.return_ok ())
   | Error _err ->
       (* TODO #561: Handle this properly later *)
-      Abbs_future_combinators.return_ok ()
+      Abbs_fc.return_ok ()
 
 let minimize_comment ~owner ~repo ~comment_id client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "minimize_comment");
   let module C = Githubc2_components.Issue_comment in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Body = struct
     type t = { query : string } [@@deriving to_yojson]
   end in
@@ -637,7 +645,7 @@ let minimize_comment ~owner ~repo ~comment_id client =
       call client request
       >>= fun resp ->
       match Openapi.Response.value resp with
-      | `OK -> Abbs_future_combinators.return_ok ()
+      | `OK -> Abbs_fc.return_ok ()
       | `Not_found -> (
           let url = "/api/graphql" in
           let request = create_minimize_request url node_id in
@@ -646,7 +654,7 @@ let minimize_comment ~owner ~repo ~comment_id client =
           match Openapi.Response.value resp with
           | `OK -> Ok ()
           | `Not_found -> Error `Not_found))
-  | `Not_found _ -> Abbs_future_combinators.return_err `Not_found
+  | `Not_found _ -> Abbs_fc.return_err `Not_found
 
 let update_comment ~owner ~repo ~comment_id ~body client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "update_comment");
@@ -660,14 +668,14 @@ let update_comment ~owner ~repo ~comment_id ~body client =
   >>= function
   | Ok resp -> (
       match Openapi.Response.value resp with
-      | `OK _ -> Abbs_future_combinators.return_ok ()
-      | `Unprocessable_entity _ as err -> Abbs_future_combinators.return_err err)
+      | `OK _ -> Abbs_fc.return_ok ()
+      | `Unprocessable_entity _ as err -> Abbs_fc.return_err err)
   | Error (`Missing_response resp) when Openapi.Response.status resp = 404 ->
       (* A comment that has been deleted by the user comes back as a 404, which
          the generated client does not have a response for, so detect that case
          here. *)
-      Abbs_future_combinators.return_err `Not_found
-  | Error (#Githubc2_abb.call_err as err) -> Abbs_future_combinators.return_err err
+      Abbs_fc.return_err `Not_found
+  | Error (#Githubc2_abb.call_err as err) -> Abbs_fc.return_err err
 
 (* [reviewDecision] is GitHub's own verdict on whether the pull request
    satisfies the target branch's required-review rule, including CODEOWNERS
@@ -676,7 +684,7 @@ let update_comment ~owner ~repo ~comment_id ~body client =
    which is why the result is an option. *)
 let fetch_pull_request_review_decision ~owner ~repo ~pull_number client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "fetch_pull_request_review_decision");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Body = struct
     module Variables = struct
       type t = {
@@ -749,8 +757,7 @@ let fetch_pull_request_review_decision ~owner ~repo ~pull_number client =
      pulled apart rather than relying on the status code. *)
   let decision = function
     | { Resp.errors = Some (_ :: _ as errs); _ } ->
-        Abbs_future_combinators.return_err
-          (`Graphql_err (CCList.map (fun { Resp.Err.message } -> message) errs))
+        Abbs_fc.return_err (`Graphql_err (CCList.map (fun { Resp.Err.message } -> message) errs))
     | {
         Resp.data =
           Some
@@ -759,8 +766,8 @@ let fetch_pull_request_review_decision ~owner ~repo ~pull_number client =
                 Some { Resp.Repository.pull_request = Some { Resp.Pull_request.review_decision } };
             };
         _;
-      } -> Abbs_future_combinators.return_ok review_decision
-    | _ -> Abbs_future_combinators.return_err `Not_found
+      } -> Abbs_fc.return_ok review_decision
+    | _ -> Abbs_fc.return_err `Not_found
   in
   let url = "/graphql" in
   let request = create_review_decision_request url in
@@ -775,11 +782,11 @@ let fetch_pull_request_review_decision ~owner ~repo ~pull_number client =
       >>= fun resp ->
       match Openapi.Response.value resp with
       | `OK resp -> decision resp
-      | `Not_found -> Abbs_future_combinators.return_err `Not_found)
+      | `Not_found -> Abbs_fc.return_err `Not_found)
 
 let react_to_comment ?(content = `Rocket) ~owner ~repo ~comment_id client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "react_to_comment");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_reactions.Create_for_issue_comment.(
@@ -800,7 +807,7 @@ let prefix_entries path entries =
 
 let rec get_tree ~owner ~repo ~sha client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_tree");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call
     client
     Githubc2_git.Get_tree.(
@@ -826,10 +833,10 @@ let rec get_tree ~owner ~repo ~sha client =
           let items =
             CCList.chunks num_per_chunk Githubc2_components_git_tree.(tree.primary.Primary.tree)
           in
-          Abbs_future_combinators.List.map_par
+          Abbs_fc.List.map_par
             ~f:(fun items ->
-              let open Abbs_future_combinators.Infix_result_monad in
-              Abbs_future_combinators.List_result.fold_left
+              let open Abbs_fc.Infix_result_monad in
+              Abbs_fc.List_result.fold_left
                 ~init:[]
                 ~f:(fun files item ->
                   let module Items = Githubc2_components_git_tree.Primary.Tree.Items in
@@ -838,7 +845,7 @@ let rec get_tree ~owner ~repo ~sha client =
                       get_tree ~owner ~repo ~sha:item.Items.primary.Items.Primary.sha client
                       >>| fun fs -> files @ prefix_entries item.Items.primary.Items.Primary.path fs
                   | "blob" ->
-                      Abbs_future_combinators.return_ok
+                      Abbs_fc.return_ok
                         ({
                            Tree_entry.path = item.Items.primary.Items.Primary.path;
                            id = item.Items.primary.Items.Primary.sha;
@@ -846,15 +853,15 @@ let rec get_tree ~owner ~repo ~sha client =
                         :: files)
                   | typ ->
                       Logs.err (fun m -> m "GET_TREE : UNKNOWN_TYPE : %s" typ);
-                      Abbs_future_combinators.return_ok files)
+                      Abbs_fc.return_ok files)
                 items)
             items
           >>= fun res ->
           match CCResult.flatten_l res with
-          | Ok files -> Abbs_future_combinators.return_ok (CCList.flatten files)
+          | Ok files -> Abbs_fc.return_ok (CCList.flatten files)
           | Error _ as err -> Abb.Future.return err)
-      | `Not_found _ as err -> Abbs_future_combinators.return_err err
-      | (`Unprocessable_entity _ | `Conflict _) as err -> Abbs_future_combinators.return_err err)
+      | `Not_found _ as err -> Abbs_fc.return_err err
+      | (`Unprocessable_entity _ | `Conflict _) as err -> Abbs_fc.return_err err)
   | `OK tree ->
       let tree = Githubc2_components_git_tree.(tree.primary.Primary.tree) in
       let files =
@@ -870,13 +877,13 @@ let rec get_tree ~owner ~repo ~sha client =
                   }
             | _ -> None)
       in
-      Abbs_future_combinators.return_ok files
-  | `Not_found _ as err -> Abbs_future_combinators.return_err err
-  | (`Unprocessable_entity _ | `Conflict _) as err -> Abbs_future_combinators.return_err err
+      Abbs_fc.return_ok files
+  | `Not_found _ as err -> Abbs_fc.return_err err
+  | (`Unprocessable_entity _ | `Conflict _) as err -> Abbs_fc.return_err err
 
 let get_team_membership_in_org ~org ~team ~user client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_team_membership_in_org");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Team = Githubc2_components.Team_membership in
   call
     client
@@ -889,7 +896,7 @@ let get_team_membership_in_org ~org ~team ~user client =
 
 let get_repo_collaborator_permission ~org ~repo ~user client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_repo_collaborator_permission");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Permission = Githubc2_components.Repository_collaborator_permission in
   call
     client
@@ -902,7 +909,7 @@ let get_repo_collaborator_permission ~org ~repo ~user client =
 
 let get_org_membership ~org ~user client =
   Prmths.Counter.inc_one (Metrics.fn_call_total "get_org_membership");
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Membership = Githubc2_components.Org_membership in
   call client Githubc2_orgs.Get_membership_for_user.(make Parameters.(make ~org ~username:user))
   >>| fun resp ->
@@ -942,12 +949,12 @@ module Commit_status = struct
   let create ~owner ~repo ~sha ~creates client =
     let max_parallel = 10 in
     let open Abb.Future.Infix_monad in
-    Abbs_future_combinators.List.map_par
+    Abbs_fc.List.map_par
       ~f:(fun creates ->
-        Abbs_future_combinators.List_result.iter
+        Abbs_fc.List_result.iter
           ~f:(fun Create.T.{ target_url; description; context; state } ->
             Prmths.Counter.inc_one (Metrics.fn_call_total "commit_status_create");
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             call
               client
               Githubc2_repos.Create_commit_status.(
@@ -960,21 +967,21 @@ module Commit_status = struct
       (CCList.chunks (CCInt.max 1 (CCList.length creates / max_parallel)) creates)
     >>= fun res ->
     match CCResult.flatten_l res with
-    | Ok _ -> Abbs_future_combinators.return_ok ()
+    | Ok _ -> Abbs_fc.return_ok ()
     | Error _ as err -> Abb.Future.return err
 
   let list ~owner ~repo ~sha client =
     Prmths.Counter.inc_one (Metrics.fn_call_total "commit_status_list");
     let open Abb.Future.Infix_monad in
-    Abbs_future_combinators.retry
+    Abbs_fc.retry
       ~f:(fun () ->
         Githubc2_abb.collect_all
           client
           Githubc2_repos.List_commit_statuses_for_ref.(
             make Parameters.(make ~per_page:100 ~owner ~repo ~ref_:sha ())))
-      ~while_:(Abbs_future_combinators.finite_tries 3 CCResult.is_error)
+      ~while_:(Abbs_fc.finite_tries 3 CCResult.is_error)
       ~betwixt:
-        (Abbs_future_combinators.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
+        (Abbs_fc.series ~start:1.5 ~step:(( *. ) 1.5) (fun n _ ->
              Prmths.Counter.inc_one Metrics.call_retries_total;
              Abb.Sys.sleep n))
     >>= function
@@ -995,7 +1002,7 @@ module Status_check = struct
     | Ok resp ->
         let module OK = Githubc2_checks.List_for_ref.Responses.OK in
         let (`OK OK.{ primary = Primary.{ check_runs; _ }; _ }) = Openapi.Response.value resp in
-        Abbs_future_combinators.return_ok check_runs
+        Abbs_fc.return_ok check_runs
     | Error _ as err -> Abb.Future.return err
 end
 

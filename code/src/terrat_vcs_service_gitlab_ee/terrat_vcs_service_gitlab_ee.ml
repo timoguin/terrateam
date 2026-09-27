@@ -23,13 +23,13 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
   let match_user ~request_id client repo user =
     let module M = Terrat_base_repo_config_v1.Access_control.Match in
     function
-    | M.User value -> Abbs_future_combinators.return_ok (CCString.equal value user)
+    | M.User value -> Abbs_fc.return_ok (CCString.equal value user)
     | M.Team value -> (
         let open Abb.Future.Infix_monad in
         Api.is_member_of_team ~request_id ~team:value ~user:(Api.User.make user) repo client
         >>= function
-        | Ok res -> Abbs_future_combinators.return_ok res
-        | Error _ -> Abbs_future_combinators.return_err `Error)
+        | Ok res -> Abbs_fc.return_ok res
+        | Error _ -> Abbs_fc.return_err `Error)
     | M.Role value -> (
         let open Abb.Future.Infix_monad in
         match CCList.find_idx CCFun.(fst %> CCString.equal value) repo_permission_levels with
@@ -41,13 +41,13 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
                 | Some (idx_role, _) ->
                     (* Test if their actual role has an index less than or
                            equal to the index of the role in the query. *)
-                    Abbs_future_combinators.return_ok (idx_role <= idx)
-                | None -> Abbs_future_combinators.return_ok false)
-            | Ok None -> Abbs_future_combinators.return_ok false
-            | Error _ -> Abbs_future_combinators.return_err `Error)
+                    Abbs_fc.return_ok (idx_role <= idx)
+                | None -> Abbs_fc.return_ok false)
+            | Ok None -> Abbs_fc.return_ok false
+            | Error _ -> Abbs_fc.return_err `Error)
         | None -> raise (Failure "nyi")
         (* Abb.Future.return (Error (`Invalid_query query)) *))
-    | M.Any -> Abbs_future_combinators.return_ok true
+    | M.Any -> Abbs_fc.return_ok true
 
   module Gate = Terrat_vcs_service_gitlab_provider.Gate
   module Work_manifest = Terrat_vcs_service_gitlab_provider.Work_manifest
@@ -59,12 +59,12 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
       match centralized_repo with
       | Some (remote_repo, branch) ->
           Rc.fetch_config ~request_id client (Api.Remote_repo.to_repo remote_repo) branch basename
-      | None -> Abbs_future_combinators.return_ok None
+      | None -> Abbs_fc.return_ok None
 
     let maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo =
       match centralized_repo with
       | Some remote_repo -> (
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Api.fetch_branch_sha
             ~request_id
             client
@@ -73,7 +73,7 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
           >>| function
           | Some branch_sha -> Some (remote_repo, branch_sha)
           | None -> None)
-      | None -> Abbs_future_combinators.return_ok None
+      | None -> Abbs_fc.return_ok None
 
     module Brand =
       Terrat_vcs_provider2.Brand.Make
@@ -83,12 +83,12 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
         end)
 
     let centralized ~request_id client repo =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo)
       >>= fun centralized_repo ->
       maybe_fetch_centralized_repo_default_branch_sha request_id client centralized_repo
       >>= function
-      | None -> Abbs_future_combinators.return_ok (None, None)
+      | None -> Abbs_fc.return_ok (None, None)
       | Some (remote_repo, branch) ->
           let centralized_repo = Api.Remote_repo.to_repo remote_repo in
           Rc.fetch_config_path
@@ -111,13 +111,13 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
         repo
 
     let fetch_with_provenance ?system_defaults ?built_config request_id client repo ref_ =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun remote_repo centralized_repo -> (remote_repo, centralized_repo))
         <$> Api.fetch_remote_repo ~request_id client repo
         <*> Api.fetch_centralized_repo ~request_id client (Api.Repo.owner repo))
       >>= fun (remote_repo, centralized_repo) ->
-      Abbs_future_combinators.Infix_result_app.(
+      Abbs_fc.Infix_result_app.(
         (fun default_branch_sha centralized_repo -> (default_branch_sha, centralized_repo))
         <$> Api.fetch_branch_sha
               ~request_id
@@ -129,7 +129,7 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
       let default_branch_ref =
         CCOption.get_or ~default:(Api.Remote_repo.default_branch remote_repo) default_branch_sha
       in
-      Abbs_future_combinators.Infix_result_app.(
+      Abbs_fc.Infix_result_app.(
         (fun global_default
              global_overrides
              repo_defaults
@@ -181,16 +181,16 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
                 repo_config )
             ->
       let wrap_err fname =
-        Abbs_future_combinators.Result.map_err ~f:(function
+        Abbs_fc.Result.map_err ~f:(function
           | `Repo_config_schema_err err -> `Repo_config_schema_err (fname, err)
           | #Terrat_base_repo_config_v1.of_version_1_err as err -> err)
       in
       let validate_configs =
-        Abbs_future_combinators.List_result.iter ~f:(function
+        Abbs_fc.List_result.iter ~f:(function
           | Some (fname, json) ->
               wrap_err fname (Abb.Future.return (Terrat_base_repo_config_v1.of_version_1_json json))
               >>| fun _ -> ()
-          | None -> Abbs_future_combinators.return_ok ())
+          | None -> Abbs_fc.return_ok ())
       in
       let get_json = function
         | None -> `Assoc []
@@ -279,7 +279,7 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
           >>= fun repo_config ->
           Abb.Future.return (merge ~base:repo_config repo_overrides)
           >>= fun repo_config ->
-          Abbs_future_combinators.Infix_result_app.(
+          Abbs_fc.Infix_result_app.(
             (fun default_repo_config repo_config -> (default_repo_config, repo_config))
             <$> wrap_err
                   "default"
@@ -319,7 +319,7 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
 
     let is_ci_changed ~request_id client repo diff =
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Api.find_workflow_file ~request_id repo client
         >>| function
         | Some path ->
@@ -339,7 +339,7 @@ module Provider : module type of Terrat_vcs_service_gitlab_provider = struct
       run
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error _ -> Abbs_future_combinators.return_err `Error
+      | Error _ -> Abbs_fc.return_err `Error
   end
 
   module Comment = Terrat_vcs_service_gitlab_provider.Comment

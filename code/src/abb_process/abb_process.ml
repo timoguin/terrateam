@@ -15,7 +15,7 @@ type check_output_err =
 let args ?env program args = Abb_intf.Process.{ exec_name = program; args = program :: args; env }
 
 module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   let read_all file =
     let buffer = Buffer.create 1024 in

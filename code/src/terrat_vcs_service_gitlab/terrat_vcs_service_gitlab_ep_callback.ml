@@ -50,7 +50,7 @@ module Sql = struct
 end
 
 let perform_auth config storage code =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let c = Terrat_vcs_service_gitlab_provider.Api.Config.config config in
   let vcs_config = Terrat_vcs_service_gitlab_provider.Api.Config.vcs_config config in
   Oauth.authorize ~config:vcs_config ~server_api_base:(Terrat_config.api_base c) code
@@ -68,7 +68,7 @@ let perform_auth config storage code =
   let (`OK { U.avatar_url; email; id = gitlab_user_id; name; username; _ }) =
     Openapi.Response.value resp
   in
-  Abbs_future_combinators.to_result (Abb.Sys.time ())
+  Abbs_fc.to_result (Abb.Sys.time ())
   >>= fun now ->
   let expiration =
     CCOption.map

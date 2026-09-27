@@ -1,5 +1,5 @@
 module Make (Abb : Abb_intf.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   type t = Abb.Socket.tcp Abb.Socket.t Abb.Chan.t
 

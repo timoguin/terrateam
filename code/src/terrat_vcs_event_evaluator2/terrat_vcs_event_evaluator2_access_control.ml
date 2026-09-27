@@ -18,14 +18,14 @@ struct
           Logs.info (fun m ->
               m "%s : ACCESS_CONTROL_EVAL_CI_CHANGE : time=%f" access_control.Ace.request_id t))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Ace.Access_control.eval_ci_change access_control.Ace.ctx ci_config_update diff
           >>| function
           | true -> None
           | false -> Some ci_config_update)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abbs_future_combinators.return_ok None)
+      Abbs_fc.return_ok None)
 
   let eval_files access_control diff =
     let files_policy = access_control.Ace.config.Ac.files in
@@ -35,14 +35,14 @@ struct
           Logs.info (fun m ->
               m "%s : ACCESS_CONTROL_EVAL_FILES : time=%f" access_control.Ace.request_id t))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Ace.Access_control.eval_files access_control.Ace.ctx files_policy diff
           >>| function
           | `Ok -> None
           | `Denied denied -> Some denied)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abbs_future_combinators.return_ok None)
+      Abbs_fc.return_ok None)
 
   let eval_repo_config access_control diff =
     let terrateam_config_update = access_control.Ace.config.Ac.terrateam_config_update in
@@ -52,14 +52,14 @@ struct
           Logs.info (fun m ->
               m "%s : ACCESS_CONTROL_EVAL_REPO_CONFIG : time=%f" access_control.Ace.request_id t))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Ace.Access_control.eval_repo_config access_control.Ace.ctx terrateam_config_update diff
           >>| function
           | true -> None
           | false -> Some terrateam_config_update)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abbs_future_combinators.return_ok None)
+      Abbs_fc.return_ok None)
 
   let eval' access_control change_matches selector =
     if access_control.Ace.config.Ac.enabled then
@@ -79,11 +79,10 @@ struct
         (fun () -> Ace.Access_control.eval access_control.Ace.ctx policies change_matches)
     else (
       Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" access_control.Ace.request_id);
-      Abbs_future_combinators.return_ok
-        Terrat_access_control2.R.{ pass = change_matches; deny = [] })
+      Abbs_fc.return_ok Terrat_access_control2.R.{ pass = change_matches; deny = [] })
 
   let eval_superapproved access_control reviewers change_matches =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     (* First, let's see if this user can even apply any of the denied changes if
        there is a superapproval. If there isn't, we return the original
        response, otherwise we have to see if any of the changes have super
@@ -100,7 +99,7 @@ struct
               (dirspace, ch))
           |> Terrat_data.Dirspace_map.of_list
         in
-        Abbs_future_combinators.List_result.fold_left
+        Abbs_fc.List_result.fold_left
           ~f:(fun acc user ->
             let changes = acc |> Terrat_data.Dirspace_map.to_list |> CCList.map snd in
             let ctx = Ace.Access_control.Ctx.set_user user access_control.Ace.ctx in
@@ -127,12 +126,12 @@ struct
             m
               "%s : ACCESS_CONTROL : NO_MATCHING_CHANGES_FOR_SUPERAPPROVAL"
               access_control.Ace.request_id);
-        Abbs_future_combinators.return_ok Terrat_data.Dirspace_map.empty
+        Abbs_fc.return_ok Terrat_data.Dirspace_map.empty
 
   let eval_tf_operation access_control matches = function
     | `Plan -> eval' access_control matches (fun { P.plan; _ } -> plan)
     | `Apply reviewers -> (
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         eval' access_control matches (fun { P.apply; _ } -> apply)
         >>= function
         | { Terrat_access_control2.R.pass; deny = _ :: _ as deny } ->
@@ -162,7 +161,7 @@ struct
                 deny
             in
             { Terrat_access_control2.R.pass; deny }
-        | r -> Abbs_future_combinators.return_ok r)
+        | r -> Abbs_fc.return_ok r)
     | `Apply_force -> eval' access_control matches (fun { P.apply_force; _ } -> apply_force)
 
   let plan_require_all_dirspace_access access_control =
