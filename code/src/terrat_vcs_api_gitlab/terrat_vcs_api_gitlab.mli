@@ -27,3 +27,21 @@ val rate_limit_decision :
   now:float ->
   max_wait:float ->
   [ `Fail of float | `Wait of float | `No_wait ]
+
+(** Whether a merge request can merge, from the [detailed_merge_status] and [has_conflicts] of the
+    GitLab merge request API. Only a conflict makes it unmergeable. Approvals, discussions, draft
+    state and pipelines do not. [None] while GitLab still computes the merge, or when it does not
+    report [has_conflicts].
+
+    GitLab reports in [detailed_merge_status] the first check that fails, and it runs the conflict
+    check after the policy checks. A merge request that is not approved thus reports [not_approved]
+    whether or not it conflicts. [detailed_merge_status] only tells whether the merge is computed,
+    and [has_conflicts] gives the answer.
+
+    {v
+      ~detailed_merge_status:(Some "not_approved") ~has_conflicts:(Some false)  ->  Some true
+      ~detailed_merge_status:(Some "not_approved") ~has_conflicts:(Some true)   ->  Some false
+      ~detailed_merge_status:(Some "checking")     ~has_conflicts:(Some false)  ->  None
+    v} *)
+val mergeable_of_status :
+  detailed_merge_status:string option -> has_conflicts:bool option -> bool option

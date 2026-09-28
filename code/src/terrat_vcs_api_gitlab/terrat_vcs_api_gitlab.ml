@@ -980,6 +980,11 @@ let fetch_commit_checks ~request_id client repo ref_ =
       Logs.err (fun m -> m "%s : FETCH_COMMIT_CHECKS : %a" request_id Openapic_abb.pp_call_err err);
       Abbs_fc.return_err `Error
 
+let mergeable_of_status ~detailed_merge_status ~has_conflicts =
+  match detailed_merge_status with
+  | None | Some ("preparing" | "checking" | "unchecked") -> None
+  | Some _ -> CCOption.map not has_conflicts
+
 (* GitLab computes the merge asynchronously and reports [checking] until it is done, so this call
    waits for it.  It is its own request, and not part of [fetch_pull_request], because only the
    apply requirements read the answer. *)
@@ -1010,21 +1015,16 @@ let fetch_pull_request_mergeable ~request_id repo merge_request_iid client =
   >>= function
   | Ok resp -> (
       match Openapi.Response.value resp with
-      | `OK { Mr.detailed_merge_status; _ } ->
+      | `OK { Mr.detailed_merge_status; has_conflicts; _ } ->
           Logs.info (fun m ->
               m
-                "%s : PULL_REQUEST_MERGEABLE : merge_request_iid=%d : detailed_merge_status=%s"
+                "%s : PULL_REQUEST_MERGEABLE : merge_request_iid=%d : detailed_merge_status=%s : \
+                 has_conflicts=%s"
                 request_id
                 merge_request_iid
-                (CCOption.get_or ~default:"<none>" detailed_merge_status));
-          Abbs_fc.return_ok
-            (CCOption.map
-               (fun status ->
-                 CCList.mem
-                   ~eq:CCString.equal
-                   status
-                   [ "mergeable"; "ci_still_running"; "ci_must_pass" ])
-               detailed_merge_status)
+                (CCOption.get_or ~default:"<none>" detailed_merge_status)
+                (CCOption.map_or ~default:"<none>" Bool.to_string has_conflicts));
+          Abbs_fc.return_ok (mergeable_of_status ~detailed_merge_status ~has_conflicts)
       | `Not_found -> Abbs_fc.return_err `Error)
   | Error `Rate_limit_err -> vcs_api_rate_limit_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
   | Error `Timeout -> vcs_api_timeout_err ~request_id "FETCH_PULL_REQUEST_MERGEABLE"
