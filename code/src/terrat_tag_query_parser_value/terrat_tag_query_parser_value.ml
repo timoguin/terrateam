@@ -1,4 +1,10 @@
-exception In_dir_tag_error of string
+exception In_tag_error of string
+
+(** The dirspace whose outputs an [outputs:] term reads. [Relative_outputs] is relative to the
+    dirspace that declares the [depends_on], as [relative_dir:] is. *)
+type outputs_target =
+  | Outputs of string
+  | Relative_outputs of string
 
 type t =
   | Tag of string
@@ -12,7 +18,27 @@ type t =
   | Implicit_and of t * t
   | Not of t
   | In_dir of string
+  | In_outputs of {
+      path : string;
+      target : outputs_target;
+    }  (** [foo.bar in outputs:app/db]: [path] is ["foo.bar"], [target] is [Outputs "app/db"]. *)
+
+let outputs_prefix = "outputs:"
+let relative_outputs_prefix = "relative_outputs:"
+
+(* A prefix with nothing after it names no directory, thus it is not a target. *)
+let outputs_target_of_string s =
+  let after pre =
+    CCOption.filter (fun dir -> not (CCString.is_empty dir)) (CCString.chop_prefix ~pre s)
+  in
+  match (after outputs_prefix, after relative_outputs_prefix) with
+  | Some dir, _ -> Some (Outputs dir)
+  | None, Some dir -> Some (Relative_outputs dir)
+  | None, None -> None
 
 let parse_in s = function
   | "dir" -> In_dir s
-  | s -> raise (In_dir_tag_error s)
+  | rhs -> (
+      match outputs_target_of_string rhs with
+      | Some target -> In_outputs { path = s; target }
+      | None -> raise (In_tag_error rhs))

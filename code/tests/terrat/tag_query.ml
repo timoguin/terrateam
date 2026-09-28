@@ -29,8 +29,13 @@ module Parse_errors = struct
   (* Named after the error the lexer throws *)
   let premature_end_of_string s = Printf.sprintf "Premature end of string in `%s`." s
 
-  let in_dir_tag_error s =
-    Printf.sprintf "The `in` operator only accepts `dir` on the right hand side, got `%s`." s
+  (* RFD 2110: the right hand side of [in] can also name the outputs of a
+     dirspace. *)
+  let in_tag_error s =
+    Printf.sprintf
+      "The `in` operator only accepts `dir`, `outputs:<dir>` or `relative_outputs:<dir>` on the \
+       right hand side, got `%s`."
+      s
 end
 
 let print_of_string = function
@@ -408,12 +413,13 @@ let test_parse_failure_14 =
         (Error (`Tag_query_error (query, Parse_errors.not_lparen_tag_eof))
         = Terrat_tag_query.of_string query))
 
+(* TQ-5 of RFD 2110 is this case with the new error text. *)
 let test_parse_failure_15 =
-  Oth.test ~name:"Parse failure 15" (fun _ ->
+  Oth.test ~tags:[ "rfd_2110" ] ~name:"Parse failure 15" (fun _ ->
       let query = "foo in bar" in
       print_of_string (Terrat_tag_query.of_string query);
       Oth.Assert.true_
-        (Error (`Tag_query_error (query, Parse_errors.in_dir_tag_error "bar"))
+        (Error (`Tag_query_error (query, Parse_errors.in_tag_error "bar"))
         = Terrat_tag_query.of_string query))
 
 let test_quote_1 =
@@ -591,75 +597,291 @@ let test_selects_dirspaces_only =
         ];
       Oth.Assert.not_true (Terrat_tag_query.selects_dirspaces_only Terrat_tag_query.any))
 
+(* RFD 2110, "Unit tests: tag query".  In a [depends_on] the dirspace of the
+   context is the candidate dependency, so [outputs:app/db] asks whether the
+   candidate is [app/db] and one of its outputs changed.  The outputs of the
+   context are those of the candidate; absent outputs mean the candidate has
+   not been applied. *)
+module Rfd_2110 = struct
+  let tags = [ "rfd_2110" ]
+  let dirspace ?(workspace = "default") dir = { Terrat_dirspace.dir; workspace }
+
+  (* The tags a dirspace carries in a [depends_on] evaluation. *)
+  let tag_set_of { Terrat_dirspace.dir; workspace } =
+    Terrat_tag_set.of_list [ "dir:" ^ dir; "workspace:" ^ workspace ]
+
+  let outputs ~baseline ~current =
+    {
+      Terrat_output_diff.shape = Terrat_output_diff.Raw;
+      baseline = Some (Yojson.Safe.from_string baseline);
+      current = Some (Yojson.Safe.from_string current);
+    }
+
+  let match_ ?working_dirspace ?outputs ~dirspace query =
+    let ctx = Terrat_tag_query.Ctx.make ?working_dirspace ?outputs ~dirspace () in
+    Terrat_tag_query.match_ ~ctx ~tag_set:(tag_set_of dirspace) (of_string_exn query)
+
+  let assert_parses query =
+    match Terrat_tag_query.of_string query with
+    | Ok _ -> ()
+    | Error err ->
+        Oth.Assert.false_
+          (Printf.sprintf "%s: does not parse: %s" query (Terrat_tag_query_ast.show_err err))
+
+  let foo_bar_changed = outputs ~baseline:{|{"foo": {"bar": 1}}|} ~current:{|{"foo": {"bar": 2}}|}
+  let q1 = "foo.bar in outputs:app/db"
+  let changed_any = outputs ~baseline:{|{"a": 1}|} ~current:{|{"a": 2}|}
+  let q3 = "relative_outputs:../db"
+
+  let test_tq_1 =
+    Oth.test ~tags ~name:"TQ-1: foo.bar in outputs:app/db parses" (fun _ ->
+        assert_parses q1;
+        ())
+
+  let test_tq_2 =
+    Oth.test ~tags ~name:"TQ-2: outputs:app/db parses" (fun _ ->
+        assert_parses "outputs:app/db";
+        (* Parsed as the new term and not as a plain tag: before an apply it
+           selects the directory it names. *)
+        Oth.Assert.true_
+          ~fail_msg:"selects app/db"
+          (match_ ~dirspace:(dirspace "app/db") "outputs:app/db");
+        ())
+
+  let test_tq_3 =
+    Oth.test ~tags ~name:"TQ-3: relative_outputs:../db parses" (fun _ ->
+        assert_parses q3;
+        (* Parsed as the new term and not as a plain tag: before an apply it
+           selects the directory it names. *)
+        Oth.Assert.true_
+          ~fail_msg:"selects app/db"
+          (match_ ~working_dirspace:(dirspace "app/web") ~dirspace:(dirspace "app/db") q3);
+        ())
+
+  let test_tq_4 =
+    Oth.test ~tags ~name:"TQ-4: foo in dir is unchanged" (fun _ ->
+        Oth.Assert.true_
+          ~fail_msg:"matches a dir under foo"
+          (match_ ~dirspace:(dirspace "x/foo/y") "foo in dir");
+        Oth.Assert.not_true
+          ~fail_msg:"does not match bar"
+          (match_ ~dirspace:(dirspace "bar") "foo in dir");
+        ())
+
+  let test_tq_6 =
+    Oth.test ~tags ~name:"TQ-6: the in keyword is not case sensitive" (fun _ ->
+        assert_parses "foo.bar IN outputs:app/db";
+        ())
+
+  let test_tq_7 =
+    Oth.test ~tags ~name:"TQ-7: the named output changed" (fun _ ->
+        Oth.Assert.true_ (match_ ~outputs:foo_bar_changed ~dirspace:(dirspace "app/db") q1);
+        (* The same outputs on a candidate that is not [app/db] do not match. *)
+        Oth.Assert.not_true
+          ~fail_msg:"other/db"
+          (match_ ~outputs:foo_bar_changed ~dirspace:(dirspace "other/db") q1);
+        ())
+
+  let test_tq_8 =
+    Oth.test ~tags ~name:"TQ-8: only another output changed" (fun _ ->
+        let outputs =
+          outputs
+            ~baseline:{|{"foo": {"bar": 1, "baz": 1}}|}
+            ~current:{|{"foo": {"bar": 1, "baz": 2}}|}
+        in
+        Oth.Assert.not_true (match_ ~outputs ~dirspace:(dirspace "app/db") q1);
+        ())
+
+  let test_tq_9 =
+    Oth.test ~tags ~name:"TQ-9: the named output is absent in both" (fun _ ->
+        let outputs = outputs ~baseline:{|{"x": 1}|} ~current:{|{"x": 2}|} in
+        Oth.Assert.not_true (match_ ~outputs ~dirspace:(dirspace "app/db") q1);
+        ())
+
+  let test_tq_10 =
+    Oth.test ~tags ~name:"TQ-10: outputs: with one output changed" (fun _ ->
+        let outputs = outputs ~baseline:{|{"a": 1, "b": 1}|} ~current:{|{"a": 1, "b": 2}|} in
+        Oth.Assert.true_ (match_ ~outputs ~dirspace:(dirspace "app/db") "outputs:app/db");
+        ())
+
+  let test_tq_11 =
+    Oth.test ~tags ~name:"TQ-11: outputs: with no output changed" (fun _ ->
+        let outputs = outputs ~baseline:{|{"a": 1, "b": 1}|} ~current:{|{"b": 1, "a": 1}|} in
+        Oth.Assert.not_true (match_ ~outputs ~dirspace:(dirspace "app/db") "outputs:app/db");
+        (* The control: the same query does match when an output changed. *)
+        Oth.Assert.true_
+          ~fail_msg:"control"
+          (match_ ~outputs:changed_any ~dirspace:(dirspace "app/db") "outputs:app/db");
+        ())
+
+  let test_tq_12 =
+    Oth.test ~tags ~name:"TQ-12: relative_outputs names the sibling" (fun _ ->
+        Oth.Assert.true_
+          (match_
+             ~working_dirspace:(dirspace "app/web")
+             ~outputs:changed_any
+             ~dirspace:(dirspace "app/db")
+             q3);
+        ())
+
+  let test_tq_13 =
+    Oth.test ~tags ~name:"TQ-13: relative_outputs does not name another dir" (fun _ ->
+        Oth.Assert.not_true
+          (match_
+             ~working_dirspace:(dirspace "app/web")
+             ~outputs:changed_any
+             ~dirspace:(dirspace "other/db")
+             q3);
+        (* The control: the same query does match the sibling. *)
+        Oth.Assert.true_
+          ~fail_msg:"control"
+          (match_
+             ~working_dirspace:(dirspace "app/web")
+             ~outputs:changed_any
+             ~dirspace:(dirspace "app/db")
+             q3);
+        ())
+
+  let q14 = "workspace:dev and (foo.bar in outputs:app/db)"
+
+  let test_tq_14 =
+    Oth.test ~tags ~name:"TQ-14: workspace and outputs, workspace matches" (fun _ ->
+        Oth.Assert.true_
+          (match_ ~outputs:foo_bar_changed ~dirspace:(dirspace ~workspace:"dev" "app/db") q14);
+        ())
+
+  let test_tq_15 =
+    Oth.test ~tags ~name:"TQ-15: workspace and outputs, workspace differs" (fun _ ->
+        Oth.Assert.not_true
+          (match_ ~outputs:foo_bar_changed ~dirspace:(dirspace ~workspace:"prod" "app/db") q14);
+        ())
+
+  let test_tq_16 =
+    Oth.test ~tags ~name:"TQ-16: or of two outputs, only the second changed" (fun _ ->
+        let outputs = outputs ~baseline:{|{"a": 1, "b": 1}|} ~current:{|{"a": 1, "b": 2}|} in
+        Oth.Assert.true_
+          (match_ ~outputs ~dirspace:(dirspace "y") "(a in outputs:x) or (b in outputs:y)");
+        ())
+
+  (* Before a dirspace is applied there are no outputs to compare, and the
+     terms fall back to the directory they name. *)
+  let test_tq_17 =
+    Oth.test ~tags ~name:"TQ-17: not applied means dir: semantics" (fun _ ->
+        CCList.iter
+          (fun dir ->
+            let dirspace = dirspace dir in
+            Oth.Assert.true_
+              ~fail_msg:dir
+              (Bool.equal (match_ ~dirspace "dir:app/db") (match_ ~dirspace q1)))
+          [ "app/db"; "app/web"; "other/db" ];
+        ())
+
+  let test_tq_18 =
+    Oth.test ~tags ~name:"TQ-18: not applied means relative_dir: semantics" (fun _ ->
+        let working_dirspace = dirspace "app/web" in
+        CCList.iter
+          (fun dir ->
+            let dirspace = dirspace dir in
+            Oth.Assert.true_
+              ~fail_msg:dir
+              (Bool.equal
+                 (match_ ~working_dirspace ~dirspace "relative_dir:../db")
+                 (match_ ~working_dirspace ~dirspace q3)))
+          [ "app/db"; "app/web"; "other/db" ];
+        ())
+
+  let tests =
+    [
+      test_tq_1;
+      test_tq_2;
+      test_tq_3;
+      test_tq_4;
+      test_tq_6;
+      test_tq_7;
+      test_tq_8;
+      test_tq_9;
+      test_tq_10;
+      test_tq_11;
+      test_tq_12;
+      test_tq_13;
+      test_tq_14;
+      test_tq_15;
+      test_tq_16;
+      test_tq_17;
+      test_tq_18;
+    ]
+end
+
 let test =
   Oth.parallel
-    [
-      test_simple_match;
-      test_simple_no_match;
-      test_simple_and;
-      test_and;
-      test_dir_glob_at_start;
-      test_dir_glob_inner;
-      test_dir_glob_at_end;
-      test_dir_glob_cross_dirs;
-      test_dir_glob_not_match_partial;
-      test_dir_glob_no_match_with_slashes;
-      test_bad_glob;
-      test_query_with_extra_spaces;
-      test_complex_query_match;
-      test_complex_query_no_match;
-      test_empty_query;
-      test_and;
-      test_and_precedence_1;
-      test_and_precedence_2;
-      test_and_precedence_3;
-      test_or_1;
-      test_or_2;
-      test_parens_1;
-      test_parens_with_and;
-      test_parens_with_or;
-      test_parens_2;
-      test_parens_no_match_1;
-      test_not_1;
-      test_not_2;
-      test_not_3;
-      test_not_4;
-      test_not_5;
-      test_not_6;
-      test_complex_1;
-      test_complex_2;
-      test_to_string;
-      test_parse_failure_1;
-      test_parse_failure_2;
-      test_parse_failure_3;
-      test_parse_failure_4;
-      test_parse_failure_5;
-      test_parse_failure_6;
-      test_parse_failure_7;
-      test_parse_failure_8;
-      test_parse_failure_9;
-      test_parse_failure_10;
-      test_parse_failure_11;
-      test_parse_failure_12;
-      test_parse_failure_13;
-      test_parse_failure_14;
-      test_parse_failure_15;
-      test_quote_1;
-      test_quote_2;
-      test_quote_3;
-      test_quote_escape_1;
-      test_quote_escape_2;
-      test_deprecated_dir_glob;
-      test_warning_implicit_and_dirs;
-      test_warning_implicit_and_dir_globs;
-      test_warning_implicit_and_mixed_with_or;
-      test_warning_implicit_and_no_suggestion;
-      test_warning_explicit_operators;
-      test_warning_on_query;
-      test_implicit_and_still_matches;
-      test_implicit_and_binds_like_and;
-      test_selects_dirspaces_only;
-    ]
+    ([
+       test_simple_match;
+       test_simple_no_match;
+       test_simple_and;
+       test_and;
+       test_dir_glob_at_start;
+       test_dir_glob_inner;
+       test_dir_glob_at_end;
+       test_dir_glob_cross_dirs;
+       test_dir_glob_not_match_partial;
+       test_dir_glob_no_match_with_slashes;
+       test_bad_glob;
+       test_query_with_extra_spaces;
+       test_complex_query_match;
+       test_complex_query_no_match;
+       test_empty_query;
+       test_and;
+       test_and_precedence_1;
+       test_and_precedence_2;
+       test_and_precedence_3;
+       test_or_1;
+       test_or_2;
+       test_parens_1;
+       test_parens_with_and;
+       test_parens_with_or;
+       test_parens_2;
+       test_parens_no_match_1;
+       test_not_1;
+       test_not_2;
+       test_not_3;
+       test_not_4;
+       test_not_5;
+       test_not_6;
+       test_complex_1;
+       test_complex_2;
+       test_to_string;
+       test_parse_failure_1;
+       test_parse_failure_2;
+       test_parse_failure_3;
+       test_parse_failure_4;
+       test_parse_failure_5;
+       test_parse_failure_6;
+       test_parse_failure_7;
+       test_parse_failure_8;
+       test_parse_failure_9;
+       test_parse_failure_10;
+       test_parse_failure_11;
+       test_parse_failure_12;
+       test_parse_failure_13;
+       test_parse_failure_14;
+       test_parse_failure_15;
+       test_quote_1;
+       test_quote_2;
+       test_quote_3;
+       test_quote_escape_1;
+       test_quote_escape_2;
+       test_deprecated_dir_glob;
+       test_warning_implicit_and_dirs;
+       test_warning_implicit_and_dir_globs;
+       test_warning_implicit_and_mixed_with_or;
+       test_warning_implicit_and_no_suggestion;
+       test_warning_explicit_operators;
+       test_warning_on_query;
+       test_implicit_and_still_matches;
+       test_implicit_and_binds_like_and;
+       test_selects_dirspaces_only;
+     ]
+    @ Rfd_2110.tests)
 
 let () =
   Random.self_init ();

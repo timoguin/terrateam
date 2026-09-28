@@ -10,4 +10,4 @@
   uri
   x509)
  (preprocess
-  (pps ppx_deriving.show)))
+  (pps ppx_deriving.make ppx_deriving.show)))

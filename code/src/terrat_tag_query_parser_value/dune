@@ -1,2 +1,3 @@
 (library
- (name terrat_tag_query_parser_value))
+ (name terrat_tag_query_parser_value)
+ (libraries containers))

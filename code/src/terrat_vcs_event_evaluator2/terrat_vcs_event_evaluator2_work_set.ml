@@ -13,6 +13,7 @@ type t = {
   working_set_matches : Dc.t list;
   all_unapplied_matches : Dc.t list list;
   working_layer : Dc.t list;
+  pruned : Dirspace_set.t;
 }
 
 let dirspaces_of =
@@ -73,7 +74,79 @@ let apply_after_is_satisfied
           -> CCList.mem ~eq:CCString.equal stack_name apply_after)
        remaining)
 
-let make ~config ~op ~tag_query ~applied ~dir_exists ~all_matches =
+let dirspace_uses_outputs
+    {
+      Dc.when_modified =
+        {
+          Terrat_base_repo_config_v1.When_modified.autoapply = _;
+          autoplan = _;
+          autoplan_draft_pr = _;
+          depends_on;
+          file_patterns = _;
+          prechecks = _;
+        };
+      dirspace = _;
+      file_pattern_matcher = _;
+      lock_branch_target = _;
+      stack_config = _;
+      stack_name = _;
+      stack_paths = _;
+      tags = _;
+    } =
+  CCOption.map_or
+    ~default:false
+    (fun { Terrat_base_repo_config_v1.Depends_on.tag_query; prune_on_no_change = _ } ->
+      Terrat_tag_query.uses_outputs tag_query)
+    depends_on
+
+let uses_outputs all_matches = CCList.exists dirspace_uses_outputs (CCList.flatten all_matches)
+
+(* Walk the run again from its roots, this time with the outputs of the applied dirspaces, and keep
+   only what the walk reaches.  The roots are the dirspaces whose own files changed and the revived
+   dirspaces of the run.  A revived dirspace outside the run is not a root, or it could bring its
+   dependents into the run.  A run with no [outputs:] term skips the walk, because the walk cannot
+   remove anything from it. *)
+let prune_unchanged_outputs ~outputs ~file_changed ~revived ~config ~applied all_matches =
+  match uses_outputs all_matches with
+  | false -> (all_matches, Dirspace_set.empty)
+  | true ->
+      let outputs dirspace = if Dirspace_set.mem dirspace applied then outputs dirspace else None in
+      let in_run = Dirspace_set.of_list (dirspaces_of (CCList.flatten all_matches)) in
+      let roots =
+        CCList.filter_map
+          (Terrat_change_match3.of_dirspace config)
+          (Dirspace_set.to_list
+             (Dirspace_set.union file_changed (Dirspace_set.inter revived in_run)))
+      in
+      let reached = Terrat_change_match3.reachable ~outputs config ~roots in
+      all_matches
+      |> CCList.map
+           (CCList.filter
+              (fun
+                {
+                  Dc.dirspace;
+                  file_pattern_matcher = _;
+                  lock_branch_target = _;
+                  stack_config = _;
+                  stack_name = _;
+                  stack_paths = _;
+                  tags = _;
+                  when_modified = _;
+                }
+              -> Dirspace_set.mem dirspace reached))
+      |> CCList.filter (function
+        | [] -> false
+        | _ :: _ -> true)
+      |> fun pruned_matches ->
+      ( pruned_matches,
+        Dirspace_set.diff
+          in_run
+          (Dirspace_set.of_list (dirspaces_of (CCList.flatten pruned_matches))) )
+
+let make ~outputs ~file_changed ~revived ~config ~op ~tag_query ~applied ~dir_exists ~all_matches =
+  let all_matches, pruned =
+    prune_unchanged_outputs ~outputs ~file_changed ~revived ~config ~applied all_matches
+  in
   let matching = CCList.filter (Terrat_change_match3.match_tag_query ~tag_query) in
   (* A directory that is gone cannot run, and it cannot hold anything back
      either, so it leaves by the same door as an applied dirspace. *)
@@ -133,7 +206,7 @@ let make ~config ~op ~tag_query ~applied ~dir_exists ~all_matches =
         | Op.Explicit_plan -> matching (CCList.flatten all_matches)
         | Op.Apply | Op.Drift_plan | Op.Layer_plan -> [])
   in
-  { working_set_matches; all_unapplied_matches; working_layer }
+  { working_set_matches; all_unapplied_matches; working_layer; pruned }
 
 let next_round_ready ~config ~all_unapplied_matches ~just_ran =
   let remaining = CCList.flatten all_unapplied_matches in

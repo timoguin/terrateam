@@ -80,6 +80,27 @@ val match_diff_list :
   Terrat_change.Diff.t list ->
   Dirspace_config.t list list
 
+(** The dirspace configs of [diff_list] and [force_matches] before [depends_on] and [modified_by]
+    add the dirspaces that depend on them. These are the dirspaces that are in a run because their
+    own files changed, or because the caller forces them. *)
+val roots :
+  ?force_matches:Dirspace_config.t list ->
+  Config.t ->
+  Terrat_change.Diff.t list ->
+  Dirspace_config.t list
+
+(** The dirspaces that [roots] reach through [depends_on] and [modified_by], [roots] included.
+
+    [outputs] gives the outputs of a dependency. When it gives [Some], an [outputs:] term of a
+    [depends_on] reaches the dependent only if the output changed. When it gives [None], the term
+    means the same as [dir:]. With [outputs] that always gives [None], the result is the set of
+    dirspaces of {!match_diff_list} before [prune_on_no_change]. *)
+val reachable :
+  outputs:(Terrat_dirspace.t -> Terrat_output_diff.t option) ->
+  Config.t ->
+  roots:Dirspace_config.t list ->
+  Terrat_data.Dirspace_set.t
+
 (** Put [dirspace_configs] into layers, in order of which can be executed. Pass the dirspaces of a
     run that remain to be applied and the first layer is what can run now.
 

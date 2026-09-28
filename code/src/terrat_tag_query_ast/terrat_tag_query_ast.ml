@@ -35,10 +35,11 @@ let of_string s =
       Error (`Tag_query_error (s, Printf.sprintf "Premature end of string in `%s`." err))
   | exception Terrat_tag_query_lexer.Unexpected_symbol err ->
       Error (`Tag_query_error (s, Printf.sprintf "Unexpected symbol `%s`." err))
-  | exception Terrat_tag_query_parser_value.In_dir_tag_error err ->
+  | exception Terrat_tag_query_parser_value.In_tag_error err ->
       Error
         (`Tag_query_error
            ( s,
              Printf.sprintf
-               "The `in` operator only accepts `dir` on the right hand side, got `%s`."
+               "The `in` operator only accepts `dir`, `outputs:<dir>` or `relative_outputs:<dir>` \
+                on the right hand side, got `%s`."
                err ))

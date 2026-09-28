@@ -1,0 +1,16 @@
+(library
+ (name terrat_output_baseline)
+ (libraries
+  abb
+  abb_fc
+  containers
+  pgsql_io
+  ppx_deriving
+  terrat_dirspace
+  terrat_output_diff
+  uuidm
+  yojson)
+ (preprocessor_deps
+  (glob_files sql/*.sql))
+ (preprocess
+  (pps ppx_blob ppx_deriving.eq ppx_deriving.show)))

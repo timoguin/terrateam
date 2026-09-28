@@ -35,6 +35,10 @@ type t = {
   working_layer : Terrat_change_match3.Dirspace_config.t list;
       (** The first layer of the run that remains, before the tag query and before [apply_after].
           These are the dirspaces that nothing holds back any more. *)
+  pruned : Terrat_data.Dirspace_set.t;
+      (** The dirspaces of [all_matches] that the outputs of their dependencies removed from the
+          run. They need no plan and no apply, thus the caller records them: a merged pull request
+          must keep no lock for a dirspace that nothing asked it to apply. *)
 }
 
 (** Decide what runs now.
@@ -45,8 +49,25 @@ type t = {
     deleted since, and nothing can be done for it.
 
     The run that remains is put into layers again rather than keeping the boundaries it started
-    with, so a dirspace waits for the dirspaces it depends on and for nothing else. *)
+    with, so a dirspace waits for the dirspaces it depends on and for nothing else.
+
+    [outputs] gives the baseline and current outputs of an applied dirspace. A dirspace that is in
+    the run only because a [depends_on] with an [outputs:] term matched an applied dependency whose
+    outputs did not change is pruned, and so is every dirspace that depends only on pruned ones.
+
+    [file_changed] is the dirspaces whose own files changed. They are never pruned this way.
+    [all_matches] alone cannot tell such a dirspace from one that is in the run only through
+    [depends_on].
+
+    [revived] is the dirspaces that the user brought back into the run: those that an explicit
+    [terrateam plan dir:...] names, and those that have a plan or an apply in the pull request. A
+    dirspace of [revived] that is in [all_matches] is never pruned this way. Its dependents are
+    pruned by the same rule as every other dependent, thus the user can bring back a pruned branch
+    one dirspace at a time. A dirspace of [revived] that is not in [all_matches] has no effect. *)
 val make :
+  outputs:(Terrat_dirspace.t -> Terrat_output_diff.t option) ->
+  file_changed:Terrat_data.Dirspace_set.t ->
+  revived:Terrat_data.Dirspace_set.t ->
   config:Terrat_change_match3.Config.t ->
   op:Op.t ->
   tag_query:Terrat_tag_query.t ->
@@ -54,6 +75,10 @@ val make :
   dir_exists:(string -> bool) ->
   all_matches:Terrat_change_match3.Dirspace_config.t list list ->
   t
+
+(** Whether a [depends_on] of a dirspace in [all_matches] holds an [outputs:] term. Only then can
+    {!make} prune on outputs, thus a caller reads the outputs only when this is [true]. *)
+val uses_outputs : Terrat_change_match3.Dirspace_config.t list list -> bool
 
 (** Does the work manifest that just covered [just_ran] leave something that can run now and could
     not before?

@@ -160,6 +160,16 @@ struct
                applied = applied_dirspaces;
              })
 
+    (* A branch run prunes nothing, because it has no outputs to compare. *)
+    let store_pruned_dirspaces =
+      run ~name:"store_pruned_dirspaces" (fun _s { Bs.Fetcher.fetch = _ } ->
+          Abbs_fc.return_ok (fun _dirspaces -> Abbs_fc.return_ok ()))
+
+    (* A branch run has no pull request, thus no baseline and no current apply to compare. *)
+    let dirspace_outputs =
+      run ~name:"dirspace_outputs" (fun _s { Bs.Fetcher.fetch = _ } ->
+          Abbs_fc.return_ok (fun ~dirspaces:_ -> Abbs_fc.return_ok (CCFun.const None)))
+
     let is_draft_pr =
       run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } -> Abbs_fc.return_ok false)
 
@@ -284,6 +294,8 @@ struct
     |> Hmap.add (coerce Keys.dest_branch_ref) Tasks.dest_branch_ref
     |> Hmap.add (coerce Keys.is_draft_pr) Tasks.is_draft_pr
     |> Hmap.add (coerce Keys.maybe_automerge) Tasks.maybe_automerge
+    |> Hmap.add (coerce Keys.store_pruned_dirspaces) Tasks.store_pruned_dirspaces
+    |> Hmap.add (coerce Keys.dirspace_outputs) Tasks.dirspace_outputs
     |> Hmap.add (coerce Keys.intra_pr_selection) Tasks.intra_pr_selection
     |> Hmap.add (coerce Keys.out_of_change_applies) Tasks.out_of_change_applies
     |> Hmap.add (coerce Keys.publish_comment) Tasks.publish_comment

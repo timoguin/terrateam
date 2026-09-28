@@ -647,6 +647,35 @@ module Db = struct
     let delete_flow_state_query = read [%blob "sql/delete_flow_state.sql"]
     let delete_flow_state () = Pgsql_io.Typed_sql.(sql /^ delete_flow_state_query /% Var.uuid "id")
 
+    let delete_pruned_dirspaces () =
+      Pgsql_io.Typed_sql.(
+        sql
+        /^ read [%blob "sql/delete_pruned_dirspaces.sql"]
+        /% Var.bigint "repo_id"
+        /% Var.bigint "pull_number")
+
+    let insert_pruned_dirspaces () =
+      Pgsql_io.Typed_sql.(
+        sql
+        /^ read [%blob "sql/insert_pruned_dirspaces.sql"]
+        /% Var.(str_array (text "path"))
+        /% Var.(str_array (text "workspace"))
+        /% Var.bigint "repo_id"
+        /% Var.bigint "pull_number")
+
+    let select_pull_request_core_ids () =
+      Pgsql_io.Typed_sql.(
+        sql
+        //
+        (* repo *)
+        Ret.uuid
+        //
+        (* pull_request *)
+        Ret.uuid
+        /^ read [%blob "sql/select_pull_request_core_ids.sql"]
+        /% Var.bigint "repo_id"
+        /% Var.bigint "pull_number")
+
     let select_out_of_diff_applies =
       Pgsql_io.Typed_sql.(
         sql
@@ -2218,6 +2247,72 @@ module Db = struct
     run
     >>= function
     | Ok dirspaces -> Abbs_fc.return_ok dirspaces
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_fc.return_err `Error
+
+  let store_pruned_dirspaces_in_tx ~request_id db pull_request dirspaces =
+    let repo_id = CCInt64.of_int @@ Api.Repo.id @@ Api.Pull_request.repo pull_request in
+    let pull_number = CCInt64.of_int @@ Api.Pull_request.id pull_request in
+    (* No transaction here: the caller holds one. The evaluator runs every [matches] computation
+       inside its [Pgsql_io.tx], so the delete and the insert commit with the evaluation, and the
+       lock triggers that read this set from other connections never see it empty. A nested
+       [Pgsql_io.tx] would raise [Pgsql_io.Nested_tx_not_supported]. *)
+    let run =
+      let open Abbs_fc.Infix_result_monad in
+      Metrics.Psql_query_time.time (Metrics.psql_query_time "delete_pruned_dirspaces") (fun () ->
+          Pgsql_io.Prepared_stmt.execute db (Sql.delete_pruned_dirspaces ()) repo_id pull_number)
+      >>= fun () ->
+      match dirspaces with
+      | [] -> Abbs_fc.return_ok ()
+      | _ :: _ ->
+          Metrics.Psql_query_time.time
+            (Metrics.psql_query_time "insert_pruned_dirspaces")
+            (fun () ->
+              Pgsql_io.Prepared_stmt.execute
+                db
+                (Sql.insert_pruned_dirspaces ())
+                (CCList.map (fun { Terrat_dirspace.dir; workspace = _ } -> dir) dirspaces)
+                (CCList.map (fun { Terrat_dirspace.dir = _; workspace } -> workspace) dirspaces)
+                repo_id
+                pull_number)
+    in
+    let open Abb.Future.Infix_monad in
+    run
+    >>= function
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error (#Pgsql_io.err as err) ->
+        Prmths.Counter.inc_one Metrics.pgsql_errors_total;
+        Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+        Abbs_fc.return_err `Error
+
+  let query_dirspace_outputs ~request_id db pull_request dirspaces =
+    let open Abb.Future.Infix_monad in
+    let run =
+      let open Abbs_fc.Infix_result_monad in
+      Metrics.Psql_query_time.time
+        (Metrics.psql_query_time "select_pull_request_core_ids")
+        (fun () ->
+          Pgsql_io.Prepared_stmt.fetch
+            db
+            (Sql.select_pull_request_core_ids ())
+            ~f:CCPair.make
+            (CCInt64.of_int @@ Api.Repo.id @@ Api.Pull_request.repo pull_request)
+            (CCInt64.of_int @@ Api.Pull_request.id pull_request))
+      >>= function
+      | [] -> Abbs_fc.return_ok []
+      | (repo, pull_request) :: _ ->
+          Metrics.Psql_query_time.time (Metrics.psql_query_time "select_output_baseline") (fun () ->
+              Abbs_fc.List_result.filter_map
+                ~f:(fun dirspace ->
+                  Terrat_output_baseline.outputs db ~repo ~pull_request ~dirspace
+                  >>| CCOption.map (CCPair.make dirspace))
+                dirspaces)
+    in
+    run
+    >>= function
+    | Ok outputs -> Abbs_fc.return_ok outputs
     | Error (#Pgsql_io.err as err) ->
         Prmths.Counter.inc_one Metrics.pgsql_errors_total;
         Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);

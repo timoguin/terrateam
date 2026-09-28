@@ -152,7 +152,7 @@ type t = {
   terrateam_ui_base : Uri.t option;
   terrateam_web_base_url : Uri.t;
 }
-[@@deriving show]
+[@@deriving show, make]
 
 type err =
   [ `Key_error of string

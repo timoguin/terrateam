@@ -123,6 +123,32 @@ struct
       (fun () ->
         S.Db.query_pull_request_out_of_change_applies ~request_id:(Builder.log_id s) db pull_request)
 
+  let store_pruned_dirspaces s db pull_request dirspaces =
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : STORE_PRUNED_DIRSPACES : pull_request_id = %s : dirspaces = %d : time=%f"
+          log_id
+          (S.Api.Pull_request.Id.to_string @@ S.Api.Pull_request.id pull_request)
+          (CCList.length dirspaces)
+          time)
+      (fun () ->
+        S.Db.store_pruned_dirspaces_in_tx ~request_id:(Builder.log_id s) db pull_request dirspaces)
+
+  let query_dirspace_outputs s db pull_request dirspaces =
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : QUERY_DIRSPACE_OUTPUTS : pull_request_id = %s : dirspaces = %d : time=%f"
+          log_id
+          (S.Api.Pull_request.Id.to_string @@ S.Api.Pull_request.id pull_request)
+          (CCList.length dirspaces)
+          time)
+      (fun () ->
+        S.Db.query_dirspace_outputs ~request_id:(Builder.log_id s) db pull_request dirspaces)
+
   let query_dirspace_runs_for_context s db context dirspaces =
     time_it
       s
@@ -475,6 +501,21 @@ struct
           >>| fun diff ->
           Logs.info (fun m -> m "%s : CHANGES : %d" (Builder.log_id s) (CCList.length diff));
           diff)
+
+    let store_pruned_dirspaces =
+      run ~name:"store_pruned_dirspaces" (fun s { Bs.Fetcher.fetch } ->
+          let open Irm in
+          fetch Keys.pull_request
+          >>| fun pull_request dirspaces ->
+          Builder.run_db s ~f:(fun db -> store_pruned_dirspaces s db pull_request dirspaces))
+
+    let dirspace_outputs =
+      run ~name:"dirspace_outputs" (fun s { Bs.Fetcher.fetch } ->
+          let open Irm in
+          fetch Keys.pull_request
+          >>| fun pull_request ~dirspaces ->
+          Builder.run_db s ~f:(fun db -> query_dirspace_outputs s db pull_request dirspaces)
+          >>| fun outputs dirspace -> CCList.assoc_opt ~eq:Terrat_dirspace.equal dirspace outputs)
 
     let intra_pr_selection =
       run ~name:"intra_pr_selection" (fun s { Bs.Fetcher.fetch } ->
@@ -2270,6 +2311,8 @@ struct
     |> Hmap.add (coerce Keys.get_context_for_pull_request) Tasks.get_context_for_pull_request
     |> Hmap.add (coerce Keys.is_draft_pr) Tasks.is_draft_pr
     |> Hmap.add (coerce Keys.maybe_automerge) Tasks.maybe_automerge
+    |> Hmap.add (coerce Keys.store_pruned_dirspaces) Tasks.store_pruned_dirspaces
+    |> Hmap.add (coerce Keys.dirspace_outputs) Tasks.dirspace_outputs
     |> Hmap.add (coerce Keys.intra_pr_selection) Tasks.intra_pr_selection
     |> Hmap.add (coerce Keys.out_of_change_applies) Tasks.out_of_change_applies
     |> Hmap.add (coerce Keys.publish_comment) Tasks.publish_comment
