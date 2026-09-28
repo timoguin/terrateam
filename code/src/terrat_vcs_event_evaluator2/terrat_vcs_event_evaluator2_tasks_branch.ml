@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module P2 = Terrat_vcs_provider2
@@ -27,7 +27,7 @@ struct
           fetch Keys.context
           >>= function
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (branch_name, _); _ } ->
-              Abbs_future_combinators.return_ok branch_name
+              Abbs_fc.return_ok branch_name
           | _ -> assert false)
 
     let branch_ref =
@@ -66,9 +66,9 @@ struct
           fetch Keys.context
           >>= function
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (_, Some dest_branch_name); _ } ->
-              Abbs_future_combinators.return_ok dest_branch_name
+              Abbs_fc.return_ok dest_branch_name
           | { Tjc.Context.scope = Tjc.Context.Scope.Branch (branch_name, None); _ } ->
-              Abbs_future_combinators.return_ok branch_name
+              Abbs_fc.return_ok branch_name
           | _ -> assert false)
 
     let dest_branch_ref =
@@ -104,8 +104,7 @@ struct
     let working_branch_name =
       run ~name:"working_branch_name" (fun _s { Bs.Fetcher.fetch } -> fetch Keys.branch_name)
 
-    let out_of_change_applies =
-      run ~name:"out_of_change_applies" (fun _ _ -> Abbs_future_combinators.return_ok [])
+    let out_of_change_applies = run ~name:"out_of_change_applies" (fun _ _ -> Abbs_fc.return_ok [])
 
     let changes =
       run ~name:"changes" (fun s { Bs.Fetcher.fetch } ->
@@ -154,7 +153,7 @@ struct
           fetch Keys.applied_dirspaces
           >>| fun applied_dirspaces ->
           fun ~dirspaces ~force:_ ->
-           Abbs_future_combinators.return_ok
+           Abbs_fc.return_ok
              {
                Terrat_intra_pr_hash.Selection.to_run = dirspaces;
                out_of_order = [];
@@ -162,8 +161,7 @@ struct
              })
 
     let is_draft_pr =
-      run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } ->
-          Abbs_future_combinators.return_ok false)
+      run ~name:"is_draft_pr" (fun _s { Bs.Fetcher.fetch = _ } -> Abbs_fc.return_ok false)
 
     let check_conflicting_apply_work_manifests =
       run ~name:"check_conflicting_apply_work_manifests" (fun s { Bs.Fetcher.fetch } ->
@@ -221,12 +219,11 @@ struct
           >>| fun () -> ())
 
     let publish_comment =
-      run ~name:"publish_comment" (fun _ _ ->
-          Abbs_future_combinators.return_ok (fun _ -> Abbs_future_combinators.return_ok ()))
+      run ~name:"publish_comment" (fun _ _ -> Abbs_fc.return_ok (fun _ -> Abbs_fc.return_ok ()))
 
     let create_commit_checks =
       run ~name:"create_commit_checks" (fun _ _ ->
-          Abbs_future_combinators.return_ok (fun _ _ -> Abbs_future_combinators.return_ok ()))
+          Abbs_fc.return_ok (fun _ _ -> Abbs_fc.return_ok ()))
 
     let access_control_eval_apply =
       run ~name:"access_control_eval_apply" (fun _ { Bs.Fetcher.fetch } ->
@@ -244,8 +241,7 @@ struct
           let r = Terrat_access_control2.{ R.deny = []; pass = working_set_matches } in
           Ok r)
 
-    let maybe_automerge =
-      run ~name:"maybe_automerge" (fun _s _fetcher -> Abbs_future_combinators.return_ok ())
+    let maybe_automerge = run ~name:"maybe_automerge" (fun _s _fetcher -> Abbs_fc.return_ok ())
   end
 
   let tasks tasks =

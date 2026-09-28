@@ -1,5 +1,5 @@
 let run () =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let client = Githubc2_abb.create ~user_agent:"Gihubc2 Test Client" (`Token Sys.argv.(1)) in
   Githubc2_abb.collect_all
     client
@@ -8,7 +8,7 @@ let run () =
   print_endline (Githubc2_activity.List_repos_starred_by_authenticated_user.Responses.OK.show repos);
   Printf.printf "Num = %d\n" (CCList.length repos);
   ()
-(* let open Abbs_future_combinators.Infix_result_monad in
+(* let open Abbs_fc.Infix_result_monad in
  * Ghc.Schema.create ()
  * >>= fun schema ->
  * Ghc.create schema (`Token Sys.argv.(1))

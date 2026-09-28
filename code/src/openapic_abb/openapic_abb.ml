@@ -154,13 +154,13 @@ let call ?log t req =
       >>= function
       | Ok resp ->
           CCOption.iter (fun f -> f (`Resp resp)) log;
-          Abbs_future_combinators.return_ok resp
+          Abbs_fc.return_ok resp
       | Error (#call_err as call_err) ->
           CCOption.iter (fun f -> f (`Err call_err)) log;
-          Abbs_future_combinators.return_err call_err)
+          Abbs_fc.return_err call_err)
   | Some timeout -> (
-      Abbs_future_combinators.first
-        (Abb.Sys.sleep timeout >>= fun () -> Abbs_future_combinators.return_err `Timeout)
+      Abbs_fc.first
+        (Abb.Sys.sleep timeout >>= fun () -> Abbs_fc.return_err `Timeout)
         (Api.call Openapi.Request.(req |> with_base_url t.base_url |> add_headers t.headers))
       >>= fun (r, fut) ->
       Abb.Future.abort fut
@@ -168,23 +168,23 @@ let call ?log t req =
       match r with
       | Ok resp ->
           CCOption.iter (fun f -> f (`Resp resp)) log;
-          Abbs_future_combinators.return_ok resp
+          Abbs_fc.return_ok resp
       | Error (#call_err as call_err) ->
           CCOption.iter (fun f -> f (`Err call_err)) log;
-          Abbs_future_combinators.return_err call_err)
+          Abbs_fc.return_err call_err)
 
 let rec fold' page t ~init ~f req =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   call t Openapi.Request.(req |> add_headers t.headers)
   >>= fun resp ->
   f init resp
   >>= fun init ->
   match page req resp with
   | Some req -> fold' page t ~init ~f req
-  | None -> Abbs_future_combinators.return_ok init
+  | None -> Abbs_fc.return_ok init
 
 let fold ~page t ~init ~f req =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   (* With the initial call we want a standard call, with all URL replacement
      operations.  However on the next call we want to use the exact URL that we
      were given in pagination. *)
@@ -194,17 +194,17 @@ let fold ~page t ~init ~f req =
   >>= fun init ->
   match page req resp with
   | Some req -> fold' page t ~init ~f req
-  | None -> Abbs_future_combinators.return_ok init
+  | None -> Abbs_fc.return_ok init
 
 let collect_all ~page t req =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   fold
     ~page
     ~init:[]
     ~f:(fun acc resp ->
       match Openapi.Response.value resp with
-      | `OK vs -> Abbs_future_combinators.return_ok (vs @ acc)
-      | _ -> Abbs_future_combinators.return_err `Error)
+      | `OK vs -> Abbs_fc.return_ok (vs @ acc)
+      | _ -> Abbs_fc.return_err `Error)
     t
     req
   >>| fun res -> CCList.rev res

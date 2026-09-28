@@ -57,7 +57,7 @@
  *   | Github_action_run of Terrat_github_action_runner.t
  * 
  * let create_github_installation db installation =
- *   let open Abbs_future_combinators.Infix_result_monad in
+ *   let open Abbs_fc.Infix_result_monad in
  *   Pgsql_io.Prepared_stmt.fetch
  *     db
  *     Sql.select_github_installation
@@ -83,7 +83,7 @@
  *   | _ :: _ -> Abb.Future.return (Ok ())
  * 
  * let comment_on_pull_request ~config ~installation_id ~owner ~repo ~pull_number msg =
- *   let open Abbs_future_combinators.Infix_result_monad in
+ *   let open Abbs_fc.Infix_result_monad in
  *   Terrat_github.get_installation_access_token config installation_id
  *   >>= fun token ->
  *   let client = Terrat_github.create (`Token token) in
@@ -109,7 +109,7 @@
  *     branch
  *     run_type
  *     tag_query =
- *   let open Abbs_future_combinators.Infix_result_monad in
+ *   let open Abbs_fc.Infix_result_monad in
  *   Terrat_github.get_installation_access_token config installation_id
  *   >>= fun access_token ->
  *   Terrat_github_action.load_workflow
@@ -182,7 +182,7 @@
  *   let open Abb.Future.Infix_monad in
  *   Pgsql_pool.with_conn storage ~f:(fun db ->
  *       Pgsql_io.tx db ~f:(fun () ->
- *           Abbs_future_combinators.List_result.iter
+ *           Abbs_fc.List_result.iter
  *             ~f:(function
  *               | Debug msg ->
  *                   Logs.debug (fun m -> m "POLICY_EXEC : %s : DEBUG : %s" token msg);
@@ -215,7 +215,7 @@
  *                     run_type;
  *                     tag_query;
  *                   } -> (
- *                   let open Abbs_future_combinators.Infix_result_monad in
+ *                   let open Abbs_fc.Infix_result_monad in
  *                   Logs.debug (fun m ->
  *                       m
  *                         "POLICY_EXEC : %s : GITHUB_ACTION_RUN : %d : %s : %s : %d : %s : %s"

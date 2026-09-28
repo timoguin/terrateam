@@ -1,4 +1,4 @@
-module Fc = Abbs_future_combinators
+module Fc = Abbs_fc
 
 (* [`Rerun] outranks everything, a true error included.  It is not a failure: it
    says the task committed something and the evaluation has to be driven again.
@@ -13,7 +13,7 @@ module Fc = Abbs_future_combinators
    task's error against its key, so one task that two paths fetch in the same
    pass hands back the same name twice.
 
-   Anything else keeps the left, which is what [Abbs_future_combinators] does
+   Anything else keeps the left, which is what [Abbs_fc] does
    and what the rest of this evaluator already relies on.  The wildcard is
    deliberate, and is not the case analysis this repository asks to be spelled
    out: the function is row-polymorphic in every constructor but [`Rerun], so

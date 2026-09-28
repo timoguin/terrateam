@@ -1,7 +1,7 @@
 let num_tries = 1000
 
 module Make (Abb : Abb_intf.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   let with_filename ?temp_dir ?(keep_if = fun () -> false) ~prefix ~suffix f =
     try

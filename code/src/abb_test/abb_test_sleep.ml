@@ -1,6 +1,6 @@
 module Make (Abb : Abb_intf.S) = struct
   module Oth_abb = Abb_test_oth.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   let basic_test =
     Oth_abb.test ~desc:"A few sleeps" ~name:"Sleep test" (fun () ->

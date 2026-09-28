@@ -2,7 +2,7 @@
  (name test)
  (libraries
   abb_bounded_suspendable_executor
-  abb_future_combinators
+  abb_fc
   abb_scheduler_select
   containers
   oth

@@ -33,10 +33,10 @@ end
 let get' storage ctx =
   let open Abb.Future.Infix_monad in
   Pgsql_pool.with_conn storage ~f:(fun db ->
-      Abbs_future_combinators.timeout ~timeout:(Abb.Sys.sleep ping_timeout) (Pgsql_io.ping db)
+      Abbs_fc.timeout ~timeout:(Abb.Sys.sleep ping_timeout) (Pgsql_io.ping db)
       >>= function
-      | `Ok r -> Abbs_future_combinators.return_ok r
-      | `Timeout -> Pgsql_io.destroy db >>= fun () -> Abbs_future_combinators.return_err `Timeout)
+      | `Ok r -> Abbs_fc.return_ok r
+      | `Timeout -> Pgsql_io.destroy db >>= fun () -> Abbs_fc.return_err `Timeout)
   >>= function
   | Ok true ->
       Prmths.Counter.inc_one (Metrics.responses_total "success");

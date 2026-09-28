@@ -503,14 +503,14 @@ module Brand = struct
     let fetch ~request_id ~fetch_branch_sha ~config_brand ~centralized client repo =
       let open Abb.Future.Infix_monad in
       Cache.fetch cache repo (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Api.fetch_remote_repo ~request_id client repo
           >>= fun remote_repo ->
           let default_branch = Api.Remote_repo.default_branch remote_repo in
           fetch_branch_sha client (Api.Remote_repo.to_repo remote_repo) default_branch
           >>= fun default_branch_sha ->
           let default_branch_ref = CCOption.get_or ~default:default_branch default_branch_sha in
-          Abbs_future_combinators.Result.all2
+          Abbs_fc.Result.all2
             (config_brand client repo default_branch_ref)
             (centralized client repo)
           >>| fun (repo_config, (forced_config, centralized)) ->
@@ -521,7 +521,7 @@ module Brand = struct
             ~fallback:(Terrat_brand.fallback ()))
       >>| CCResult.map_err (fun (#Terrat_vcs_api.call_err as err) -> err)
 
-    let no_centralized _ _ = Abbs_future_combinators.return_ok (None, None)
+    let no_centralized _ _ = Abbs_fc.return_ok (None, None)
   end
 end
 

@@ -821,11 +821,11 @@ module Make_unified_wrapper = struct
     >>= function
     | Ok () -> (
         match !(t.Hu.commands) with
-        | [] -> Abbs_future_combinators.return_ok ()
+        | [] -> Abbs_fc.return_ok ()
         | es ->
             Printf.printf "\n\tT: %s%!\n" (Ehu.show_commands es);
             Oth.Assert.false_ "test: unexpected value")
-    | Error e -> Abbs_future_combinators.return_err e
+    | Error e -> Abbs_fc.return_err e
 end
 
 let test_unified_basic =

@@ -39,7 +39,7 @@ module Cookie = struct
     match Uuidm.of_string id with
     | Some uuid -> (
         let load =
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Pgsql_pool.with_conn storage ~f:(fun db ->
               Pgsql_io.Prepared_stmt.fetch
                 db
@@ -196,17 +196,17 @@ let rem_session ~cookie_name storage ctx =
   let f =
     match Brtl_mw_session.get_session_key cookie_name ctx with
     | Some token ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let token = CCOption.get_exn_or ("token: " ^ token) (Uuidm.of_string token) in
         Pgsql_pool.with_conn storage ~f:(fun db ->
             Pgsql_io.Prepared_stmt.execute db Cookie.Sql.delete token)
         >>| fun () -> Brtl_mw_session.rem_session_value key ctx
-    | None -> Abbs_future_combinators.return_ok ctx
+    | None -> Abbs_fc.return_ok ctx
   in
   let open Abb.Future.Infix_monad in
   f
   >>= function
-  | Ok ctx -> Abbs_future_combinators.return_ok ctx
+  | Ok ctx -> Abbs_fc.return_ok ctx
   | Error (#Pgsql_pool.err | #Pgsql_io.err) as err -> Abb.Future.return err
 
 let create_user_session user ctx = set_session user ctx
@@ -217,7 +217,7 @@ let with_session ?caps ctx =
       match caps with
       | Some caps ->
           if CCList.for_all CCFun.(flip Terrat_user.has_capability session) caps then
-            Abbs_future_combinators.return_ok session
-          else Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
-      | None -> Abbs_future_combinators.return_ok session)
-  | None -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+            Abbs_fc.return_ok session
+          else Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)
+      | None -> Abbs_fc.return_ok session)
+  | None -> Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)

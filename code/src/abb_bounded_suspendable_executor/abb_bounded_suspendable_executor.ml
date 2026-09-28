@@ -3,7 +3,7 @@ module Queue = CCFQueue
 module Make (S : Abb_intf.S) (Key : Map.OrderedType) = struct
   module Fut = S.Future
   module Service = Abb_service_local.Make (S)
-  module Fc = Abb_future_combinators.Make (Fut)
+  module Fc = Abb_fc.Make (Fut)
 
   module Logger = struct
     type t = {

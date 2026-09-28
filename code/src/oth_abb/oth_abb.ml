@@ -61,7 +61,7 @@ let default_slots () =
     !default_slots_override
 
 module Make (Abb : Abb_intf.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   module Time_inst = struct
     let time () = Abb.Sys.time ()

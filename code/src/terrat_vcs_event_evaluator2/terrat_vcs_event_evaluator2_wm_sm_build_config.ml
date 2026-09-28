@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Msg = Terrat_vcs_provider2.Msg
 
 module Make
@@ -338,7 +338,7 @@ struct
       ~branch
       ~create:(create ~cache_ref)
         (* A step that prepares a job has no dirspace, so it spends no budget. *)
-      ~max_workspaces:(fun () -> Abbs_future_combinators.return_ok None)
+      ~max_workspaces:(fun () -> Abbs_fc.return_ok None)
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~cache_ref ~branch_ref ~branch)

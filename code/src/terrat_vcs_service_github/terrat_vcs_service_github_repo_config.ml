@@ -41,7 +41,7 @@ let find_candidate entries ~directory ~basename =
 
 let list_directories ~request_id client repo ref_ directories =
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.List.map_par
+  Abbs_fc.List.map_par
     ~f:(fun directory ->
       Api.fetch_directory ~request_id client repo ref_ directory
       >>| function
@@ -56,9 +56,9 @@ let non_blank path content =
   if CCString.is_empty (CCString.trim content) then None else Some (path, content)
 
 let decode repo ref_ = function
-  | None -> Abbs_future_combinators.return_ok None
+  | None -> Abbs_fc.return_ok None
   | Some (path, content) ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       let fname = Api.Repo.to_string repo ^ ":" ^ Api.Ref.to_string ref_ ^ ":" ^ path in
       Abb.Future.return
         (CCResult.map_err
@@ -68,19 +68,19 @@ let decode repo ref_ = function
 
 (* The listing already gave the size, thus an empty file needs no read. *)
 let fetch_candidate ~request_id client repo ref_ { Candidate.path; size } =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   match size with
-  | 0 -> Abbs_future_combinators.return_ok None
+  | 0 -> Abbs_fc.return_ok None
   | _ -> Api.fetch_file ~request_id client repo ref_ path >>| CCOption.flat_map (non_blank path)
 
 (* Read both names when the directory could not be listed.  The [.yml] name
    wins when it exists, even when it holds nothing, which is what the listing
    path does as well. *)
 let probe ~request_id client repo ref_ ~directory ~basename =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let yml = path_of ~directory ~name:(basename ^ ".yml") in
   let yaml = path_of ~directory ~name:(basename ^ ".yaml") in
-  Abbs_future_combinators.Result.all2
+  Abbs_fc.Result.all2
     (Api.fetch_file ~request_id client repo ref_ yml)
     (Api.fetch_file ~request_id client repo ref_ yaml)
   >>| function
@@ -96,26 +96,26 @@ let fetch_content ~request_id client repo ref_ listings ~directory ~basename =
   | Some (Listed entries) ->
       find_candidate entries ~directory ~basename
       |> CCOption.map_or
-           ~default:(Abbs_future_combinators.return_ok None)
+           ~default:(Abbs_fc.return_ok None)
            (fetch_candidate ~request_id client repo ref_)
   | Some Unlistable | None -> probe ~request_id client repo ref_ ~directory ~basename
 
 let fetch_config ~request_id client repo ref_ listings ~directory ~basename =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   fetch_content ~request_id client repo ref_ listings ~directory ~basename >>= decode repo ref_
 
 let fetch_config_path ~request_id client repo ref_ listings ~directory ~basename =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   fetch_content ~request_id client repo ref_ listings ~directory ~basename >>| CCOption.map fst
 
 (* Config parity (#1442): the configuration of the brand that comes first wins;
    the other one keeps working so existing repos need no rename. *)
 let find ~request_id client repo ref_ =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   list_directories ~request_id client repo ref_ (CCList.map Terrat_brand.directory Terrat_brand.all)
   >>= fun listings ->
   let rec first = function
-    | [] -> Abbs_future_combinators.return_ok None
+    | [] -> Abbs_fc.return_ok None
     | brand :: brands -> (
         fetch_content
           ~request_id
@@ -126,17 +126,17 @@ let find ~request_id client repo ref_ =
           ~directory:(Terrat_brand.directory brand)
           ~basename:"config"
         >>= function
-        | Some content -> Abbs_future_combinators.return_ok (Some (brand, content))
+        | Some content -> Abbs_fc.return_ok (Some (brand, content))
         | None -> first brands)
   in
   first Terrat_brand.all
 
 let fetch ~request_id client repo ref_ =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   find ~request_id client repo ref_ >>= fun found -> decode repo ref_ (CCOption.map snd found)
 
 let fetch_config_brand ~request_id client repo ref_ =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   find ~request_id client repo ref_ >>| CCOption.map fst
 
 module Tests = struct

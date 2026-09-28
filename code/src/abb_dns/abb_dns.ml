@@ -3,7 +3,7 @@ let src = Logs.Src.create "abb.dns" ~doc:"Abb DNS"
 module Logs = (val Logs.src_log src : Logs.LOG)
 
 module Make (Abb : Abb_intf.S) = struct
-  module Abb_fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Abb_fut_comb = Abb_fc.Make (Abb.Future)
 
   (* Based on the Lwt implementation but without TLS support *)
   module Transport :

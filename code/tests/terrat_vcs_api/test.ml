@@ -82,6 +82,6 @@ let () =
   Random.self_init ();
   Oth_abb.run
     ~file:__FILE__
-    ~setup:(fun () -> Abbs_future_combinators.return_ok ())
+    ~setup:(fun () -> Abbs_fc.return_ok ())
     ~teardown:(fun () -> Abb.Future.return ())
     (fun () -> test)

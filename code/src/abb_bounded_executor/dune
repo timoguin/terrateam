@@ -1,7 +1,7 @@
 (library
  (name abb_bounded_executor)
  (libraries
-  abb_future_combinators
+  abb_fc
   abb_intf
   abb_service_local
   abb_time

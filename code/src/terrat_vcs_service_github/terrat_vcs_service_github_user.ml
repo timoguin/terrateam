@@ -45,7 +45,7 @@ module Sql = struct
 end
 
 let get_token config storage user =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_pool.with_conn storage ~f:(fun db ->
       Pgsql_io.Prepared_stmt.fetch
         db
@@ -60,7 +60,7 @@ let get_token config storage user =
         ~config:(Terrat_vcs_service_github_provider.Api.Config.vcs_config config)
         refresh_token
       >>= fun oauth ->
-      Abbs_future_combinators.to_result (Abb.Sys.time ())
+      Abbs_fc.to_result (Abb.Sys.time ())
       >>= fun now ->
       let expiration =
         CCOption.map
@@ -82,14 +82,14 @@ let get_token config storage user =
             oauth.Oauth.refresh_token
             refresh_expiration
           >>| fun () -> oauth.Oauth.access_token)
-  | (token, false, _) :: _ -> Abbs_future_combinators.return_ok token
+  | (token, false, _) :: _ -> Abbs_fc.return_ok token
 
 let enforce_installation_access storage user installation_id ctx =
   if
     Terrat_user.has_capability
       (Terrat_user.Capability.Installation_id (CCInt.to_string installation_id))
       user
-  then Abbs_future_combinators.return_ok ()
+  then Abbs_fc.return_ok ()
   else
     let open Abb.Future.Infix_monad in
     Pgsql_pool.with_conn storage ~f:(fun db ->
@@ -100,8 +100,8 @@ let enforce_installation_access storage user installation_id ctx =
           (Terrat_user.id user)
           (CCInt64.of_int installation_id))
     >>= function
-    | Ok (_ :: _) -> Abbs_future_combinators.return_ok ()
-    | Ok [] -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+    | Ok (_ :: _) -> Abbs_fc.return_ok ()
+    | Ok [] -> Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m ->
             m
@@ -109,7 +109,7 @@ let enforce_installation_access storage user installation_id ctx =
               (Brtl_ctx.token ctx)
               Pgsql_pool.pp_err
               err);
-        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+        Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
     | Error (#Pgsql_io.err as err) ->
         Logs.err (fun m ->
             m
@@ -117,4 +117,4 @@ let enforce_installation_access storage user installation_id ctx =
               (Brtl_ctx.token ctx)
               Pgsql_io.pp_err
               err);
-        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+        Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)

@@ -47,7 +47,7 @@ let caps_of_yojson = [%of_yojson: Terrat_user_caps.t list]
 let create ~vcs ~installation client = { client; installation; vcs }
 
 let get ?select ?idx ?committed ~key t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Ttm_client.call
     t.client
     Terrat_api_kv.Get.(
@@ -84,7 +84,7 @@ let get ?select ?idx ?committed ~key t =
            })
 
 let set ?read_caps ?write_caps ?idx ?committed ~key data t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let body =
     {
       Terrat_api_components_kv_set.committed;
@@ -128,7 +128,7 @@ let set ?read_caps ?write_caps ?idx ?committed ~key data t =
   | `Forbidden -> Error `Refresh_token_err
 
 let cas ?read_caps ?write_caps ?idx ?committed ?version ~key data t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let body =
     {
       Terrat_api_components_kv_cas.committed;
@@ -175,7 +175,7 @@ let cas ?read_caps ?write_caps ?idx ?committed ?version ~key data t =
   | `Forbidden -> Error `Refresh_token_err
 
 let delete ?idx ?version ~key t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Ttm_client.call
     t.client
     Terrat_api_kv.Delete.(
@@ -189,7 +189,7 @@ let count ?committed:_ ~key:_ _t = raise (Failure "nyi")
 let size ?idx:_ ?committed:_ ~key:_ _t = raise (Failure "nyi")
 
 let iter ?select ?idx ?inclusive ?prefix ?committed ?limit ~key t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Ttm_client.call
     t.client
     Terrat_api_kv.Iter.(
@@ -238,7 +238,7 @@ let iter ?select ?idx ?inclusive ?prefix ?committed ?limit ~key t =
            results)
 
 let commit ~keys t =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let body =
     {
       Terrat_api_components_kv_commit.keys =

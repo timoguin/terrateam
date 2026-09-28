@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module P2 = Terrat_vcs_provider2
 module Msg = P2.Msg
@@ -298,7 +298,7 @@ struct
           all_matches
       in
       create_commit_checks' create_commit_checks ref_ (missing_apply_check @ missing_commit_checks)
-    else Abbs_future_combinators.return_ok ()
+    else Abbs_fc.return_ok ()
 
   let changed_dirspaces config changes =
     let module Tcm = Terrat_change_match3 in
@@ -416,7 +416,7 @@ struct
       | T.Autoapply | T.Autoplan -> Terrat_tag_query.any
       | T.Gate_approval _ | T.Help | T.Index | T.Repo_config | T.Unlock _ | T.Push -> assert false
     in
-    Abbs_future_combinators.List_result.map
+    Abbs_fc.List_result.map
       ~f:(fun ((environment, runs_on), dirspaceflows) ->
         let changes =
           let module Dsf = Terrat_change.Dirspaceflow in
@@ -547,7 +547,7 @@ struct
         >>= fun pull_request ->
         match S.Api.Pull_request.state pull_request with
         | Terrat_pull_request.State.(Open | Closed) ->
-            Abbs_future_combinators.return_ok (Some (S.Api.Pull_request.branch_ref pull_request))
+            Abbs_fc.return_ok (Some (S.Api.Pull_request.branch_ref pull_request))
         | Terrat_pull_request.State.Merged _ ->
             fetch Keys.repo
             >>= fun repo ->
@@ -579,8 +579,8 @@ struct
               fetcher
               repo
               (S.Api.Pull_request.base_branch_name pull_request)
-        | Terrat_pull_request.State.Merged _ -> Abbs_future_combinators.return_ok None)
-    | P2.Target.Drift _ -> Abbs_future_combinators.return_ok None
+        | Terrat_pull_request.State.Merged _ -> Abbs_fc.return_ok None)
+    | P2.Target.Drift _ -> Abbs_fc.return_ok None
 
   (* The config that names the dirspaces is the one of this evaluation, and not one of either
      commit: a dirspace that only one of them names is not found, which errs on the side of the
@@ -635,7 +635,7 @@ struct
     >>= (fun head ->
     if CCOption.exists (fun head -> not (S.Api.Ref.equal head sha)) head then
       current_head ~read:`Live s fetcher work_manifest
-    else Abbs_future_combinators.return_ok head)
+    else Abbs_fc.return_ok head)
     >>= fun head ->
     impact_since
       s
@@ -645,7 +645,7 @@ struct
       work_manifest
     >>= fun checked_out ->
     CCOption.map_or
-      ~default:(Abbs_future_combinators.return_ok Staleness.Not_impacted)
+      ~default:(Abbs_fc.return_ok Staleness.Not_impacted)
       (fun head -> impact_since s fetcher ~from_ref:sha ~to_ref:head work_manifest)
       head
     >>= fun moved ->
@@ -653,7 +653,7 @@ struct
     | Staleness.Start.Run ->
         current_dest_head ~read:`Cached s fetcher work_manifest
         >>| fun dest_head -> Wm_sm.Run { head = Some sha; dest_head }
-    | Staleness.Start.Restart -> Abbs_future_combinators.return_ok Wm_sm.Restart
+    | Staleness.Start.Restart -> Abbs_fc.return_ok Wm_sm.Restart
 
   (* The heads that a result is compared with: the head of the branch of the run and, for an open
      pull request, the head of the destination branch, both read now. *)
@@ -685,15 +685,15 @@ struct
       CCOption.get_or ~default:(S.Api.Ref.of_string work_manifest.Wm.branch_ref) start_sha
     in
     CCOption.map_or
-      ~default:(Abbs_future_combinators.return_ok Staleness.Unknown)
+      ~default:(Abbs_fc.return_ok Staleness.Unknown)
       (fun head -> impact_since s fetcher ~from_ref ~to_ref:head work_manifest)
       head
     >>= fun branch_impact ->
     CCOption.map_or
-      ~default:(Abbs_future_combinators.return_ok Staleness.Not_impacted)
+      ~default:(Abbs_fc.return_ok Staleness.Not_impacted)
       (fun start_dest_sha ->
         CCOption.map_or
-          ~default:(Abbs_future_combinators.return_ok Staleness.Unknown)
+          ~default:(Abbs_fc.return_ok Staleness.Unknown)
           (fun dest_head ->
             impact_since s fetcher ~from_ref:start_dest_sha ~to_ref:dest_head work_manifest)
           dest_head)
@@ -724,7 +724,7 @@ struct
               work_manifest.Wm.id
               Builder.pp_err
               err);
-        Abbs_future_combinators.return_ok default
+        Abbs_fc.return_ok default
 
   (* A head that cannot be read is [None], which makes the result unknown. *)
   let record_result_heads s fetcher work_manifest =
@@ -784,7 +784,7 @@ struct
     live_check_ref fetcher work_manifest
     >>= fun head ->
     match work_manifest.Wm.target with
-    | P2.Target.Drift _ -> Abbs_future_combinators.return_ok (head, None)
+    | P2.Target.Drift _ -> Abbs_fc.return_ok (head, None)
     | P2.Target.Pr _ -> (
         fetch Keys.pull_request
         >>| fun pull_request ->
@@ -864,18 +864,18 @@ struct
         Builder.run_db s ~f:(fun db ->
             S.Db.query_job_restart ~request_id:(Builder.log_id s) ~job_id db
             >>= fun restart ->
-            if CCOption.is_some restart then Abbs_future_combinators.return_ok `Exists
+            if CCOption.is_some restart then Abbs_fc.return_ok `Exists
             else
               S.Db.query_job_restart_depth ~request_id:(Builder.log_id s) ~job_id db
               >>| fun restarts -> `Restarts restarts)
         >>= function
-        | `Exists -> Abbs_future_combinators.return_ok ()
+        | `Exists -> Abbs_fc.return_ok ()
         | `Restarts restarts -> (
             match Staleness.Drift_result.restart ~restarts with
             | Staleness.Drift_result.Limit_reached ->
                 Logs.info (fun m ->
                     m "%s : DRIFT : RESTART_LIMIT : restarts=%d" (Builder.log_id s) restarts);
-                Abbs_future_combinators.return_ok ()
+                Abbs_fc.return_ok ()
             | Staleness.Drift_result.Restart ->
                 Builder.run_db s ~f:(fun db ->
                     S.Job_context.Job.create
@@ -902,17 +902,17 @@ struct
         ( Plan { kind = None; tag_query = _ }
         | Apply { kind = None; tag_query = _; force = _ }
         | Autoapply | Autoplan | Gate_approval _ | Help | Index | Push | Repo_config | Unlock _ ))
-      -> Abbs_future_combinators.return_ok ()
+      -> Abbs_fc.return_ok ()
 
   let plan_superseded aborted s { Bs.Fetcher.fetch } =
     let open Irm in
     fetch Keys.job
     >>= fun job ->
     Builder.run_db s ~f:(fun db ->
-        Abbs_future_combinators.List_result.fold_left
+        Abbs_fc.List_result.fold_left
           ~init:true
           ~f:(fun superseded wm ->
-            if not superseded then Abbs_future_combinators.return_ok false
+            if not superseded then Abbs_fc.return_ok false
             else
               S.Db.query_plan_superseded
                 ~request_id:(Builder.log_id s)
@@ -921,7 +921,7 @@ struct
                 db)
           aborted)
 
-  let never_superseded _ _ _ = Abbs_future_combinators.return_ok false
+  let never_superseded _ _ _ = Abbs_fc.return_ok false
 
   module Plan = struct
     let create ~dest_branch_ref ~branch_ref ~branch s ({ Bs.Fetcher.fetch } as fetcher) =
@@ -956,7 +956,7 @@ struct
         "Running"
         Status.Running
       >>= fun () ->
-      Abbs_future_combinators.return_ok ()
+      Abbs_fc.return_ok ()
       >>= fun () ->
       let { Wm.base_ref = _; branch_ref = _; changes; target; _ } = work_manifest in
       let run_kind =
@@ -1089,8 +1089,7 @@ struct
             >>| function
             | true -> `Superseded
             | false -> `Current)
-        | P2.Target.Pr _, ([] | _ :: _) | P2.Target.Drift _, _ ->
-            Abbs_future_combinators.return_ok `Current
+        | P2.Target.Pr _, ([] | _ :: _) | P2.Target.Drift _, _ -> Abbs_fc.return_ok `Current
       in
       let publish_output compared decision =
         let open Irm in
@@ -1200,7 +1199,7 @@ struct
             (* A drift has no pull request to comment on. *)
             (match work_manifest.Wm.target with
               | P2.Target.Pr _ -> publish_output compared decision
-              | P2.Target.Drift _ -> Abbs_future_combinators.return_ok ())
+              | P2.Target.Drift _ -> Abbs_fc.return_ok ())
             >>= fun () ->
             check_refs fetcher work_manifest ~run_ref:compared.from_ref decision
             >>= fun (check_ref, stale) ->
@@ -1245,7 +1244,7 @@ struct
                    dirspace is the plan of this result, and it is the plan the selection reads. *)
                 or_default s work_manifest ~what:"DIRSPACE_SUMMARIES_ERR" ~default:()
                 @@ ((match run with
-                      | `Apply -> Abbs_future_combinators.return_ok Terrat_data.Dirspace_set.empty
+                      | `Apply -> Abbs_fc.return_ok Terrat_data.Dirspace_set.empty
                       | `Plan ->
                           Builder.run_db s ~f:(fun db ->
                               S.Db.query_dirspace_runs_for_context
@@ -1300,7 +1299,7 @@ struct
                       Staleness.Drift_result.pp_decision
                       decision);
                 match decision with
-                | Staleness.Drift_result.Resolved -> Abbs_future_combinators.return_ok ()
+                | Staleness.Drift_result.Resolved -> Abbs_fc.return_ok ()
                 | Staleness.Drift_result.Reconcile_again ->
                     or_default
                       s
@@ -1312,7 +1311,7 @@ struct
       let open Abb.Future.Infix_monad in
       report ()
       >>= function
-      | Ok () -> Abbs_future_combinators.return_ok ()
+      | Ok () -> Abbs_fc.return_ok ()
       | Error (`Suspend_eval name) ->
           Logs.err (fun m ->
               m
@@ -1321,7 +1320,7 @@ struct
                 Uuidm.pp
                 work_manifest.Wm.id
                 name);
-          Abbs_future_combinators.return_ok ()
+          Abbs_fc.return_ok ()
       | Error _ as err -> Abb.Future.return err
 
     let result work_manifest result s ({ Bs.Fetcher.fetch } as fetcher) =
@@ -1393,7 +1392,7 @@ struct
               work_manifest
               work_manifest_result
             >>| fun () -> ()
-          else Abbs_future_combinators.return_ok ()
+          else Abbs_fc.return_ok ()
       | Wmr.Work_manifest_index_result _ -> assert false
       | Wmr.Work_manifest_build_config_result _ -> assert false
       | Wmr.Work_manifest_build_result_failure _ -> assert false
@@ -1431,9 +1430,9 @@ struct
               | Terrat_pull_request.State.Merged _ ->
                   fetch Keys.publish_comment
                   >>= fun publish_comment -> publish_comment' publish_comment Msg.Autoapply_running
-              | _ -> Abbs_future_combinators.return_ok ())
-          | _ -> Abbs_future_combinators.return_ok ())
-      | _ -> Abbs_future_combinators.return_ok ()
+              | _ -> Abbs_fc.return_ok ())
+          | _ -> Abbs_fc.return_ok ())
+      | _ -> Abbs_fc.return_ok ()
 
     (* The apply is created and queued, but the dispatcher does not start it
        while other work runs against its dirspaces.  Nothing downstream speaks
@@ -1452,11 +1451,10 @@ struct
       >>= function
       (* A drift apply has nowhere to publish, so there is nothing to say and no
          reason to ask the question. *)
-      | { Tjc.Context.scope = Tjc.Context.Scope.Branch _; _ } ->
-          Abbs_future_combinators.return_ok ()
+      | { Tjc.Context.scope = Tjc.Context.Scope.Branch _; _ } -> Abbs_fc.return_ok ()
       | context -> (
           match dirspaces with
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | dirspaces -> (
               fetch Keys.job
               >>= fun job ->
@@ -1468,7 +1466,7 @@ struct
                     context
                     dirspaces)
               >>= function
-              | [] -> Abbs_future_combinators.return_ok ()
+              | [] -> Abbs_fc.return_ok ()
               | blocking_wms ->
                   CCList.iter
                     (fun { Wm.id; _ } ->
@@ -1600,20 +1598,19 @@ struct
     let complete_stale_failure work_manifest s ({ Bs.Fetcher.fetch } as fetcher) =
       let open Irm in
       match (work_manifest.Wm.target, work_manifest.Wm.state) with
-      | P2.Target.Drift _, _ | P2.Target.Pr _, Wm.State.Completed ->
-          Abbs_future_combinators.return_ok ()
+      | P2.Target.Drift _, _ | P2.Target.Pr _, Wm.State.Completed -> Abbs_fc.return_ok ()
       | P2.Target.Pr _, Wm.State.(Queued | Running | Aborted) -> (
           Builder.run_db s ~f:(fun db ->
               S.Work_manifest.query_start_refs ~request_id:(Builder.log_id s) db work_manifest.Wm.id)
           >>= fun (start_sha, _) ->
-          if CCOption.is_none start_sha then Abbs_future_combinators.return_ok ()
+          if CCOption.is_none start_sha then Abbs_fc.return_ok ()
           else
             result_heads s fetcher work_manifest
             >>= fun (head, dest_head) ->
             result_impact s fetcher work_manifest ~head ~dest_head
             >>= fun (impact, compared) ->
             match Staleness.Pr_result.decide impact with
-            | Staleness.Pr_result.Fresh -> Abbs_future_combinators.return_ok ()
+            | Staleness.Pr_result.Fresh -> Abbs_fc.return_ok ()
             | Staleness.Pr_result.(Stale_files_changed _ | Stale_files_unknown) as decision ->
                 Logs.info (fun m ->
                     m

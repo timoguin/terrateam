@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Msg = Terrat_vcs_provider2.Msg
 
 module Make
@@ -193,7 +193,7 @@ struct
     Abbs_time_it.run
       (fun t -> Logs.info (fun m -> m "%s : MATCH_DIFF_LIST : time=%f" (Builder.log_id s) t))
       (fun () ->
-        Abbs_future_combinators.to_result
+        Abbs_fc.to_result
         @@ Abb.Thread.run (fun () ->
             CCList.filter
               (Terrat_change_match3.match_tag_query ~tag_query:Terrat_tag_query.any)
@@ -304,10 +304,10 @@ struct
                (file, line_num, error))
              failures ))
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
+    | Ok () -> Abbs_fc.return_ok ()
     | Error `Error ->
         Logs.err (fun m -> m "%s : INDEX : PUBLISH_PARSE_FAILURES : ERROR" (Builder.log_id s));
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
 
   (* A [terrateam index] job posts the failures itself when the job completes, thus this posts them
      only for the other jobs.  The failures of the destination branch index are in files that the
@@ -322,7 +322,7 @@ struct
     fetch Keys.branch_name
     >>= fun branch_name ->
     match job.Terrat_job_context.Job.type_ with
-    | Type_.Index -> Abbs_future_combinators.return_ok ()
+    | Type_.Index -> Abbs_fc.return_ok ()
     | Type_.(
         ( Apply _
         | Autoapply
@@ -333,8 +333,7 @@ struct
         | Push
         | Repo_config
         | Unlock _ ))
-      when S.Api.Ref.to_string branch <> S.Api.Ref.to_string branch_name ->
-        Abbs_future_combinators.return_ok ()
+      when S.Api.Ref.to_string branch <> S.Api.Ref.to_string branch_name -> Abbs_fc.return_ok ()
     | Type_.(
         ( Apply _
         | Autoapply
@@ -352,7 +351,7 @@ struct
         Builder.run_db s ~f:(fun db -> query_index s db account branch_ref)
         >>= fun index ->
         match CCOption.map_or ~default:[] (fun i -> i.I.failures) index with
-        | [] -> Abbs_future_combinators.return_ok ()
+        | [] -> Abbs_fc.return_ok ()
         | failures ->
             fetch Keys.publish_comment
             >>= fun publish_comment -> publish_parse_failures s publish_comment failures)
@@ -389,7 +388,7 @@ struct
            records after the transaction committed, so the index is durable and
            the rest of this branch runs exactly once. *)
         let rerun_id = Printf.sprintf "index:%s" (Uuidm.to_string work_manifest.Wm.id) in
-        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_future_combinators.return_ok ()
+        (if CCList.mem ~eq:CCString.equal rerun_id reruns then Abbs_fc.return_ok ()
          else (
            Logs.info (fun m ->
                m
@@ -398,7 +397,7 @@ struct
                  Uuidm.pp
                  work_manifest.Wm.id);
            Builder.run_db s ~f:(fun db -> store_index s db work_manifest.Wm.id index)
-           >>= fun _ -> Abbs_future_combinators.return_err (`Rerun [ rerun_id ])))
+           >>= fun _ -> Abbs_fc.return_err (`Rerun [ rerun_id ])))
         >>= fun () ->
         fetch Keys.account
         >>= fun account ->
@@ -447,7 +446,7 @@ struct
       ~branch_ref
       ~branch
       ~create (* A step that prepares a job has no dirspace, so it spends no budget. *)
-      ~max_workspaces:(fun () -> Abbs_future_combinators.return_ok None)
+      ~max_workspaces:(fun () -> Abbs_fc.return_ok None)
       ~initiate:(initiate ~branch)
       ~fail:(fail ~branch)
       ~result:(result ~branch)

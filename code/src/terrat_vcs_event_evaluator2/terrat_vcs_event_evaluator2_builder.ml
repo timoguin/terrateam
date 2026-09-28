@@ -1,4 +1,4 @@
-module Fc = Abbs_future_combinators
+module Fc = Abbs_fc
 module Serializer = Abb_service_serializer.Make (Abb)
 module Exec = Abb_bounded_suspendable_executor.Make (Abb) (CCString)
 
@@ -163,7 +163,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let run_db s ~f =
     let open Abb.Future.Infix_monad in
     Serializer.Mutex.run s.B.State.db ~f:(fun db ->
-        Abbs_future_combinators.with_finally
+        Abbs_fc.with_finally
           (fun () ->
             Logs_run_db.info (fun m ->
                 m
@@ -179,9 +179,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   (Uuidm.to_string @@ Pgsql_io.id db));
             Abb.Future.return ()))
     >>= function
-    | `Ok (Ok v) -> Abbs_future_combinators.return_ok v
-    | `Ok (Error err) -> Abbs_future_combinators.return_err err
-    | `Closed -> Abbs_future_combinators.return_err `Closed
+    | `Ok (Ok v) -> Abbs_fc.return_ok v
+    | `Ok (Error err) -> Abbs_fc.return_err err
+    | `Closed -> Abbs_fc.return_err `Closed
 
   let make_tasks tasks_map =
     { Bs.Tasks.get = (fun _s k -> Abb.Future.return (Hmap.find (coerce_to_task k) tasks_map)) }

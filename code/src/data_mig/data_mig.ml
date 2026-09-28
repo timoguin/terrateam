@@ -71,14 +71,14 @@ module Make (M : S) = struct
 
   let start_migration mt name =
     let open Abb.Future.Infix_monad in
-    M.start_migration mt name >>= fun () -> Abbs_future_combinators.return_ok ()
+    M.start_migration mt name >>= fun () -> Abbs_fc.return_ok ()
 
   let complete_migration mt name =
     let open Abb.Future.Infix_monad in
-    M.complete_migration mt name >>= fun () -> Abbs_future_combinators.return_ok ()
+    M.complete_migration mt name >>= fun () -> Abbs_fc.return_ok ()
 
   let exec mt (name, m) =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     start_migration mt name
     >>= fun () ->
     run_migration m mt
@@ -108,23 +108,22 @@ module Make (M : S) = struct
      migration step will be serialized but it might bounce around between
      processes.  That's OK. *)
   let rec run' mt ms =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     M.tx mt (fun tx ->
         get_migrations tx
         >>= function
         | migrations -> (
             match verify_consistency ~idx:0 ~last_common:None migrations ms with
-            | Ok [] -> Abbs_future_combinators.return_ok `Done
+            | Ok [] -> Abbs_fc.return_ok `Done
             | Ok (migration :: _) ->
                 let open Abb.Future.Infix_monad in
                 M.list_migrations tx [ fst migration ]
                 >>= fun () ->
-                let open Abbs_future_combinators.Infix_result_monad in
+                let open Abbs_fc.Infix_result_monad in
                 exec tx migration >>| fun r -> `Cont r
-            | Error consistency -> Abbs_future_combinators.return_err (`Consistency_err consistency)
-            ))
+            | Error consistency -> Abbs_fc.return_err (`Consistency_err consistency)))
     >>= function
-    | `Done -> Abbs_future_combinators.return_ok ()
+    | `Done -> Abbs_fc.return_ok ()
     | `Cont `Sync -> run' mt ms
     | `Cont (`Async mig) -> run_migration mig mt >>= fun () -> run' mt ms
 

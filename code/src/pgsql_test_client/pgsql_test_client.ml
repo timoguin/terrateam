@@ -24,7 +24,7 @@ let with_conn :
   Pgsql_io.create ~tls_config:(`Prefer tls_config) ~host ~user ~passwd database
   >>= function
   | Ok conn ->
-      Abbs_future_combinators.with_finally
+      Abbs_fc.with_finally
         (fun () ->
           Pgsql_io.Prepared_stmt.execute conn Sql.drop_foo
           >>= function
@@ -32,7 +32,7 @@ let with_conn :
           | Error err ->
               Logs.err (fun m -> m "%s" (Pgsql_io.show_err err));
               Oth.Assert.false_ "drop table failed")
-        ~finally:(fun () -> Abbs_future_combinators.ignore (Pgsql_io.destroy conn))
+        ~finally:(fun () -> Abbs_fc.ignore (Pgsql_io.destroy conn))
   | Error err ->
       Logs.err (fun m -> m "%s" (Pgsql_io.show_create_err err));
       failwith "nyi"
@@ -77,7 +77,7 @@ let test_insert_row_null =
   Oth_abb.test ~desc:"Insert row with null" ~name:"insert_row_null" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo_null (name TEXT, age INTEGER)")
         in
@@ -114,7 +114,7 @@ let test_fetch_row =
   Oth_abb.test ~desc:"Fetch row" ~name:"fetch_row" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -169,7 +169,7 @@ let test_fetch_all_rows =
   Oth_abb.test ~desc:"Fetch all rows" ~name:"fetch_rows" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "create table foo (name text primary key, age integer)")
         in
@@ -206,7 +206,7 @@ let test_multiple_tx_success =
   Oth_abb.test ~desc:"Multiple transaction success" ~name:"multiple_tx_success" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -254,7 +254,7 @@ let test_with_cursor =
   Oth_abb.test ~desc:"With Cursor" ~name:"with_cursor" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "create table foo (name text primary key, age integer)")
         in
@@ -290,7 +290,7 @@ let test_with_cursor =
 let test_bad_bind_too_few_args =
   Oth_abb.test ~desc:"Bad Bind Too Few Arguments" ~name:"bad_bind_too_few" (fun () ->
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -328,7 +328,7 @@ let test_array =
   Oth_abb.test ~desc:"Array" ~name:"array" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let sql =
           Pgsql_io.Typed_sql.(
             sql
@@ -370,7 +370,7 @@ let test_insert_execute =
   Oth_abb.test ~desc:"Insert row execute" ~name:"insert_row_execute" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -391,7 +391,7 @@ let test_stmt_fetch =
   Oth_abb.test ~desc:"Statement_fetch" ~name:"Statement fetch" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "create table foo (name text primary key, age integer)")
         in
@@ -430,10 +430,10 @@ let test_integrity_fail =
             sql /^ "INSERT INTO foo VALUES($name, $age)" /% Var.text "name" /% Var.integer "age")
         in
         Pgsql_io.tx conn ~f:(fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
-            Abbs_future_combinators.to_result (Abb.Future.Promise.set in_tx ())
+            let open Abbs_fc.Infix_result_monad in
+            Abbs_fc.to_result (Abb.Future.Promise.set in_tx ())
             >>= fun () ->
-            Abbs_future_combinators.to_result trigger
+            Abbs_fc.to_result trigger
             >>= fun () ->
             Pgsql_io.Prepared_stmt.execute conn create_sql
             >>= fun () ->
@@ -482,18 +482,18 @@ let test_integrity_recover =
             sql /^ "INSERT INTO foo VALUES($name, $age)" /% Var.text "name" /% Var.integer "age")
         in
         Pgsql_io.tx conn ~f:(fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
-            Abbs_future_combinators.to_result (Abb.Future.Promise.set in_tx ())
+            let open Abbs_fc.Infix_result_monad in
+            Abbs_fc.to_result (Abb.Future.Promise.set in_tx ())
             >>= fun () ->
-            Abbs_future_combinators.to_result trigger
+            Abbs_fc.to_result trigger
             >>= fun () ->
             Pgsql_io.Prepared_stmt.execute conn create_sql
             >>= fun () ->
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy McTestface" (Int32.of_int 36))
         >>= function
-        | Ok () -> Abbs_future_combinators.return_ok `Ok
+        | Ok () -> Abbs_fc.return_ok `Ok
         | Error (`Unique_violation_err _) | Error (`Deadlock_detected _) ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy RecoverFace" (Int32.of_int 36)
             >>| fun () -> `Integrity
         | Error _ as err -> Abb.Future.return err
@@ -550,16 +550,16 @@ let test_rollback =
             Ret.integer
             /^ "SELECT * FROM foo")
         in
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.Prepared_stmt.execute conn create_sql
         >>= fun () ->
         let open Abb.Future.Infix_monad in
         Pgsql_io.tx conn ~f:(fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Pgsql_io.Prepared_stmt.execute conn insert_sql "Testy McTestface" (Int32.of_int 36)
             >>? fun () -> Error `Foo)
         >>= fun _ ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.tx conn ~f:(fun () ->
             Pgsql_io.Prepared_stmt.fetch conn select_sql ~f:(fun name age -> (name, age)))
         >>| fun r ->
@@ -575,7 +575,7 @@ let test_bad_state =
   Oth_abb.test ~desc:"Conn in bad state" ~name:"bad_state" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -614,7 +614,7 @@ let test_copy_to =
   Oth_abb.test ~desc:"Copy to" ~name:"copy_to" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -652,7 +652,7 @@ let test_copy_to_conflict =
   Oth_abb.test ~desc:"Copy to conflict" ~name:"copy_to_conflict" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT PRIMARY KEY, age INTEGER)")
@@ -686,7 +686,7 @@ let test_copy_to_bad_data =
   Oth_abb.test ~desc:"Copy to bad data type" ~name:"copy_to_bad_data" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (name TEXT, age INTEGER)")
         in
@@ -704,7 +704,7 @@ let test_copy_to_bytea =
   Oth_abb.test ~desc:"Copy to bytea" ~name:"copy_to_bytea" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, data BYTEA)")
         in
@@ -742,7 +742,7 @@ let test_text_special_chars =
   Oth_abb.test ~desc:"Text special chars round-trip" ~name:"text_special_chars" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data TEXT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -768,7 +768,7 @@ let test_text_special_chars =
           ]
         in
         let rec insert = function
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -793,7 +793,7 @@ let test_text_nul_byte =
   Oth_abb.test ~desc:"NUL byte rejected in TEXT" ~name:"text_nul_byte" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data TEXT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -814,7 +814,7 @@ let test_copy_to_special_chars =
   Oth_abb.test ~desc:"Copy_to special chars round-trip" ~name:"copy_to_special_chars" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data TEXT)") in
         let fetch_sql =
           Pgsql_io.Typed_sql.(
@@ -859,7 +859,7 @@ let test_text_empty_vs_null =
   Oth_abb.test ~desc:"Empty string vs NULL" ~name:"text_empty_vs_null" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data TEXT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -896,7 +896,7 @@ let test_integer_bounds =
   Oth_abb.test ~desc:"Integer boundary values" ~name:"integer_bounds" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (si SMALLINT, i INTEGER, bi BIGINT)")
         in
@@ -940,7 +940,7 @@ let test_copy_to_integer_bounds =
   Oth_abb.test ~desc:"Copy_to integer boundary values" ~name:"copy_to_integer_bounds" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (si SMALLINT, i INTEGER, bi BIGINT)")
         in
@@ -989,7 +989,7 @@ let test_float_special_values =
   Oth_abb.test ~desc:"Float special values" ~name:"float_special_values" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, r REAL, d DOUBLE PRECISION)")
         in
@@ -1050,7 +1050,7 @@ let test_json_invalid =
   Oth_abb.test ~desc:"Invalid JSON rejected" ~name:"json_invalid" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (data JSON)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(sql /^ "INSERT INTO foo (data) VALUES($data)" /% Var.json "data")
@@ -1067,7 +1067,7 @@ let test_copy_to_jsonb =
   Oth_abb.test ~desc:"Copy to jsonb" ~name:"copy_to_jsonb" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data JSONB)") in
         let fetch_sql =
           Pgsql_io.Typed_sql.(
@@ -1120,7 +1120,7 @@ let test_json_round_trip =
   Oth_abb.test ~desc:"JSON round-trip with special content" ~name:"json_round_trip" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data JSON)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -1158,7 +1158,7 @@ let test_json_cross_type =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, j JSON, jb JSONB)")
         in
@@ -1204,7 +1204,7 @@ let test_bytea_large =
   Oth_abb.test ~desc:"Large bytea via Copy_to" ~name:"bytea_large" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data BYTEA)") in
         let fetch_sql =
           Pgsql_io.Typed_sql.(
@@ -1241,7 +1241,7 @@ let test_query_dangerous_values =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data TEXT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -1258,7 +1258,7 @@ let test_query_dangerous_values =
         >>= fun () ->
         let cases = [ (1l, "'; DROP TABLE foo; --"); (2l, "Robert'); DROP TABLE foo;--") ] in
         let rec insert = function
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -1283,7 +1283,7 @@ let test_copy_to_bytea_large =
   Oth_abb.test ~desc:"Copy to large bytea" ~name:"copy_to_bytea_large" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, data BYTEA)")
         in
@@ -1322,7 +1322,7 @@ let test_copy_to_single_row =
   Oth_abb.test ~desc:"Copy to single row" ~name:"copy_to_single_row" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, name TEXT)")
         in
@@ -1350,7 +1350,7 @@ let test_copy_to_empty =
   Oth_abb.test ~desc:"Copy to empty rows" ~name:"copy_to_empty" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, name TEXT)")
         in
@@ -1380,7 +1380,7 @@ let test_copy_to_bytea_with_trailer_bytes =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, data BYTEA)")
         in
@@ -1425,7 +1425,7 @@ let test_copy_to_all_nulls =
   Oth_abb.test ~desc:"Copy to all null values" ~name:"copy_to_all_nulls" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql /^ "CREATE TABLE IF NOT EXISTS foo (id INTEGER, a TEXT, b BYTEA, c INTEGER)")
@@ -1484,7 +1484,7 @@ let test_copy_to_many_columns =
   Oth_abb.test ~desc:"Copy to many columns" ~name:"copy_to_many_columns" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql
@@ -1534,7 +1534,7 @@ let test_copy_to_mixed_types =
   Oth_abb.test ~desc:"Copy to mixed types" ~name:"copy_to_mixed_types" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql
@@ -1620,7 +1620,7 @@ let test_concurrent_exn_raise =
           /% Var.integer "age")
       in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.Prepared_stmt.execute conn create_sql
         >>= fun () ->
         let open Abb.Future.Infix_monad in
@@ -1632,7 +1632,7 @@ let test_concurrent_exn_raise =
            tripped [Nested_tx_not_supported]. *)
         Abb.Future.await
           (Pgsql_io.tx conn ~f:(fun () ->
-               let open Abbs_future_combinators.Infix_result_monad in
+               let open Abbs_fc.Infix_result_monad in
                Pgsql_io.Prepared_stmt.execute conn insert_good_sql "foo bar" 12l
                >>= fun () -> Pgsql_io.Prepared_stmt.execute conn insert_good_sql "foo" 12l)
           >>= fun _ -> raise (Failure "crash"))
@@ -1656,7 +1656,7 @@ let test_ret_u_all_types =
   Oth_abb.test ~desc:"Ret.u with all datatypes" ~name:"ret_u_all_types" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql
@@ -1734,7 +1734,7 @@ let test_bytea_var_ret =
   Oth_abb.test ~desc:"Bytea insert via Var and fetch via Ret" ~name:"bytea_var_ret" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (id INTEGER, data BYTEA)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(
@@ -1752,7 +1752,7 @@ let test_bytea_var_ret =
         let all_bytes = String.init 256 Char.chr in
         let cases = [ (1l, "\x00\x01\x02\xff\xfe"); (2l, "\xff\xff"); (3l, all_bytes) ] in
         let rec insert = function
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | (id, data) :: rest ->
               Pgsql_io.Prepared_stmt.execute conn insert_sql id data >>= fun () -> insert rest
         in
@@ -1780,7 +1780,7 @@ let test_bigint_column_smallint_ret =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (v BIGINT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(sql /^ "INSERT INTO foo (v) VALUES($v)" /% Var.bigint "v")
@@ -1808,7 +1808,7 @@ let test_bigint_column_smallint_b_ret_fails =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql = Pgsql_io.Typed_sql.(sql /^ "CREATE TABLE foo (v BIGINT)") in
         let insert_sql =
           Pgsql_io.Typed_sql.(sql /^ "INSERT INTO foo (v) VALUES($v)" /% Var.bigint "v")
@@ -1821,7 +1821,7 @@ let test_bigint_column_smallint_b_ret_fails =
         let open Abb.Future.Infix_monad in
         Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:(fun v -> v)
         >>= function
-        | Error (`Bad_result _) -> Abbs_future_combinators.return_ok ()
+        | Error (`Bad_result _) -> Abbs_fc.return_ok ()
         | Ok _ -> Oth.Assert.false_ "Expected Bad_result error but got Ok"
         | Error err ->
             Oth.Assert.false_
@@ -1836,7 +1836,7 @@ let test_ret_b_all_types =
   Oth_abb.test ~desc:"Ret._b with all binary datatypes" ~name:"ret_b_all_types" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let create_sql =
           Pgsql_io.Typed_sql.(
             sql
@@ -1901,12 +1901,12 @@ let test_boundary_sweep =
       let open Abb.Future.Infix_monad in
       let f conn =
         let rec sweep n =
-          if n > 8175 then Abbs_future_combinators.return_ok ()
+          if n > 8175 then Abbs_fc.return_ok ()
           else
             let fetch_sql =
               Pgsql_io.Typed_sql.(sql // Ret.text /^ Printf.sprintf "SELECT repeat('x', %d)" n)
             in
-            Abbs_future_combinators.timeout
+            Abbs_fc.timeout
               ~timeout:(Abb.Sys.sleep 10.0)
               (Pgsql_io.Prepared_stmt.fetch conn fetch_sql ~f:(fun s -> s))
             >>= function
@@ -1946,10 +1946,10 @@ let test_in_tx_commit_desync =
       let commit_sql = Pgsql_io.Typed_sql.(sql /^ "COMMIT") in
       let bad_sql = Pgsql_io.Typed_sql.(sql // Ret.integer /^ "SELECT (1 / 0)::integer") in
       let f conn =
-        Abbs_future_combinators.timeout
+        Abbs_fc.timeout
           ~timeout:(Abb.Sys.sleep 20.0)
           (Pgsql_io.tx conn ~f:(fun () ->
-               let open Abbs_future_combinators.Infix_result_monad in
+               let open Abbs_fc.Infix_result_monad in
                Pgsql_io.Prepared_stmt.execute conn commit_sql
                >>= fun () ->
                Pgsql_io.Prepared_stmt.fetch conn bad_sql ~f:(fun n -> Int32.to_int n)
@@ -1959,7 +1959,7 @@ let test_in_tx_commit_desync =
         | `Timeout ->
             Oth.Assert.false_
               "HANG : error_response stuck waiting for a ReadyForQuery that never comes")
-        >>= fun () -> Abbs_future_combinators.return_ok ()
+        >>= fun () -> Abbs_fc.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -2005,7 +2005,7 @@ let test_bad_result_dirty_conn =
         Pgsql_io.Prepared_stmt.execute conn insert_sql
         >>= fun _ ->
         (* Scenario 1: a Bad_result is ignored, then the connection is reused. *)
-        Abbs_future_combinators.timeout
+        Abbs_fc.timeout
           ~timeout:(Abb.Sys.sleep 15.0)
           (Pgsql_io.tx conn ~f:(fun () ->
                Pgsql_io.Prepared_stmt.fetch conn bad_fetch ~f:(fun v -> v)
@@ -2015,15 +2015,14 @@ let test_bad_result_dirty_conn =
         >>= fun () ->
         (* Scenario 2: a row function that RAISES mid-result; the exn must be
            caught, the response drained, and the connection left clean. *)
-        Abbs_future_combinators.timeout
+        Abbs_fc.timeout
           ~timeout:(Abb.Sys.sleep 15.0)
           (Pgsql_io.tx conn ~f:(fun () ->
                Abb.Future.await_bind
                  (fun _ -> Abb.Future.return ())
                  (Pgsql_io.Prepared_stmt.fetch conn good_fetch ~f:(fun _v -> failwith "decode boom"))
                >>= fun () -> Pgsql_io.Prepared_stmt.fetch conn good_fetch ~f:(fun v -> v)))
-        >>= fun res2 ->
-        assert_reuse_ok "raise" res2 >>= fun () -> Abbs_future_combinators.return_ok ()
+        >>= fun res2 -> assert_reuse_ok "raise" res2 >>= fun () -> Abbs_fc.return_ok ()
       in
       with_conn f
       >>= fun r ->
@@ -2038,11 +2037,9 @@ let notification_payload = function
    rather than hanging the suite. *)
 let wait_notification conn =
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.timeout
-    ~timeout:(Abb.Sys.sleep 10.0)
-    (Pgsql_io.wait_for_notification conn)
+  Abbs_fc.timeout ~timeout:(Abb.Sys.sleep 10.0) (Pgsql_io.wait_for_notification conn)
   >>= function
-  | `Ok (Ok n) -> Abbs_future_combinators.return_ok n
+  | `Ok (Ok n) -> Abbs_fc.return_ok n
   | `Ok (Error _ as e) -> Abb.Future.return e
   | `Timeout -> Oth.Assert.false_ "timed out waiting for notification"
 
@@ -2057,7 +2054,7 @@ let test_listen_notify =
   Oth_abb.test ~desc:"LISTEN/NOTIFY cross-connection delivery" ~name:"listen_notify" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.listen conn ~channel:"sg_basic"
         >>= fun () ->
         notify_from_new_conn ~channel:"sg_basic" ~payload:"hello" ()
@@ -2075,7 +2072,7 @@ let test_get_notification =
   Oth_abb.test ~desc:"get_notification non-blocking drain" ~name:"get_notification" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         (* Nothing received yet: get_notification is None. *)
         let empty_before = Pgsql_io.get_notification conn in
         Pgsql_io.listen conn ~channel:"sg_get"
@@ -2089,7 +2086,7 @@ let test_get_notification =
            (which succeeds once a read has enqueued more than it popped) and falling
            back to a blocking wait. *)
         let rec drain acc n =
-          if n = 0 then Abbs_future_combinators.return_ok (CCList.rev acc)
+          if n = 0 then Abbs_fc.return_ok (CCList.rev acc)
           else
             match Pgsql_io.get_notification conn with
             | Some notif -> drain (notif :: acc) (n - 1)
@@ -2116,7 +2113,7 @@ let test_notification_during_fetch =
   Oth_abb.test ~desc:"NOTIFY during fetch is harmless" ~name:"notification_during_fetch" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.listen conn ~channel:"sg_during"
         >>= fun () ->
         (* Notification is committed (from another connection) and pending before we
@@ -2131,7 +2128,7 @@ let test_notification_during_fetch =
           ~f:(fun n -> n)
         >>= fun rows ->
         (match Pgsql_io.get_notification conn with
-          | Some n -> Abbs_future_combinators.return_ok n
+          | Some n -> Abbs_fc.return_ok n
           | None -> wait_notification conn)
         >>| fun n -> (rows, n)
       in
@@ -2148,7 +2145,7 @@ let test_unlisten_stops_delivery =
   Oth_abb.test ~desc:"UNLISTEN stops delivery" ~name:"unlisten_stops_delivery" (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.listen conn ~channel:"sg_un"
         >>= fun () ->
         Pgsql_io.unlisten conn ~channel:"sg_un"
@@ -2177,15 +2174,13 @@ let test_wait_abort_leaves_conn_valid =
     (fun () ->
       let open Abb.Future.Infix_monad in
       let f conn =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.listen conn ~channel:"sg_abort"
         >>= fun () ->
         (* No notifier, short timeout: the wait must time out, aborting
            wait_for_notification mid-read. *)
         let open Abb.Future.Infix_monad in
-        Abbs_future_combinators.timeout
-          ~timeout:(Abb.Sys.sleep 1.0)
-          (Pgsql_io.wait_for_notification conn)
+        Abbs_fc.timeout ~timeout:(Abb.Sys.sleep 1.0) (Pgsql_io.wait_for_notification conn)
         >>= fun wait_res ->
         let timed_out =
           match wait_res with
@@ -2194,7 +2189,7 @@ let test_wait_abort_leaves_conn_valid =
         in
         (* The connection must still work: a query (would raise "busy" if the abort
            leaked the guard), then a fresh notification must be delivered. *)
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.Prepared_stmt.fetch
           conn
           Pgsql_io.Typed_sql.(sql // Ret.integer /^ "SELECT 1")
@@ -2226,26 +2221,26 @@ let test_abort_during_delivery_no_loss =
       let open Abb.Future.Infix_monad in
       let iterations = 100 in
       let f conn_a =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Pgsql_io.listen conn_a ~channel:"sg_race"
         >>= fun () ->
         with_conn (fun conn_b ->
             let rec loop i =
-              if i > iterations then Abbs_future_combinators.return_ok ()
+              if i > iterations then Abbs_fc.return_ok ()
               else
-                let open Abbs_future_combinators.Infix_result_monad in
+                let open Abbs_fc.Infix_result_monad in
                 let payload = Printf.sprintf "p%d" i in
                 Pgsql_io.notify conn_b ~channel:"sg_race" ~payload ()
                 >>= fun () ->
                 let timeout_s = 0.0005 +. (0.0005 *. float_of_int (i mod 8)) in
                 let open Abb.Future.Infix_monad in
-                Abbs_future_combinators.timeout
+                Abbs_fc.timeout
                   ~timeout:(Abb.Sys.sleep timeout_s)
                   (Pgsql_io.wait_for_notification conn_a)
                 >>= fun raced ->
-                let open Abbs_future_combinators.Infix_result_monad in
+                let open Abbs_fc.Infix_result_monad in
                 (match raced with
-                  | `Ok (Ok n) -> Abbs_future_combinators.return_ok n
+                  | `Ok (Ok n) -> Abbs_fc.return_ok n
                   | `Ok (Error _ as e) -> Abb.Future.return e
                   (* Aborted -- possibly mid-arrival.  The notification must not be
                    lost: a bounded blocking wait must still return it. *)
@@ -2378,7 +2373,7 @@ let test_large_jsonb_fetch =
         >>= function
         | Error err ->
             Logs.err (fun m -> m "CREATE_ERR : %s" (Pgsql_io.show_err err));
-            Abbs_future_combinators.return_ok ()
+            Abbs_fc.return_ok ()
         | Ok () ->
             let cn = uuid "43df20b3-eb5e-4c00-b1ef-f094d6641087" in
             let wm = uuid "43df20b3-eb5e-4c00-b1ef-f094d6641087" in
@@ -2386,15 +2381,15 @@ let test_large_jsonb_fetch =
             let rec sweep idx = function
               | [] ->
                   Logs.info (fun m -> m "SWEEP_DONE : no hang reproduced");
-                  Abbs_future_combinators.return_ok ()
+                  Abbs_fc.return_ok ()
               | filler :: rest -> (
                   Logs.info (fun m -> m "ITER_START : idx=%d : filler=%d bytes" idx filler);
                   (* upsert + read-back-own-uncommitted-write inside one tx,
                      exactly like set_work + the second query_work. *)
-                  Abbs_future_combinators.timeout
+                  Abbs_fc.timeout
                     ~timeout:(Abb.Sys.sleep 25.0)
                     (Pgsql_io.tx conn ~f:(fun () ->
-                         let open Abbs_future_combinators.Infix_result_monad in
+                         let open Abbs_fc.Infix_result_monad in
                          Pgsql_io.Prepared_stmt.execute conn upsert_sql cn (mk_payload filler) wm
                          >>= fun () ->
                          Logs.info (fun m -> m "READBACK_START : idx=%d : filler=%d" idx filler);
@@ -2416,14 +2411,14 @@ let test_large_jsonb_fetch =
                             idx
                             filler
                             (Pgsql_io.show_err err));
-                      Abbs_future_combinators.return_ok ()
+                      Abbs_fc.return_ok ()
                   | `Timeout ->
                       Logs.err (fun m ->
                           m
                             "READBACK_HANG : idx=%d : filler=%d : *** 25s+ STALL REPRODUCED ***"
                             idx
                             filler);
-                      Abbs_future_combinators.return_ok ())
+                      Abbs_fc.return_ok ())
             in
             sweep 0 sizes
       in
@@ -2519,6 +2514,6 @@ let () =
   Logs.set_level ~all:true (Some Logs.Debug);
   Oth_abb.run
     ~file:__FILE__
-    ~setup:(fun () -> Abbs_future_combinators.return_ok ())
+    ~setup:(fun () -> Abbs_fc.return_ok ())
     ~teardown:(fun () -> Abb.Future.return ())
     (fun () -> test)

@@ -1,4 +1,4 @@
-module Fut_comb = Abbs_future_combinators
+module Fut_comb = Abbs_fc
 module Http = Brtl_rspnc.Http
 module Cfg = Brtl_cfg
 module Ctx = Brtl_ctx

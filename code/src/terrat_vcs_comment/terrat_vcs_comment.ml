@@ -49,16 +49,16 @@ module Make (M : S) = struct
   let compact t e = if M.rendered_length t [ e ] < M.max_comment_length then e else M.compact e
 
   let find_existing_comments_for_el t els =
-    let open Abbs_future_combinators.Infix_result_monad in
-    let module Alr = Abbs_future_combinators.List_result in
+    let open Abbs_fc.Infix_result_monad in
+    let module Alr = Abbs_fc.List_result in
     Alr.filter_map ~f:(fun el -> M.query_comment_id t el) els
     >>| fun cids ->
     let uniq = Id_set.of_list cids |> Id_set.to_list in
     uniq
 
   let find_all_els_from t comment_ids =
-    let open Abbs_future_combinators.Infix_result_monad in
-    let module Alr = Abbs_future_combinators.List_result in
+    let open Abbs_fc.Infix_result_monad in
+    let module Alr = Abbs_fc.List_result in
     Alr.map ~f:(M.query_els_for_comment_id t) comment_ids
     >>| fun elss ->
     let flat = CCList.flatten elss in
@@ -75,8 +75,8 @@ module Make (M : S) = struct
     CCList.rev (CCList.rev rest :: groups) |> CCList.filter CCFun.(CCList.is_empty %> not)
 
   let fetch_and_apply fn t els =
-    let open Abbs_future_combinators.Infix_result_monad in
-    let module Alr = Abbs_future_combinators.List_result in
+    let open Abbs_fc.Infix_result_monad in
+    let module Alr = Abbs_fc.List_result in
     find_existing_comments_for_el t els
     >>= fun cids ->
     Alr.iter ~f:fn cids
@@ -105,8 +105,8 @@ module Make (M : S) = struct
       split
 
   let append t els =
-    let open Abbs_future_combinators.Infix_result_monad in
-    let module Alr = Abbs_future_combinators.List_result in
+    let open Abbs_fc.Infix_result_monad in
+    let module Alr = Abbs_fc.List_result in
     let append_single t els = M.post_comment t els >>= fun cid -> M.upsert_comment_id t els cid in
     let compressed = CCList.map (compact t) els in
     let sorted = CCList.sort M.compare_el compressed in
@@ -117,12 +117,12 @@ module Make (M : S) = struct
   let minimize t els = fetch_and_apply (M.minimize_comment t) t els
 
   let run t els =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let groups = partition_by_strategy els in
     match groups with
     | [] -> M.post_comment t [] >>| fun _ -> ()
     | _ ->
-        Abbs_future_combinators.List_result.iter
+        Abbs_fc.List_result.iter
           ~f:(function
             | Strategy.Append, els -> append t els
             | Strategy.Delete, els -> delete t els

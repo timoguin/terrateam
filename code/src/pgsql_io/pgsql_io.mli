@@ -339,8 +339,8 @@ val notify : t -> channel:string -> ?payload:string -> unit -> (unit, [> err ]) 
 
 (** Pop the oldest queued notification, or — if the queue is empty — block until the next one
     arrives, then return it ([Error `Disconnected] if the connection drops). Takes no timeout
-    argument: bound it with [Abbs_future_combinators.timeout]. An abort (e.g. from a wrapping
-    [timeout]) leaves the connection valid and reusable. *)
+    argument: bound it with [Abbs_fc.timeout]. An abort (e.g. from a wrapping [timeout]) leaves the
+    connection valid and reusable. *)
 val wait_for_notification : t -> (notification, [> err ]) result Abb.Future.t
 
 (** Pop the oldest queued notification if one is present, else return [None] immediately. Use to

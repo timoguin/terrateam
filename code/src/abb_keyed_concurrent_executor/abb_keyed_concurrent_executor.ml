@@ -21,7 +21,7 @@ end
 
 module Make (S : Abb_intf.S) (Key : Map.OrderedType) = struct
   module Fut = S.Future
-  module Fut_comb = Abb_future_combinators.Make (Fut)
+  module Fut_comb = Abb_fc.Make (Fut)
   module Service = Abb_service_local.Make (S)
   module Key_set = CCSet.Make (Key)
 

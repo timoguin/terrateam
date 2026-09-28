@@ -22,11 +22,11 @@ type t = {
 let make ?access_token_id ?(capabilities = []) ~id () = { access_token_id; capabilities; id }
 
 let create_system_user ?access_token_id ?capabilities db =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_io.Prepared_stmt.fetch db (Sql.select_system_user ()) ~f:CCFun.id
   >>= function
   | [] -> assert false
-  | id :: _ -> Abbs_future_combinators.return_ok (make ?access_token_id ?capabilities ~id ())
+  | id :: _ -> Abbs_fc.return_ok (make ?access_token_id ?capabilities ~id ())
 
 let access_token_id t = t.access_token_id
 let id t = t.id
@@ -123,7 +123,7 @@ module Token = struct
     let open Abb.Future.Infix_monad in
     Abb.Sys.time ()
     >>= fun now ->
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Pgsql_io.Prepared_stmt.fetch db (Sql.select_encryption_key ()) ~f:CCFun.id
     >>= fun keys ->
     Abb.Future.return @@ of_token' ~now ~keys:(CCList.map Cstruct.to_string keys) token
@@ -162,7 +162,7 @@ module Token = struct
     mk (Jwt.token jwt)
 
   let to_token ?expiration db user =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Pgsql_io.Prepared_stmt.fetch db (Sql.select_encryption_key ()) ~f:CCFun.id
     >>= function
     | [] -> assert false

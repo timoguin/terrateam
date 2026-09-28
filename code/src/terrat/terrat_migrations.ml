@@ -30,7 +30,7 @@ module Migrate = struct
   let tx { config; storage; tx = _ } f =
     let open Abb.Future.Infix_monad in
     Pgsql_pool.with_conn storage ~f:(fun db ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         (* Ensure we do not get timed out on a long operation *)
         let idle_tx_sql = Pgsql_io.Typed_sql.(sql /^ "set idle_in_transaction_session_timeout=0") in
         Pgsql_io.Prepared_stmt.execute db idle_tx_sql
@@ -43,16 +43,14 @@ module Migrate = struct
             f { config; storage; tx = db }
             >>= function
             | Ok _ as r -> Abb.Future.return r
-            | Error ((`Migration_err #err | `Consistency_err _) as err) ->
-                Abbs_future_combinators.return_err err))
+            | Error ((`Migration_err #err | `Consistency_err _) as err) -> Abbs_fc.return_err err))
     >>= function
     | Ok _ as r -> Abb.Future.return r
-    | Error (#err as err) -> Abbs_future_combinators.return_err (`Migration_err err)
-    | Error ((`Migration_err #err | `Consistency_err _) as err) ->
-        Abbs_future_combinators.return_err err
+    | Error (#err as err) -> Abbs_fc.return_err (`Migration_err err)
+    | Error ((`Migration_err #err | `Consistency_err _) as err) -> Abbs_fc.return_err err
 
   let get_migrations { config = _; storage = _; tx = db } =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Pgsql_io.Prepared_stmt.execute db create_migrations_table_sql
     >>= fun () -> Pgsql_io.Prepared_stmt.fetch db get_migrations_sql ~f:CCFun.id
 
@@ -77,12 +75,11 @@ module Mig = Data_mig.Make (Migrate)
 
 let run_sql ?(mode = `Tx) sql_contents { Migrate.config = _; storage; tx = db } =
   let conn ~f =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     match mode with
     | `Tx -> f db >>| fun () -> `Sync
     | `Notx -> Pgsql_pool.with_conn storage ~f >>| fun () -> `Sync
-    | `Async ->
-        Abbs_future_combinators.return_ok (`Async (fun _ -> Pgsql_pool.with_conn storage ~f))
+    | `Async -> Abbs_fc.return_ok (`Async (fun _ -> Pgsql_pool.with_conn storage ~f))
   in
   let stmts =
     sql_contents
@@ -90,9 +87,9 @@ let run_sql ?(mode = `Tx) sql_contents { Migrate.config = _; storage; tx = db } 
     |> CCList.filter CCFun.(CCString.trim %> CCString.is_empty %> not)
   in
   conn ~f:(fun db ->
-      Abbs_future_combinators.List_result.iter
+      Abbs_fc.List_result.iter
         ~f:(fun stmt ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let open Pgsql_io in
           Logs.info (fun m -> m "Performing SQL operation: %s" stmt);
           (* Ensure we do not get timed out on a long operation *)
@@ -104,7 +101,7 @@ let run_sql ?(mode = `Tx) sql_contents { Migrate.config = _; storage; tx = db } 
         stmts)
 
 let add_encryption_key { Migrate.config = _; storage = _; tx = db } =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let key = Mirage_crypto_rng.generate 64 in
   let insert_encryption_key =
     Pgsql_io.Typed_sql.(
@@ -115,7 +112,7 @@ let add_encryption_key { Migrate.config = _; storage = _; tx = db } =
   Pgsql_io.Prepared_stmt.execute db insert_encryption_key key >>| fun () -> `Sync
 
 let add_gitlab_token_from_config { Migrate.config; storage = _; tx = db } =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   let module Gc = Terrat_config.Gitlab in
   let add_gitlab_token_from_config () =
     Pgsql_io.Typed_sql.(
@@ -128,7 +125,7 @@ let add_gitlab_token_from_config { Migrate.config; storage = _; tx = db } =
       let access_token = Gc.access_token gc in
       Pgsql_io.Prepared_stmt.execute db (add_gitlab_token_from_config ()) access_token
       >>| fun () -> `Sync
-  | None -> Abbs_future_combinators.return_ok `Sync
+  | None -> Abbs_fc.return_ok `Sync
 
 let migrations =
   [
@@ -210,8 +207,8 @@ let migrations =
     ("add-repo-tree-id-column", run_sql [%blob "migrations/2025-05-13-add-repo-tree-id-column.sql"]);
     ( "refactor-fill-in-missing-core-ids",
       fun { Migrate.config; storage; tx = _ } ->
-        Abbs_future_combinators.return_ok
-          (`Async (fun _ -> Terrat_migrations_ex_150.fill_in_all (config, storage))) );
+        Abbs_fc.return_ok (`Async (fun _ -> Terrat_migrations_ex_150.fill_in_all (config, storage)))
+    );
     ( "refactor-remove-null-constraints-on-core-tables",
       run_sql [%blob "migrations/2025-05-19-refactor-remove-null-constraints.sql"] );
     ( "refactor-add-pkey-indexes",
@@ -236,16 +233,16 @@ let migrations =
       run_sql [%blob "migrations/2025-07-07-refactor-github-dirspace-locking-phase-2.sql"] );
     ( "refactor-github-dirspace-locking-phase-3.1",
       fun { Migrate.config; storage; tx = _ } ->
-        Abbs_future_combinators.return_ok
-          (`Async (fun _ -> Terrat_migrations_ex_568.run_github (config, storage))) );
+        Abbs_fc.return_ok (`Async (fun _ -> Terrat_migrations_ex_568.run_github (config, storage)))
+    );
     ( "refactor-gihtub-dirspace-locking-phase-3.2",
       run_sql [%blob "migrations/2025-07-09-refactor-github-dirspace-locking-phase-3.sql"] );
     ( "refactor-gitlab-dirspace-locking-phase-1",
       run_sql [%blob "migrations/2025-07-14-refactor-gitlab-dirspace-locking-phase-1.sql"] );
     ( "refactor-gitlab-dirspace-locking-phase-2",
       fun { Migrate.config; storage; tx = _ } ->
-        Abbs_future_combinators.return_ok
-          (`Async (fun _ -> Terrat_migrations_ex_568.run_gitlab (config, storage))) );
+        Abbs_fc.return_ok (`Async (fun _ -> Terrat_migrations_ex_568.run_gitlab (config, storage)))
+    );
     ( "refactor-gitlab-dirspace-locking-phase-3",
       run_sql [%blob "migrations/2025-07-14-refactor-gitlab-dirspace-locking-phase-3.sql"] );
     ( "fix-make-gitlab-tables-closer-to-github",

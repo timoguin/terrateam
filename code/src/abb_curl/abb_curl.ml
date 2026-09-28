@@ -381,7 +381,7 @@ end
 
 module Make (Abb : Abb_intf.S with type Native.t = Unix.file_descr) = struct
   module Service_local = Abb_service_local.Make (Abb)
-  module Fc = Abb_future_combinators.Make (Abb.Future)
+  module Fc = Abb_fc.Make (Abb.Future)
   module Method = Method
   module Status = Status
   module Headers = Headers

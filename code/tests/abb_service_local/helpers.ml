@@ -268,7 +268,7 @@ let call_from_unpinned_stress =
               loop n 0)
           >>= fun task_fut -> task_fut
         in
-        let module Fc = Abb_future_combinators.Make (Abb.Future) in
+        let module Fc = Abb_fc.Make (Abb.Future) in
         Fc.List.iter_par ~f:(fun _ -> one_caller 25 >>| fun _ -> ()) (CCList.init 16 CCFun.id)
         >>= fun () ->
         Abb.Chan.close s;

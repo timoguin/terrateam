@@ -14,7 +14,7 @@
    place.  And a final test asserts that pinned tasks {b never} leave
    the loop, even when workers are available. *)
 module Make (Abb : Abb_intf.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   let is_multi_domain =
     CCList.mem ~eq:Abb_intf.Scheduler_capability.equal `Multi_domain Abb.Scheduler.capabilities

@@ -58,7 +58,7 @@ end
 
 let perform_auth request_id config storage code =
   let module Oauth = Terrat_github.Oauth.Response in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Terrat_github.Oauth.authorize
     ~config:(Terrat_vcs_service_github_provider.Api.Config.vcs_config config)
     code
@@ -88,7 +88,7 @@ let perform_auth request_id config storage code =
           emails
     | _ -> []
   in
-  Abbs_future_combinators.to_result (Abb.Sys.time ())
+  Abbs_fc.to_result (Abb.Sys.time ())
   >>= fun now ->
   let username, avatar_url, name, email =
     let module Gar = Githubc2_users.Get_authenticated.Responses.OK in
@@ -135,7 +135,7 @@ let perform_auth request_id config storage code =
                     user_id
                     username
                   >>= fun () ->
-                  Abbs_future_combinators.List_result.iter
+                  Abbs_fc.List_result.iter
                     ~f:(fun (email, is_primary) ->
                       Pgsql_io.Prepared_stmt.execute
                         db
@@ -159,7 +159,7 @@ let perform_auth request_id config storage code =
                 user_id
                 username
               >>= fun () ->
-              Abbs_future_combinators.List_result.iter
+              Abbs_fc.List_result.iter
                 ~f:(fun (email, is_primary) ->
                   Pgsql_io.Prepared_stmt.execute
                     db

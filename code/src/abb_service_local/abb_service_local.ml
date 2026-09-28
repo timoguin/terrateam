@@ -1,5 +1,5 @@
 module Make (S : Abb_intf.S) = struct
-  module Fc = Abb_future_combinators.Make (S.Future)
+  module Fc = Abb_fc.Make (S.Future)
 
   type 'a t = 'a S.Chan.t
 

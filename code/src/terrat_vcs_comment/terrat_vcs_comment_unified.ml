@@ -101,7 +101,7 @@ module Make (M : S) = struct
     first_fit (tiers t els)
 
   let publish t body =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     let post_fresh () =
       M.post_comment t body >>= fun comment_id -> M.upsert_comment_id t comment_id
     in
@@ -116,19 +116,19 @@ module Make (M : S) = struct
         in
         M.update_comment t comment_id body
         >>= function
-        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Ok () -> Abbs_fc.return_ok ()
         | Error `Not_found -> post_fresh ()
-        | Error `Error -> Abbs_future_combinators.return_err `Error)
+        | Error `Error -> Abbs_fc.return_err `Error)
 
   let run t =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     M.query_els t
     >>= function
     | [] ->
         (* Nothing to say about the pull request (for example the window
            between a push and its run being created): leave the existing
            comment untouched rather than publishing an empty table. *)
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | els ->
         let sorted = sort_els els in
         let body = fit t sorted in

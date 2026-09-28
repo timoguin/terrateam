@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Ee2_fc = Terrat_vcs_event_evaluator2_fc
 module Tjc = Terrat_job_context
 module Msg = Terrat_vcs_provider2.Msg
@@ -96,7 +96,7 @@ struct
       s
       (fun m log_id time -> m "%s : PUBLISH_COMMENT : time=%f" log_id time)
       (fun () ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_vcs_api.collapse_call_err (fun () ->
             S.Repo_config.fetch_brand
               ~request_id:(Builder.log_id s)
@@ -180,9 +180,7 @@ struct
       (fun m log_id time ->
         m "%s : UNLOCk : repo = %s : time=%f" log_id (S.Api.Repo.to_string repo) time)
       (fun () ->
-        Abbs_future_combinators.List_result.iter
-          ~f:(S.Db.unlock ~request_id:(Builder.log_id s) db repo)
-          unlock_ids)
+        Abbs_fc.List_result.iter ~f:(S.Db.unlock ~request_id:(Builder.log_id s) db repo) unlock_ids)
 
   let react_to_comment s client pull_request comment_id =
     time_it
@@ -200,7 +198,7 @@ struct
         let open Abb.Future.Infix_monad in
         S.Api.react_to_comment ~request_id:(Builder.log_id s) client pull_request comment_id
         >>= function
-        | Ok () -> Abbs_future_combinators.return_ok ()
+        | Ok () -> Abbs_fc.return_ok ()
         | Error (#Terrat_vcs_api.call_err as err) ->
             Logs.err (fun m ->
                 m
@@ -208,7 +206,7 @@ struct
                   (Builder.log_id s)
                   Terrat_vcs_api.pp_call_err
                   err);
-            Abbs_future_combinators.return_ok ())
+            Abbs_fc.return_ok ())
 
   let fetch_pull_request s account client repo pull_request_id =
     time_it
@@ -364,7 +362,7 @@ struct
           fun branch_ref checks ->
            (* When updating commit checks, mark the existing key as dirty. *)
            Builder.State.mark_dirty s Keys.commit_checks;
-           let open Abbs_future_combinators.Infix_result_monad in
+           let open Abbs_fc.Infix_result_monad in
            S.Repo_config.fetch_brand ~request_id:(Builder.log_id s) client repo
            >>= fun brand ->
            S.Api.create_commit_checks
@@ -450,7 +448,7 @@ struct
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
           | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
-              Abbs_future_combinators.return_ok (S.Api.Pull_request.branch_ref pull_request)
+              Abbs_fc.return_ok (S.Api.Pull_request.branch_ref pull_request)
           | Terrat_pull_request.State.Merged _ -> fetch Keys.working_dest_branch_ref)
 
     let working_branch_name =
@@ -511,7 +509,7 @@ struct
             | Terrat_pull_request.State.Merged _ ->
                 fetch Keys.working_branch_ref >>| CCOption.return
             | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
-                Abbs_future_combinators.return_ok None)
+                Abbs_fc.return_ok None)
           >>| fun dest_head ->
           (* The comparison of two trees is the expensive part of this rule: the database reads
              both trees whole, thus its cost follows the size of the repository and not the number
@@ -603,7 +601,7 @@ struct
                       "%s : INTRA_PR_SELECTION : NO_REPO_TREE : branch_ref=%s"
                       (Builder.log_id s)
                       (S.Api.Ref.to_string branch_ref));
-                Abbs_future_combinators.return_ok
+                Abbs_fc.return_ok
                   (Ipr.select
                      ~changed_since:(fun _ _ -> Terrat_data.Dirspace_set.of_list dirspaces)
                      ~changed_between:(fun _ _ -> Terrat_data.Dirspace_set.of_list dirspaces)
@@ -637,7 +635,7 @@ struct
                 in
                 let changed_of_pair ((from_sha, to_sha) as pair) =
                   match CCList.assoc_opt ~eq:equal_pair pair !changed_cache with
-                  | Some changed -> Abbs_future_combinators.return_ok changed
+                  | Some changed -> Abbs_fc.return_ok changed
                   | None ->
                       Tasks_base.changed_between
                         s
@@ -670,7 +668,7 @@ struct
                       | 0 -> CCString.compare a_to b_to
                       | order -> order)
                 in
-                Abbs_future_combinators.List_result.fold_left
+                Abbs_fc.List_result.fold_left
                   ~init:[]
                   ~f:(fun acc pair ->
                     changed_of_pair pair >>| fun changed -> (pair, changed) :: acc)
@@ -729,7 +727,7 @@ struct
                        failures ))
           | None ->
               Logs.info (fun m -> m "%s : INDEX_NOT_FOUND" (Builder.log_id s));
-              Abbs_future_combinators.return_ok ())
+              Abbs_fc.return_ok ())
 
     let publish_unlock =
       run ~name:"publish_unlock" (fun s { Bs.Fetcher.fetch } ->
@@ -747,7 +745,7 @@ struct
               >>| function
               | true -> None
               | false -> Some match_list
-            else Abbs_future_combinators.return_ok None
+            else Abbs_fc.return_ok None
           in
           let parse_unlock_ids pull_request_id = function
             | [] -> Ok [ S.Unlock_id.of_pull_request pull_request_id ]
@@ -821,7 +819,7 @@ struct
       run ~name:"comment_id" (fun _s { Bs.Fetcher.fetch = _ } ->
           (* This is a default value in case no comment id is set in the store
              by the runner. *)
-          Abbs_future_combinators.return_ok None)
+          Abbs_fc.return_ok None)
 
     let react_to_comment =
       run ~name:"react_to_comment" (fun s { Bs.Fetcher.fetch } ->
@@ -831,7 +829,7 @@ struct
           | Some comment_id ->
               Ee2_fc.all2 (fetch Keys.pull_request) (fetch Keys.client)
               >>= fun (pull_request, client) -> react_to_comment s client pull_request comment_id
-          | None -> Abbs_future_combinators.return_ok ())
+          | None -> Abbs_fc.return_ok ())
 
     let pull_request =
       run ~name:"pull_request" (fun s { Bs.Fetcher.fetch } ->
@@ -893,7 +891,7 @@ struct
             | None ->
                 Logs.err (fun m -> m "%s : EXPECTED_REPO_TREE" (Builder.log_id s));
                 Error (`Msg_err "EXPECTED_REPO_TREE"))
-          else Abbs_future_combinators.return_ok diff)
+          else Abbs_fc.return_ok diff)
 
     let store_pull_request =
       run ~name:"store_pull_request" (fun s { Bs.Fetcher.fetch } ->
@@ -920,7 +918,7 @@ struct
       let open Irm in
       (* A pull request that rewrites the configuration always continues: the configuration of the
          destination branch cannot describe one that the pull request changes. *)
-      if Terrat_precheck.changes_repo_config files then Abbs_future_combinators.return_ok true
+      if Terrat_precheck.changes_repo_config files then Abbs_fc.return_ok true
       else
         Ee2_fc.all3 (fetch Keys.account) (fetch Keys.repo) (fetch Keys.dest_branch_name)
         >>= fun (account, repo, dest_branch_name) ->
@@ -950,47 +948,45 @@ struct
                pass: an opt-in hint must never make a pull request fail that would otherwise have
                run. *)
             Logs.info (fun m -> m "%s : PRECHECK_CONFIG_UNAVAILABLE" (Builder.log_id s));
-            Abbs_future_combinators.return_ok true
-        | Ok None -> Abbs_future_combinators.return_ok true
+            Abbs_fc.return_ok true
+        | Ok None -> Abbs_fc.return_ok true
         | Ok (Some repo_config_json) -> (
             let diff = S.Api.Pull_request.diff pull_request in
             (* The parse and the dir match are real work on a repository with many dirs, thus they
                go off the event loop, as every other use of them in this evaluator does. *)
             Abb.Thread.run (fun () -> Terrat_precheck.match_derived_config ~diff repo_config_json)
             >>= function
-            | Some matched -> Abbs_future_combinators.return_ok matched
+            | Some matched -> Abbs_fc.return_ok matched
             | None ->
                 (* A stored configuration that does not parse gives [true], as an absent one does:
                    the answer comes from a cache, thus a cache that cannot be read must not stop a
                    pull request. *)
                 Logs.err (fun m -> m "%s : PRECHECK_CONFIG_UNREADABLE" (Builder.log_id s));
-                Abbs_future_combinators.return_ok true)
+                Abbs_fc.return_ok true)
 
     let eval_precheck s fetcher ~files ~files_truncated ~pull_request =
       let module Pc = Terrat_base_repo_config_v1.When_modified.Precheck in
       function
       | Pc.User users ->
-          Abbs_future_combinators.return_ok
+          Abbs_fc.return_ok
             (Terrat_precheck.match_user ~users (S.Api.Pull_request.user pull_request))
       | Pc.File_patterns file_patterns ->
-          if files_truncated then Abbs_future_combinators.return_ok true
-          else
-            Abbs_future_combinators.return_ok
-              (Terrat_precheck.match_file_patterns ~files file_patterns)
+          if files_truncated then Abbs_fc.return_ok true
+          else Abbs_fc.return_ok (Terrat_precheck.match_file_patterns ~files file_patterns)
       | Pc.Config_file_patterns { Pc.Config_file_patterns.stale_config_min } ->
-          if files_truncated then Abbs_future_combinators.return_ok true
+          if files_truncated then Abbs_fc.return_ok true
           else eval_config_file_patterns s fetcher ~files ~pull_request ~stale_config_min
 
     (* The checks are an "and", thus the first one that gives [false] is the answer and the rest
        need no work. *)
     let rec first_failed_precheck s fetcher ~files ~files_truncated ~pull_request = function
-      | [] -> Abbs_future_combinators.return_ok None
+      | [] -> Abbs_fc.return_ok None
       | precheck :: rest -> (
           let open Irm in
           eval_precheck s fetcher ~files ~files_truncated ~pull_request precheck
           >>= function
           | true -> first_failed_precheck s fetcher ~files ~files_truncated ~pull_request rest
-          | false -> Abbs_future_combinators.return_ok (Some precheck))
+          | false -> Abbs_fc.return_ok (Some precheck))
 
     let check_prechecks =
       run ~name:"check_prechecks" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
@@ -1005,7 +1001,7 @@ struct
               fetch Keys.repo_config_raw'
               >>= fun (_, repo_config) ->
               match (V1.when_modified repo_config).V1.When_modified.prechecks with
-              | [] -> Abbs_future_combinators.return_ok ()
+              | [] -> Abbs_fc.return_ok ()
               | prechecks -> (
                   (* [iter_job] runs again for every work manifest event that the job owns, thus a
                      precheck that answers a second time could stop a job that already dispatched
@@ -1015,7 +1011,7 @@ struct
                      has passed the prechecks already. *)
                   fetch Keys.work_manifests_for_job
                   >>= function
-                  | _ :: _ -> Abbs_future_combinators.return_ok ()
+                  | _ :: _ -> Abbs_fc.return_ok ()
                   | [] -> (
                       Builder.run_db s ~f:(fun db ->
                           S.Job_context.Job.query_explicit_plan_exists
@@ -1026,7 +1022,7 @@ struct
                       >>= function
                       | true ->
                           Logs.info (fun m -> m "%s : PRECHECK_OVERRIDDEN" (Builder.log_id s));
-                          Abbs_future_combinators.return_ok ()
+                          Abbs_fc.return_ok ()
                       | false -> (
                           fetch Keys.pull_request
                           >>= fun pull_request ->
@@ -1058,7 +1054,7 @@ struct
                             ~pull_request
                             prechecks
                           >>= function
-                          | None -> Abbs_future_combinators.return_ok ()
+                          | None -> Abbs_fc.return_ok ()
                           | Some precheck ->
                               Logs.info (fun m ->
                                   m
@@ -1074,8 +1070,8 @@ struct
                               in
                               (if create_completed_apply_check_on_noop then
                                  Tasks_base.create_completed_apply_check s fetcher
-                               else Abbs_future_combinators.return_ok ())
-                              >>= fun () -> Abbs_future_combinators.return_err `Noop))))
+                               else Abbs_fc.return_ok ())
+                              >>= fun () -> Abbs_fc.return_err `Noop))))
           | Tjc.Job.Type_.Apply _
           | Tjc.Job.Type_.Autoapply
           | Tjc.Job.Type_.Gate_approval _
@@ -1084,7 +1080,7 @@ struct
           | Tjc.Job.Type_.Plan _
           | Tjc.Job.Type_.Push
           | Tjc.Job.Type_.Repo_config
-          | Tjc.Job.Type_.Unlock _ -> Abbs_future_combinators.return_ok ())
+          | Tjc.Job.Type_.Unlock _ -> Abbs_fc.return_ok ())
 
     let check_pull_request_state =
       run ~name:"check_pull_request_state" (fun s { Bs.Fetcher.fetch } ->
@@ -1112,7 +1108,7 @@ struct
               >>= fun create_commit_checks ->
               create_commit_checks' create_commit_checks branch_ref unfinished_checks
               >>? fun () -> Error `Noop
-          | Pr.State.(Open | Merged _) -> Abbs_future_combinators.return_ok ())
+          | Pr.State.(Open | Merged _) -> Abbs_fc.return_ok ())
 
     let check_conflicting_plan_work_manifests =
       run ~name:"check_conflicting_plan_work_manifests" (fun s { Bs.Fetcher.fetch } ->
@@ -1152,7 +1148,7 @@ struct
                 dirspaces
                 `Plan)
           >>= function
-          | None -> Abbs_future_combinators.return_ok ()
+          | None -> Abbs_fc.return_ok ()
           | Some (P2.Conflicting_work_manifests.Conflicting wms) ->
               fetch Keys.publish_comment
               >>= fun publish_comment ->
@@ -1183,11 +1179,11 @@ struct
                 (S.Api.Pull_request.id pull_request)
                 client
               >>= function
-              | Some true -> Abbs_future_combinators.return_ok ()
+              | Some true -> Abbs_fc.return_ok ()
               | Some false | None -> (
                   fetch Keys.all_matches
                   >>= function
-                  | [] -> Abbs_future_combinators.return_err `Noop
+                  | [] -> Abbs_fc.return_err `Noop
                   | _ :: _ ->
                       Logs.info (fun m -> m "%s : MERGE_CONFLICT" (Builder.log_id s));
                       fetch Keys.publish_comment
@@ -1195,7 +1191,7 @@ struct
                       publish_comment' publish_comment Msg.Pull_request_not_mergeable
                       >>? fun () -> Error `Noop))
           | Terrat_pull_request.State.Closed | Terrat_pull_request.State.Merged _ ->
-              Abbs_future_combinators.return_ok ())
+              Abbs_fc.return_ok ())
 
     let pull_request_reviews =
       run ~name:"pull_request_reviews" (fun s { Bs.Fetcher.fetch } ->
@@ -1216,7 +1212,7 @@ struct
           >>= fun working_set_matches ->
           let open Abb.Future.Infix_monad in
           Access_control.eval_tf_operation access_control working_set_matches `Plan
-          >>= fun ret -> Abbs_future_combinators.return_ok ret)
+          >>= fun ret -> Abbs_fc.return_ok ret)
 
     let access_control_eval_apply =
       run ~name:"access_control_eval_apply" (fun _s { Bs.Fetcher.fetch } ->
@@ -1254,7 +1250,7 @@ struct
           in
           let open Abb.Future.Infix_monad in
           Access_control.eval_tf_operation access_control working_set_matches op
-          >>= fun ret -> Abbs_future_combinators.return_ok ret)
+          >>= fun ret -> Abbs_fc.return_ok ret)
 
     let check_access_control_plan =
       run ~name:"check_access_control_plan" (fun _s { Bs.Fetcher.fetch } ->
@@ -1276,7 +1272,7 @@ struct
           | Ok { R.pass = _; deny }
             when CCList.is_empty deny
                  || not (Access_control.plan_require_all_dirspace_access access_control) ->
-              Abbs_future_combinators.return_ok ()
+              Abbs_fc.return_ok ()
           | Ok { R.deny; _ } ->
               fetch Keys.publish_comment
               >>= fun publish_comment ->
@@ -1335,7 +1331,7 @@ struct
                     (Msg.Pull_request_not_appliable
                        (S.Api.Pull_request.set_diff () pull_request, apply_requirements))
                   >>? fun () -> Error `Noop
-              | _ -> Abbs_future_combinators.return_ok apply_requirements)
+              | _ -> Abbs_fc.return_ok apply_requirements)
           | None -> assert false)
 
     let check_access_control_apply =
@@ -1375,7 +1371,7 @@ struct
             when CCList.is_empty deny
                  || not (Access_control.apply_require_all_dirspace_access access_control) ->
               (* This is the success path *)
-              Abbs_future_combinators.return_ok ()
+              Abbs_fc.return_ok ()
           | { Terrat_access_control2.R.deny; _ } ->
               fetch Keys.publish_comment
               >>= fun publish_comment ->
@@ -1419,7 +1415,7 @@ struct
                 dirspaces
                 `Apply)
           >>= function
-          | None -> Abbs_future_combinators.return_ok ()
+          | None -> Abbs_fc.return_ok ()
           | Some (P2.Conflicting_work_manifests.Conflicting wms) ->
               fetch Keys.publish_comment
               >>= fun publish_comment ->
@@ -1523,13 +1519,13 @@ struct
                 (CCList.length stale)
                 (CCList.length missing));
           match missing with
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | dirspaces -> (
               fetch Keys.job
               >>= function
               | { Tjc.Job.type_ = Tjc.Job.Type_.Autoapply; _ } ->
                   (* If it's an autoapply, don't publish *)
-                  Abbs_future_combinators.return_err `Noop
+                  Abbs_fc.return_err `Noop
               | _ ->
                   fetch Keys.publish_comment
                   >>= fun publish_comment ->
@@ -1613,8 +1609,7 @@ struct
                      this a pull request whose automerge failed once can never be
                      merged by any later command.  The no-match cases are left
                      alone: a mistyped tag query must not merge a pull request. *)
-                  (if all_changes_applied then fetch Keys.maybe_automerge
-                   else Abbs_future_combinators.return_ok ())
+                  (if all_changes_applied then fetch Keys.maybe_automerge else Abbs_fc.return_ok ())
                   >>? fun () -> Error `Noop
               | _ :: _ ->
                   fetch Keys.repo
@@ -1639,7 +1634,7 @@ struct
                   fetch Keys.create_commit_checks
                   >>= fun create_commit_checks ->
                   create_commit_checks' create_commit_checks working_branch_ref checks)
-          | _ -> Abbs_future_combinators.return_ok ())
+          | _ -> Abbs_fc.return_ok ())
 
     let check_dirspaces_to_apply =
       run ~name:"check_dirspaces_to_apply" (fun _s { Bs.Fetcher.fetch } ->
@@ -1696,11 +1691,10 @@ struct
                   (* Same reason as [check_dirspaces_to_plan]: an explicit apply
                      over dirspaces that are all applied is how a user retries a
                      failed automerge, so it has to reach the automerge logic. *)
-                  (if all_changes_applied then fetch Keys.maybe_automerge
-                   else Abbs_future_combinators.return_ok ())
+                  (if all_changes_applied then fetch Keys.maybe_automerge else Abbs_fc.return_ok ())
                   >>? fun () -> Error `Noop
-              | _ :: _ -> Abbs_future_combinators.return_ok ())
-          | _ -> Abbs_future_combinators.return_ok ())
+              | _ :: _ -> Abbs_fc.return_ok ())
+          | _ -> Abbs_fc.return_ok ())
 
     (* A tag query that selects some of what the user named and quietly drops the
        rest is the failure this whole change exists for.  When the query is a list
@@ -1755,7 +1749,7 @@ struct
                           all_matches
                       in
                       match dropped with
-                      | [] -> Abbs_future_combinators.return_ok ()
+                      | [] -> Abbs_fc.return_ok ()
                       | _ :: _ ->
                           fetch Keys.publish_comment
                           >>= fun publish_comment ->
@@ -1764,10 +1758,10 @@ struct
                             (Msg.Tag_query_dropped_dirspaces
                                { command; suggestion; dirspaces = dropped })
                           >>| fun () -> ())
-                  | Error _ -> Abbs_future_combinators.return_ok ())
+                  | Error _ -> Abbs_fc.return_ok ())
               | Some (Terrat_tag_query.Implicit_and { suggestion = None }) | None ->
-                  Abbs_future_combinators.return_ok ())
-          | None -> Abbs_future_combinators.return_ok ())
+                  Abbs_fc.return_ok ())
+          | None -> Abbs_fc.return_ok ())
 
     let check_gates =
       run ~name:"check_gates" (fun s { Bs.Fetcher.fetch } ->
@@ -1780,13 +1774,13 @@ struct
           >>= fun (client, pull_request, working_set_matches, job) ->
           match job with
           | { Tjc.Job.type_ = Tjc.Job.Type_.Apply { force = true; tag_query = _; kind = _ }; _ } ->
-              Abbs_future_combinators.return_ok ()
+              Abbs_fc.return_ok ()
           | _ -> (
               let module Dc = Terrat_change_match3.Dirspace_config in
               let dirspaces = CCList.map (fun { Dc.dirspace; _ } -> dirspace) working_set_matches in
               Builder.run_db s ~f:(fun db -> gate_eval s db client pull_request dirspaces)
               >>= function
-              | [] -> Abbs_future_combinators.return_ok ()
+              | [] -> Abbs_fc.return_ok ()
               | denied ->
                   fetch Keys.publish_comment
                   >>= fun publish_comment ->
@@ -1807,7 +1801,7 @@ struct
                 pull_request
                 (CCList.map Terrat_change.Dirspaceflow.to_dirspace all_match_dirspaceflows))
           >>= function
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | owned_dirspaces ->
               fetch Keys.publish_comment
               >>= fun publish_comment ->
@@ -1824,7 +1818,7 @@ struct
           let open Abb.Future.Infix_monad in
           Access_control.eval_repo_config access_control diff
           >>= function
-          | Ok None -> Abbs_future_combinators.return_ok ()
+          | Ok None -> Abbs_fc.return_ok ()
           | Ok (Some match_list) ->
               let open Irm in
               fetch Keys.publish_comment
@@ -1854,7 +1848,7 @@ struct
           let open Abb.Future.Infix_monad in
           Access_control.eval_files access_control diff
           >>= function
-          | Ok None -> Abbs_future_combinators.return_ok ()
+          | Ok None -> Abbs_fc.return_ok ()
           | Ok (Some (fname, match_list)) ->
               let open Irm in
               fetch Keys.publish_comment
@@ -1884,7 +1878,7 @@ struct
           let open Abb.Future.Infix_monad in
           Access_control.eval_ci_change access_control diff
           >>= function
-          | Ok None -> Abbs_future_combinators.return_ok ()
+          | Ok None -> Abbs_fc.return_ok ()
           | Ok (Some match_list) ->
               let open Irm in
               fetch Keys.publish_comment
@@ -1961,10 +1955,10 @@ struct
               (* Publish best effort: failing to comment must not replace the
                  error that actually stopped the operation. *)
               CCOption.map_or
-                ~default:(Abbs_future_combinators.return_ok ())
+                ~default:(Abbs_fc.return_ok ())
                 maybe_publish_msg
                 (Tasks_base.msg_of_err err)
-              >>= fun _ -> Abbs_future_combinators.return_err err)
+              >>= fun _ -> Abbs_fc.return_err err)
 
     let can_run_apply =
       run ~name:"can_run_apply" (fun s { Bs.Fetcher.fetch } ->
@@ -2017,10 +2011,10 @@ struct
               (* Publish best effort: failing to comment must not replace the
                  error that actually stopped the operation. *)
               CCOption.map_or
-                ~default:(Abbs_future_combinators.return_ok ())
+                ~default:(Abbs_fc.return_ok ())
                 maybe_publish_msg
                 (Tasks_base.msg_of_err err)
-              >>= fun _ -> Abbs_future_combinators.return_err err)
+              >>= fun _ -> Abbs_fc.return_err err)
 
     let get_context_for_pull_request =
       run ~name:"get_context_for_pull_request" (fun s { Bs.Fetcher.fetch } ->
@@ -2072,30 +2066,26 @@ struct
                       feedback);
                 None
             | E.Open | E.Sync | E.Ready_for_review ->
-                Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Autoplan)
-            | E.Close -> Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Autoapply)
+                Abbs_fc.return_ok (Some Tjc.Job.Type_.Autoplan)
+            | E.Close -> Abbs_fc.return_ok (Some Tjc.Job.Type_.Autoapply)
             | E.Comment { comment_id = _; comment } -> (
                 match comment with
                 | Terrat_comment.Apply { tag_query } ->
-                    Abbs_future_combinators.return_ok
+                    Abbs_fc.return_ok
                       (Some (Tjc.Job.Type_.Apply { tag_query; kind = None; force = false }))
                 | Terrat_comment.Gate_approval { tokens } ->
-                    Abbs_future_combinators.return_ok
-                      (Some (Tjc.Job.Type_.Gate_approval { tokens }))
+                    Abbs_fc.return_ok (Some (Tjc.Job.Type_.Gate_approval { tokens }))
                 | Terrat_comment.Plan { tag_query } ->
-                    Abbs_future_combinators.return_ok
-                      (Some (Tjc.Job.Type_.Plan { tag_query; kind = None }))
+                    Abbs_fc.return_ok (Some (Tjc.Job.Type_.Plan { tag_query; kind = None }))
                 | Terrat_comment.Apply_force { tag_query } ->
-                    Abbs_future_combinators.return_ok
+                    Abbs_fc.return_ok
                       (Some (Tjc.Job.Type_.Apply { tag_query; kind = None; force = true }))
-                | Terrat_comment.Repo_config ->
-                    Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Repo_config)
+                | Terrat_comment.Repo_config -> Abbs_fc.return_ok (Some Tjc.Job.Type_.Repo_config)
                 | Terrat_comment.Unlock unlocks ->
-                    Abbs_future_combinators.return_ok
+                    Abbs_fc.return_ok
                       (Some (Tjc.Job.Type_.Unlock (Sln_list.String.sort_uniq unlocks)))
-                | Terrat_comment.Index ->
-                    Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Index)
-                | Terrat_comment.Help -> Abbs_future_combinators.return_ok (Some Tjc.Job.Type_.Help)
+                | Terrat_comment.Index -> Abbs_fc.return_ok (Some Tjc.Job.Type_.Index)
+                | Terrat_comment.Help -> Abbs_fc.return_ok (Some Tjc.Job.Type_.Help)
                 | Terrat_comment.Apply_autoapprove _ | Terrat_comment.Feedback _ ->
                     raise (Failure "nyi")))
           >>= fun job_type ->
@@ -2130,7 +2120,7 @@ struct
                 |> Builder.State.set_log_id log_id
               in
               Builder.eval s' Keys.react_to_comment >>| fun () -> job
-          | None -> Abbs_future_combinators.return_err `Noop)
+          | None -> Abbs_fc.return_err `Noop)
 
     let store_gate_approval =
       run ~name:"store_gate_approval" (fun s { Bs.Fetcher.fetch } ->
@@ -2144,7 +2134,7 @@ struct
               >>= function
               | Some user ->
                   Builder.run_db s ~f:(fun db ->
-                      Abbs_future_combinators.List_result.iter
+                      Abbs_fc.List_result.iter
                         ~f:(fun token ->
                           S.Gate.add_approval
                             ~request_id:(Builder.log_id s)
@@ -2163,7 +2153,7 @@ struct
           let open Irm in
           fetch Keys.all_matches
           >>= function
-          | [] -> Abbs_future_combinators.return_ok ()
+          | [] -> Abbs_fc.return_ok ()
           | _ :: _ ->
               fetch Keys.repo_config
               >>= fun repo_config ->
@@ -2219,8 +2209,8 @@ struct
                             (S.Api.Repo.to_string repo)
                             branch);
                       S.Api.delete_branch ~request_id:(Builder.log_id s) client repo branch
-                      >>= fun _ -> Abbs_future_combinators.return_ok ())
-                    else Abbs_future_combinators.return_ok ()
+                      >>= fun _ -> Abbs_fc.return_ok ())
+                    else Abbs_fc.return_ok ()
                 | Error (`Merge_err reason) ->
                     let open Irm in
                     fetch Keys.publish_comment
@@ -2231,7 +2221,7 @@ struct
                          (Terrat_pull_request.set_diff () @@ pull_request, reason))
                 | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) as err ->
                     Abb.Future.return err)
-              else Abbs_future_combinators.return_ok ())
+              else Abbs_fc.return_ok ())
   end
 
   let tasks tasks =

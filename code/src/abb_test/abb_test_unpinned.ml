@@ -1,6 +1,6 @@
 module Make (Abb : Abb_intf.S) = struct
   module Oth_abb = Abb_test_oth.Make (Abb)
-  module Fut_comb = Abb_future_combinators.Make (Abb.Future)
+  module Fut_comb = Abb_fc.Make (Abb.Future)
 
   (* Sanity check: an unpinned task that does no async work returns its
      value through the cross-domain delivery path. *)

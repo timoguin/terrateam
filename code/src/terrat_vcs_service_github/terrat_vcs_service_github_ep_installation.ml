@@ -41,7 +41,7 @@ type refresh_repos_err' =
 [@@deriving show]
 
 let refresh_repos ~request_id ~config ~storage installation_id =
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Terrat_github.get_installation_access_token
     (Terrat_vcs_service_github_provider.Api.Config.vcs_config config)
     installation_id
@@ -58,7 +58,7 @@ let refresh_repos ~request_id ~config ~storage installation_id =
   let module U = Githubc2_components.Simple_user in
   let module Up = U.Primary in
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.List.map
+  Abbs_fc.List.map
     ~f:(fun
         {
           R.primary =
@@ -91,7 +91,7 @@ let refresh_repos ~request_id ~config ~storage installation_id =
     repositories
   >>= fun repos_setup ->
   let installation_id = CCInt64.of_int installation_id in
-  Abbs_future_combinators.List_result.iter
+  Abbs_fc.List_result.iter
     ~f:(fun (repositories, repos_setup) ->
       Pgsql_pool.with_conn storage ~f:(fun db ->
           Pgsql_io.Prepared_stmt.execute
@@ -137,10 +137,10 @@ let refresh_repos' ~request_id ~config ~storage installation_id =
   let task =
     Terrat_task.make ~name:(Printf.sprintf "%s : REPO_REFRESH : %d" request_id installation_id) ()
   in
-  let open Abbs_future_combinators.Infix_result_monad in
+  let open Abbs_fc.Infix_result_monad in
   Pgsql_pool.with_conn storage ~f:(fun db -> Terrat_task.store db task)
   >>= fun task ->
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.ignore
+  Abbs_fc.ignore
     (Abb.Future.fork (refresh_repos_task request_id config storage installation_id task))
-  >>= fun () -> Abbs_future_combinators.return_ok task
+  >>= fun () -> Abbs_fc.return_ok task

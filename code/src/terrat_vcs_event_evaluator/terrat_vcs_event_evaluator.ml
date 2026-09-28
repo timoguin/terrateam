@@ -94,19 +94,19 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let open Abb.Future.Infix_monad in
     let terrat_config = S.Api.Config.config config in
     Abbs_time_it.run (log_time request_id "CREATE_CLIENT") (fun () ->
-        Abbs_future_combinators.protect_finally
+        Abbs_fc.protect_finally
           ~setup:(fun () -> Terrat_storage.create terrat_config)
           (fun pool ->
             Pgsql_pool.with_conn pool ~f:(fun db ->
                 S.Api.create_client ~request_id config account db))
           ~finally:Pgsql_pool.destroy)
     >>= function
-    | Ok client -> Abbs_future_combinators.return_ok client
+    | Ok client -> Abbs_fc.return_ok client
     | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" request_id Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let store_account_repository request_id db account repo =
     Abbs_time_it.run
@@ -165,7 +165,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.Ref.to_string ref_)
               time))
       (fun () ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         let module Files = Terrat_api_components.Work_manifest_build_tree_result.Files in
         (* This evaluator asks which files the tree holds, and not what is in them, thus it keeps
            the paths and drops the ids. *)
@@ -252,7 +252,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     Abbs_time_it.run
       (fun time -> Logs.info (fun m -> m "%s : PUBLISH_MSG : time=%f" request_id time))
       (fun () ->
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Terrat_vcs_api.collapse_call_err (fun () ->
             S.Repo_config.fetch_brand ~request_id client (S.Api.Pull_request.repo pull_request))
         >>= fun brand -> S.Comment.publish_comment ~request_id ~brand client user pull_request msg)
@@ -288,7 +288,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   (* The legacy evaluator does not use compute nodes, it uses flow states, so it
      drops the compute node the query gives back. *)
   let query_next_pending_work_manifest request_id db =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Abbs_time_it.run
       (fun time ->
         Logs.info (fun m -> m "%s : QUERY_NEXT_PENDING_WORK_MANIFEST : time=%f" request_id time))
@@ -432,7 +432,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               time))
       (fun () ->
         Terrat_vcs_api.collapse_call_err (fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             S.Repo_config.fetch_brand ~request_id client repo
             >>= fun brand -> S.Api.create_commit_checks ~request_id ~brand client repo ref_ checks))
 
@@ -618,7 +618,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         | Ok _ as r -> Abb.Future.return r
         | Error (`Merge_err _) as err -> Abb.Future.return err
         | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
-            Abbs_future_combinators.return_err `Error)
+            Abbs_fc.return_err `Error)
 
   let delete_branch request_id client repo branch =
     Abbs_time_it.run
@@ -701,7 +701,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       fetch_repo_config_with_provenance ?built_config ~system_defaults request_id client repo ref_
 
     let fetch ?built_config ~system_defaults request_id config client repo ref_ =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       fetch_with_provenance ?built_config ~system_defaults request_id config client repo ref_
       >>| fun (_, repo_config) -> repo_config
   end
@@ -1270,40 +1270,40 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let ci_config_update = t.config.Ac.ci_config_update in
       if t.config.Ac.enabled then
         Abbs_time_it.run (log_time t.request_id "ACCESS_CONTROL_EVAL_CI_CHANGE") (fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Access_control.eval_ci_change t.ctx ci_config_update diff
             >>| function
             | true -> None
             | false -> Some ci_config_update)
       else (
         Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" t.request_id);
-        Abbs_future_combinators.return_ok None)
+        Abbs_fc.return_ok None)
 
     let eval_files t diff =
       let files_policy = t.config.Ac.files in
       if t.config.Ac.enabled then
         Abbs_time_it.run (log_time t.request_id "ACCESS_CONTROL_FILES") (fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Access_control.eval_files t.ctx files_policy diff
             >>| function
             | `Ok -> None
             | `Denied denied -> Some denied)
       else (
         Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" t.request_id);
-        Abbs_future_combinators.return_ok None)
+        Abbs_fc.return_ok None)
 
     let eval_repo_config t diff =
       let terrateam_config_update = t.config.Ac.terrateam_config_update in
       if t.config.Ac.enabled then
         Abbs_time_it.run (log_time t.request_id "ACCESS_CONTROL_EVAL_REPO_CONFIG") (fun () ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Access_control.eval_repo_config t.ctx terrateam_config_update diff
             >>| function
             | true -> None
             | false -> Some terrateam_config_update)
       else (
         Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" t.request_id);
-        Abbs_future_combinators.return_ok None)
+        Abbs_fc.return_ok None)
 
     let eval' t change_matches selector =
       if t.config.Ac.enabled then
@@ -1320,11 +1320,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             Access_control.eval t.ctx policies change_matches)
       else (
         Logs.info (fun m -> m "%s : ACCESS_CONTROL_DISABLED" t.request_id);
-        Abbs_future_combinators.return_ok
-          Terrat_access_control2.R.{ pass = change_matches; deny = [] })
+        Abbs_fc.return_ok Terrat_access_control2.R.{ pass = change_matches; deny = [] })
 
     let eval_superapproved t reviewers change_matches =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       (* First, let's see if this user can even apply any of the denied changes
          if there is a superapproval. If there isn't, we return the original
          response, otherwise we have to see if any of the changes have super
@@ -1340,7 +1339,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 (dirspace, ch))
             |> Dirspace_map.of_list
           in
-          Abbs_future_combinators.List_result.fold_left
+          Abbs_fc.List_result.fold_left
             ~f:(fun acc user ->
               let changes = acc |> Dirspace_map.to_list |> CCList.map snd in
               let ctx = Access_control.Ctx.set_user user t.ctx in
@@ -1365,12 +1364,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | _ ->
           Logs.debug (fun m ->
               m "%s : ACCESS_CONTROL : NO_MATCHING_CHANGES_FOR_SUPERAPPROVAL" t.request_id);
-          Abbs_future_combinators.return_ok Dirspace_map.empty
+          Abbs_fc.return_ok Dirspace_map.empty
 
     let eval_tf_operation t change_matches = function
       | `Plan -> eval' t change_matches (fun { P.plan; _ } -> plan)
       | `Apply reviewers -> (
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           eval' t change_matches (fun { P.apply; _ } -> apply)
           >>= function
           | { Terrat_access_control2.R.pass; deny = _ :: _ as deny } ->
@@ -1397,7 +1396,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   deny
               in
               { Terrat_access_control2.R.pass; deny }
-          | r -> Abbs_future_combinators.return_ok r)
+          | r -> Abbs_fc.return_ok r)
       | `Apply_force -> eval' t change_matches (fun { P.apply_force; _ } -> apply_force)
       | `Apply_autoapprove ->
           eval' t change_matches (fun { P.apply_autoapprove; _ } -> apply_autoapprove)
@@ -1407,14 +1406,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           if t.config.Ac.enabled then
             let match_list = t.config.Ac.unlock in
             Abbs_time_it.run (log_time t.request_id "ACCESS_CONTROL_EVAL") (fun () ->
-                let open Abbs_future_combinators.Infix_result_monad in
+                let open Abbs_fc.Infix_result_monad in
                 Access_control.eval_match_list t.ctx match_list
                 >>| function
                 | true -> None
                 | false -> Some match_list)
           else (
             Logs.debug (fun m -> m "%s : ACCESS_CONTROL_DISABLED" t.request_id);
-            Abbs_future_combinators.return_ok None)
+            Abbs_fc.return_ok None)
 
     let plan_require_all_dirspace_access t = t.config.Ac.plan_require_all_dirspace_access
     let apply_require_all_dirspace_access t = t.config.Ac.apply_require_all_dirspace_access
@@ -1613,7 +1612,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let repo_config_system_defaults ctx _state =
       let module V1 = Terrat_base_repo_config_v1 in
       match Terrat_config.infracost @@ S.Api.Config.config @@ Ctx.config ctx with
-      | Some _ -> Abbs_future_combinators.return_ok V1.default
+      | Some _ -> Abbs_fc.return_ok V1.default
       | None ->
           let system_defaults =
             {
@@ -1621,27 +1620,27 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               V1.View.cost_estimation = V1.Cost_estimation.make ~enabled:false ();
             }
           in
-          Abbs_future_combinators.return_ok (V1.of_view system_defaults)
+          Abbs_fc.return_ok (V1.of_view system_defaults)
 
     let client ctx state =
       create_client state.State.request_id (Ctx.config ctx) (Event.account state.State.event)
 
     let pull_request_safe ctx state =
       match Event.pull_request_id_safe state.State.event with
-      | None -> Abbs_future_combinators.return_ok None
+      | None -> Abbs_fc.return_ok None
       | Some pull_request_id -> (
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           let fetch () =
             let open Abb.Future.Infix_monad in
-            (let open Abbs_future_combinators.Infix_result_monad in
+            (let open Abbs_fc.Infix_result_monad in
              create_client state.State.request_id (Ctx.config ctx) account
              >>= fun client ->
              fetch_pull_request state.State.request_id account client repo pull_request_id)
             >>= function
             | Ok _ as r -> Abb.Future.return r
             | Error (`Error | `Vcs_api_rate_limit_err _ | `Vcs_api_timeout_err _) ->
-                Abbs_future_combinators.return_err `Error
+                Abbs_fc.return_err `Error
           in
           let open Abb.Future.Infix_monad in
           Abbs_time_it.run
@@ -1661,18 +1660,18 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 (Ctx.request_id ctx, account, repo, pull_request_id)
                 fetch)
           >>= function
-          | Ok pull_request -> Abbs_future_combinators.return_ok (Some pull_request)
-          | Error `Error -> Abbs_future_combinators.return_err `Error)
+          | Ok pull_request -> Abbs_fc.return_ok (Some pull_request)
+          | Error `Error -> Abbs_fc.return_err `Error)
 
     let pull_request ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       pull_request_safe ctx state
       >>= function
-      | Some pull_request -> Abbs_future_combinators.return_ok pull_request
+      | Some pull_request -> Abbs_fc.return_ok pull_request
       | None -> assert false
 
     let target ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match state.State.event with
       | Event.Pull_request_open _
       | Event.Pull_request_close _
@@ -1692,7 +1691,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Push _ | Event.Run_scheduled_drift -> assert false
 
     let branch_ref ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match Event.pull_request_id_safe state.State.event with
       | Some _ ->
           pull_request ctx state >>| fun pull_request -> S.Api.Pull_request.branch_ref pull_request
@@ -1708,11 +1707,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             (Event.repo state.State.event)
             default_branch
           >>= function
-          | Some branch_sha -> Abbs_future_combinators.return_ok branch_sha
+          | Some branch_sha -> Abbs_fc.return_ok branch_sha
           | None -> assert false)
 
     let branch_name ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match Event.pull_request_id_safe state.State.event with
       | Some _ ->
           pull_request ctx state >>| fun pull_request -> S.Api.Pull_request.branch_name pull_request
@@ -1723,7 +1722,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>| fun remote_repo -> S.Api.Remote_repo.default_branch remote_repo
 
     let working_branch_ref ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       let default_branch_sha =
         client ctx state
         >>= fun client ->
@@ -1732,7 +1731,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         let default_branch = S.Api.Remote_repo.default_branch remote_repo in
         fetch_branch_sha state.State.request_id client (Event.repo state.State.event) default_branch
         >>= function
-        | Some branch_sha -> Abbs_future_combinators.return_ok branch_sha
+        | Some branch_sha -> Abbs_fc.return_ok branch_sha
         | None -> assert false
       in
       match Event.pull_request_id_safe state.State.event with
@@ -1741,12 +1740,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun pull_request ->
           match S.Api.Pull_request.state pull_request with
           | Terrat_pull_request.State.Open | Terrat_pull_request.State.Closed ->
-              Abbs_future_combinators.return_ok (S.Api.Pull_request.branch_ref pull_request)
+              Abbs_fc.return_ok (S.Api.Pull_request.branch_ref pull_request)
           | Terrat_pull_request.State.Merged _ -> default_branch_sha)
       | None -> default_branch_sha
 
     let base_ref ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match Event.pull_request_id_safe state.State.event with
       | Some _ ->
           pull_request ctx state >>| fun pull_request -> S.Api.Pull_request.base_ref pull_request
@@ -1762,11 +1761,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             (Event.repo state.State.event)
             default_branch
           >>= function
-          | Some branch_sha -> Abbs_future_combinators.return_ok branch_sha
+          | Some branch_sha -> Abbs_fc.return_ok branch_sha
           | None -> assert false)
 
     let base_branch_name ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match Event.pull_request_id_safe state.State.event with
       | Some _ ->
           pull_request ctx state
@@ -1789,7 +1788,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       S.Api.Ref.of_string (S.Api.Ref.to_string ref_ ^ ":" ^ sha256_hex)
 
     let repo_config_build_cache_ref ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       client ctx state
       >>= fun client ->
       branch_ref ctx state
@@ -1808,7 +1807,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>| fun (_, repo_config) -> build_config_cache_ref working_branch_ref' repo_config
 
     let query_built_config ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       repo_config_build_cache_ref ctx state
       >>= fun build_cache_ref ->
       query_repo_config_json
@@ -1818,7 +1817,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         build_cache_ref
 
     let query_built_tree ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       working_branch_ref ctx state
       >>= fun working_branch_ref' ->
       query_repo_tree
@@ -1832,7 +1831,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let account = Event.account state.State.event in
       let repo = Event.repo state.State.event in
       let fetch () =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         client ctx state
         >>= fun client ->
         branch_ref ctx state
@@ -1861,7 +1860,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 (S.Api.Repo.to_string repo)
                 time))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           branch_ref ctx state
           >>= fun branch_ref' ->
           Cache.Repo_config.fetch
@@ -1870,14 +1869,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             fetch)
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error (#Repo_config.fetch_err as err) -> Abbs_future_combinators.return_err err
+      | Error (#Repo_config.fetch_err as err) -> Abbs_fc.return_err err
 
     let repo_config ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       repo_config_with_provenance ctx state >>| fun (_, repo_config) -> repo_config
 
     let repo_tree_branch ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       let repo = Event.repo state.State.event in
       client ctx state
       >>= fun client ->
@@ -1885,7 +1884,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>= fun branch_ref' -> fetch_tree state.State.request_id client repo branch_ref'
 
     let query_index ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       working_branch_ref ctx state
       >>= fun working_branch_ref' ->
       query_index
@@ -1895,7 +1894,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         working_branch_ref'
 
     let query_repo_tree ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       base_ref ctx state
       >>= fun base_ref' ->
       working_branch_ref ctx state
@@ -1912,8 +1911,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Pull_request_open _
       | Event.Pull_request_close _
       | Event.Pull_request_sync _
-      | Event.Pull_request_ready_for_review _ ->
-          Abbs_future_combinators.return_ok Terrat_tag_query.any
+      | Event.Pull_request_ready_for_review _ -> Abbs_fc.return_ok Terrat_tag_query.any
       | Event.Pull_request_comment
           {
             comment =
@@ -1924,12 +1922,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 | Apply_force { tag_query } ));
             _;
           }
-      | Event.Run_drift { tag_query = Some tag_query; _ } ->
-          Abbs_future_combinators.return_ok tag_query
+      | Event.Run_drift { tag_query = Some tag_query; _ } -> Abbs_fc.return_ok tag_query
       | Event.Run_drift _ -> (
           let module V1 = Terrat_base_repo_config_v1 in
           let module D = V1.Drift in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           repo_config ctx state
           >>| fun repo_config ->
           let { D.schedules; _ } = V1.drift repo_config in
@@ -2054,7 +2051,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       in
       let missing_autoplan_matches ctx state db pull_request matches =
         let module Dc = Terrat_change_match3.Dirspace_config in
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         branch_ref ctx state
         >>= fun branch_ref ->
         base_ref ctx state
@@ -2078,7 +2075,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           matches
       in
       let out_of_change_applies ctx state =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         pull_request_safe ctx state
         >>= function
         | Some pull_request ->
@@ -2086,22 +2083,21 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               state.State.request_id
               (Ctx.storage ctx)
               pull_request
-        | None -> Abbs_future_combinators.return_ok []
+        | None -> Abbs_fc.return_ok []
       in
       let applied_dirspaces ctx state =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         pull_request_safe ctx state
         >>= function
         | Some pull_request ->
             query_applied_dirspaces state.State.request_id (Ctx.storage ctx) pull_request
-        | None -> Abbs_future_combinators.return_ok []
+        | None -> Abbs_fc.return_ok []
       in
       let diff ctx state =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         pull_request_safe ctx state
         >>= function
-        | Some pull_request ->
-            Abbs_future_combinators.return_ok (S.Api.Pull_request.diff pull_request)
+        | Some pull_request -> Abbs_fc.return_ok (S.Api.Pull_request.diff pull_request)
         | None ->
             repo_tree_branch ctx state
             >>| fun tree -> CCList.map (fun filename -> Terrat_change.Diff.Change { filename }) tree
@@ -2110,9 +2106,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let repo = Event.repo state.State.event in
       let fetch () =
         let module I = Terrat_api_components.Work_manifest_build_tree_result.Files.Items in
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         (* TODO: Do not fetch the branch if we are going to use a built tree *)
-        Abbs_future_combinators.Infix_result_app.(
+        Abbs_fc.Infix_result_app.(
           (fun repo_config repo_tree -> (repo_config, repo_tree))
           <$> repo_config ctx state
           <*> repo_tree_branch ctx state)
@@ -2257,7 +2253,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                        -> CCOption.get_or ~default:false auto_apply)
                     working_set_matches
                 in
-                Abbs_future_combinators.return_ok
+                Abbs_fc.return_ok
                   {
                     Matches.working_set_matches;
                     all_matches;
@@ -2277,7 +2273,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                        -> autoapply)
                     working_set_matches
                 in
-                Abbs_future_combinators.return_ok
+                Abbs_fc.return_ok
                   {
                     Matches.working_set_matches;
                     all_matches;
@@ -2287,7 +2283,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   }
             | (`Plan | `Apply | `Apply_autoapprove | `Apply_force), `Manual ->
                 Logs.info (fun m -> m "%s : MATCHES : PLAN-APPLY : MANUAL" state.State.request_id);
-                Abbs_future_combinators.return_ok
+                Abbs_fc.return_ok
                   {
                     Matches.working_set_matches;
                     all_matches;
@@ -2296,7 +2292,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     working_layer;
                   })
         | None ->
-            Abbs_future_combinators.return_ok
+            Abbs_fc.return_ok
               {
                 Matches.working_set_matches;
                 all_matches;
@@ -2320,7 +2316,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 | `Apply_force -> "apply_force")
                 time))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           base_ref ctx state
           >>= fun base_ref' ->
           branch_ref ctx state
@@ -2337,13 +2333,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             fetch)
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error (#Repo_config.fetch_err as err) -> Abbs_future_combinators.return_err err
-      | Error (#Terrat_change_match3.synthesize_config_err as err) ->
-          Abbs_future_combinators.return_err err
+      | Error (#Repo_config.fetch_err as err) -> Abbs_fc.return_err err
+      | Error (#Terrat_change_match3.synthesize_config_err as err) -> Abbs_fc.return_err err
 
     let access_control ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun client pull_request repo_config -> (client, pull_request, repo_config))
         <$> client ctx state
         <*> pull_request ctx state
@@ -2382,7 +2377,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         | (`Apply _ | `Plan | `Apply_autoapprove | `Apply_force) as op -> op
       in
       let fetch () =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         access_control ctx state
         >>= fun ac ->
         matches ctx state op'
@@ -2404,7 +2399,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 | `Apply_force -> "apply_force")
                 time))
         (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           pull_request ctx state
           >>= fun pull_request ->
           Cache.Access_control_eval_tf_op.fetch
@@ -2418,14 +2413,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             fetch)
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error (#Repo_config.fetch_err as err) -> Abbs_future_combinators.return_err err
-      | Error (#Terrat_change_match3.synthesize_config_err as err) ->
-          Abbs_future_combinators.return_err err
+      | Error (#Repo_config.fetch_err as err) -> Abbs_fc.return_err err
+      | Error (#Terrat_change_match3.synthesize_config_err as err) -> Abbs_fc.return_err err
 
     let dirspaces ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       let fetch_dirspace ~system_defaults ?built_config client dest_branch branch repo ref_ =
-        Abbs_future_combinators.Infix_result_app.(
+        Abbs_fc.Infix_result_app.(
           (fun repo_config repo_tree -> (repo_config, repo_tree))
           <$> Repo_config.fetch
                 ?built_config
@@ -2451,7 +2445,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
              repo_config)
         >>= fun config ->
         Abbs_time_it.run (log_time state.State.request_id "MATCH_DIFF_LIST") (fun () ->
-            Abbs_future_combinators.to_result
+            Abbs_fc.to_result
             @@ Abb.Thread.run (fun () ->
                 CCList.flatten
                   (Terrat_change_match3.match_diff_list
@@ -2539,7 +2533,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         (Event.account state.State.event)
         working_branch_ref
       >>= fun working_branch_built_config ->
-      Abbs_future_combinators.Infix_result_app.(
+      Abbs_fc.Infix_result_app.(
         (fun base_dirspaces dirspaces -> (base_dirspaces, dirspaces))
         <$> fetch_dirspace
               ~system_defaults
@@ -2560,8 +2554,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let apply_requirements ctx state op =
       let fetch () =
-        let open Abbs_future_combinators.Infix_result_monad in
-        Abbs_future_combinators.Infix_result_app.(
+        let open Abbs_fc.Infix_result_monad in
+        Abbs_fc.Infix_result_app.(
           (fun client repo_config pull_request matches ->
             (client, repo_config, pull_request, matches))
           <$> client ctx state
@@ -2587,12 +2581,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           Cache.Apply_requirements.fetch Cache.apply_requirements (Ctx.request_id ctx) fetch)
       >>= function
       | Ok _ as ret -> Abb.Future.return ret
-      | Error (#Repo_config.fetch_err as err) -> Abbs_future_combinators.return_err err
-      | Error (#Terrat_change_match3.synthesize_config_err as err) ->
-          Abbs_future_combinators.return_err err
+      | Error (#Repo_config.fetch_err as err) -> Abbs_fc.return_err err
+      | Error (#Terrat_change_match3.synthesize_config_err as err) -> Abbs_fc.return_err err
 
     let access_control_results ctx state op =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match Event.initiator state.State.event with
       | Terrat_work_manifest3.Initiator.User _ -> (
           match op with
@@ -2648,14 +2641,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         state.State.st
         state.State.input
         state.State.work_manifest_id;
-      Abbs_future_combinators.return_err `Silent_failure
+      Abbs_fc.return_err `Silent_failure
 
     let run_interactive ctx state f =
-      if Dv.is_interactive ctx state then f () else Abbs_future_combinators.return_ok state
+      if Dv.is_interactive ctx state then f () else Abbs_fc.return_ok state
 
     let maybe_publish_msg ctx state msg =
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Dv.client ctx state
         >>= fun client ->
         Dv.pull_request_safe ctx state
@@ -2667,7 +2660,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (S.Api.User.to_string @@ Event.user state.State.event)
               pull_request
               msg
-        | None -> Abbs_future_combinators.return_ok ()
+        | None -> Abbs_fc.return_ok ()
       in
       let open Abb.Future.Infix_monad in
       run
@@ -2703,7 +2696,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             { state with State.st = St.Waiting_for_work_manifest_run; work_manifest_id = Some id })
           work_manifests
       in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match (state.State.st, state.State.input, state.State.work_manifest_id) with
       | St.Initial, None, None -> (
           Logs.info (fun m -> m "%s : WORK_MANIFEST_ITER : %s : CREATE" state.State.request_id name);
@@ -2733,7 +2726,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               Abbs_time_it.run (log_time state.State.request_id "UPDATE") (fun () ->
                   update ctx state work_manifest)
               >>= function
-              | [] -> Abbs_future_combinators.return_ok { state with State.st = St.Initial }
+              | [] -> Abbs_fc.return_ok { state with State.st = St.Initial }
               | work_manifests -> (
                   match
                     CCList.partition
@@ -2742,16 +2735,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   with
                   | [], work_manifests ->
                       let states = states_of_work_manifests work_manifests in
-                      Abbs_future_combinators.List_result.iter
-                        ~f:(run_success ctx state)
-                        work_manifests
+                      Abbs_fc.List_result.iter ~f:(run_success ctx state) work_manifests
                       >>? fun () ->
                       Error (`Clone ({ state with State.st = St.Work_manifest_completed }, states))
                   | [ self ], work_manifests ->
                       let state = { state with State.work_manifest_id = Some self.Wm.id } in
-                      Abbs_future_combinators.List_result.iter
-                        ~f:(run_success ctx state)
-                        (self :: work_manifests)
+                      Abbs_fc.List_result.iter ~f:(run_success ctx state) (self :: work_manifests)
                       >>? fun () ->
                       let states = states_of_work_manifests work_manifests in
                       Error
@@ -2767,7 +2756,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     Uuidm.pp
                     id
                     (Wm.State.to_string state'));
-              Abbs_future_combinators.return_err `Silent_failure
+              Abbs_fc.return_err `Silent_failure
           | None ->
               Logs.err (fun m ->
                   m
@@ -2776,13 +2765,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     name
                     Uuidm.pp
                     work_manifest_id);
-              Abbs_future_combinators.return_err `Silent_failure)
+              Abbs_fc.return_err `Silent_failure)
       | St.Waiting_for_work_manifest_run, None, Some _ ->
           (* This should be reached if we cloned some work manifests. *)
-          Abbs_future_combinators.return_err (`Yield state)
+          Abbs_fc.return_err (`Yield state)
       | St.Work_manifest_completed, None, Some _ ->
           (* This should be reached if we cloned some work manifests. *)
-          Abbs_future_combinators.return_err (`Noop state)
+          Abbs_fc.return_err (`Noop state)
       | St.Waiting_for_work_manifest_run, Some I.Work_manifest_run_success, Some work_manifest_id
         -> (
           Logs.info (fun m ->
@@ -2810,7 +2799,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     Uuidm.pp
                     id
                     (Wm.State.to_string state'));
-              Abbs_future_combinators.return_err `Silent_failure
+              Abbs_fc.return_err `Silent_failure
           | None ->
               Logs.err (fun m ->
                   m
@@ -2819,7 +2808,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     name
                     Uuidm.pp
                     work_manifest_id);
-              Abbs_future_combinators.return_err `Silent_failure)
+              Abbs_fc.return_err `Silent_failure)
       | ( St.Waiting_for_work_manifest_run,
           Some (I.Work_manifest_run_failure err),
           Some work_manifest_id ) -> (
@@ -2845,9 +2834,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     name
                     Uuidm.pp
                     work_manifest_id);
-              Abbs_future_combinators.return_err `Silent_failure)
-      | St.Waiting_for_work_manifest_initiate, None, Some _ ->
-          Abbs_future_combinators.return_err (`Yield state)
+              Abbs_fc.return_err `Silent_failure)
+      | St.Waiting_for_work_manifest_initiate, None, Some _ -> Abbs_fc.return_err (`Yield state)
       | ( St.Waiting_for_work_manifest_initiate,
           Some
             (I.Work_manifest_initiate
@@ -2876,7 +2864,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   let open Abb.Future.Infix_monad in
                   Abb.Future.Promise.set p (Ok (Some response))
                   >>= fun () ->
-                  Abbs_future_combinators.return_err
+                  Abbs_fc.return_err
                     (`Yield
                        {
                          state with
@@ -2884,7 +2872,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                          output = None;
                          input = None;
                        })
-              | None -> Abbs_future_combinators.return_err (`Noop state))
+              | None -> Abbs_fc.return_err (`Noop state))
           | Some { Wm.id; state = Wm.State.Aborted; _ } ->
               Logs.info (fun m ->
                   m
@@ -2893,7 +2881,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     name
                     Uuidm.pp
                     id);
-              Abbs_future_combinators.return_err (`Noop state)
+              Abbs_fc.return_err (`Noop state)
           | Some { Wm.id; state = state'; _ } ->
               Logs.err (fun m ->
                   m
@@ -2903,7 +2891,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     Uuidm.pp
                     id
                     (Wm.State.to_string state'));
-              Abbs_future_combinators.return_err (`Noop state)
+              Abbs_fc.return_err (`Noop state)
           | None ->
               Logs.err (fun m ->
                   m
@@ -2912,7 +2900,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     name
                     Uuidm.pp
                     work_manifest_id);
-              Abbs_future_combinators.return_err (`Noop state))
+              Abbs_fc.return_err (`Noop state))
       | ( St.Waiting_for_work_manifest_result,
           Some (I.Work_manifest_result { result = req; p }),
           Some work_manifest_id ) ->
@@ -2923,7 +2911,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 name
                 Uuidm.pp
                 work_manifest_id);
-          Abbs_future_combinators.on_failure
+          Abbs_fc.on_failure
             (fun () ->
               query_work_manifest state.State.request_id (Ctx.storage ctx) work_manifest_id
               >>= function
@@ -2935,14 +2923,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   | Ok () ->
                       Abb.Future.Promise.set p (Ok ())
                       >>= fun () ->
-                      Abbs_future_combinators.return_ok
+                      Abbs_fc.return_ok
                         { state with State.st = St.Initial; input = None; output = None }
                   | Error (`Noop state) ->
                       Abb.Future.Promise.set p (Ok ())
                       >>= fun () ->
-                      Abbs_future_combinators.return_err
-                        (`Noop { state with State.st = St.Initial; input = None })
-                  | Error err -> Abbs_future_combinators.return_err err)
+                      Abbs_fc.return_err (`Noop { state with State.st = St.Initial; input = None })
+                  | Error err -> Abbs_fc.return_err err)
               | Some { Wm.id; state = state'; _ } ->
                   Logs.err (fun m ->
                       m
@@ -2952,7 +2939,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         Uuidm.pp
                         id
                         (Wm.State.to_string state'));
-                  Abbs_future_combinators.return_err `Silent_failure
+                  Abbs_fc.return_err `Silent_failure
               | None ->
                   Logs.err (fun m ->
                       m
@@ -2961,7 +2948,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         name
                         Uuidm.pp
                         work_manifest_id);
-                  Abbs_future_combinators.return_err `Silent_failure)
+                  Abbs_fc.return_err `Silent_failure)
             ~failure:(fun () -> Abb.Future.Promise.set p (Error `Error))
       | _, Some (I.Work_manifest_failure { p }), Some work_manifest_id ->
           Logs.info (fun m ->
@@ -2971,7 +2958,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 name
                 Uuidm.pp
                 work_manifest_id);
-          Abbs_future_combinators.with_finally
+          Abbs_fc.with_finally
             (fun () ->
               query_work_manifest state.State.request_id (Ctx.storage ctx) work_manifest_id
               >>= function
@@ -2983,7 +2970,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     Wm.State.Aborted
                   >>= fun () ->
                   run_failure ctx state `Error work_manifest >>? fun () -> Error (`Noop state)
-              | Some _ -> Abbs_future_combinators.return_err (`Noop state)
+              | Some _ -> Abbs_fc.return_err (`Noop state)
               | None ->
                   Logs.err (fun m ->
                       m
@@ -2992,14 +2979,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         name
                         Uuidm.pp
                         work_manifest_id);
-                  Abbs_future_combinators.return_err `Silent_failure)
+                  Abbs_fc.return_err `Silent_failure)
             ~finally:(fun () -> Abb.Future.Promise.set p (Ok ()))
       | _, _, _ -> fallthrough ctx state
 
     let eval_plan_work_manifest_iter ~store ~fetch ~fallthrough ctx state =
       let module St = State.St in
       let module I = State.Io.I in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match (state.State.st, state.State.input, state.State.work_manifest_id) with
       | ( St.Waiting_for_work_manifest_result,
           Some (I.Plan_store { dirspace; data; has_changes; p }),
@@ -3008,8 +2995,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun () ->
           let open Abb.Future.Infix_monad in
           Abb.Future.Promise.set p (Ok ())
-          >>= fun () ->
-          Abbs_future_combinators.return_err (`Yield { state with State.input = None })
+          >>= fun () -> Abbs_fc.return_err (`Yield { state with State.input = None })
       | ( St.Waiting_for_work_manifest_result,
           Some (I.Plan_fetch { dirspace; p }),
           Some work_manifest_id ) ->
@@ -3017,14 +3003,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun data ->
           let open Abb.Future.Infix_monad in
           Abb.Future.Promise.set p (Ok data)
-          >>= fun () ->
-          Abbs_future_combinators.return_err
-            (`Yield { state with State.input = None; output = None })
+          >>= fun () -> Abbs_fc.return_err (`Yield { state with State.input = None; output = None })
       | _, _, _ -> fallthrough ctx state
 
     let initiate_work_manifest state request_id db run_id sha =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       function
       | { Wm.id; branch_ref; state = Wm.State.(Queued | Running); _ }
         when CCString.equal branch_ref sha -> (
@@ -3034,7 +3018,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>= fun () ->
           query_work_manifest request_id db id
           >>= function
-          | Some wm -> Abbs_future_combinators.return_ok (Some wm)
+          | Some wm -> Abbs_fc.return_ok (Some wm)
           | None -> assert false)
       | { Wm.id; branch_ref; state = Wm.State.(Queued | Running); _ } ->
           Logs.info (fun m ->
@@ -3057,7 +3041,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 (Wm.State.to_string state')
                 branch_ref
                 sha);
-          Abbs_future_combinators.return_ok None
+          Abbs_fc.return_ok None
 
     let match_tag_queries ~accessor ~changes queries =
       CCList.map
@@ -3079,7 +3063,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | `Result_handling_err ->
           (* Only produced by the v2 evaluator, where whoever failed has already
              published its own message. *)
-          Abbs_future_combinators.return_ok ()
+          Abbs_fc.return_ok ()
       | `Job_failed run_id ->
           publish_msg request_id client user pull_request (Msg.Work_manifest_run_failed { run_id })
       | (`Failed_to_start_with_msg_err _ | `Missing_workflow | `Failed_to_start) as err ->
@@ -3147,8 +3131,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let generate_index_run_dirs ctx state wm =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun client repo_config repo_tree base_branch_name branch_name ->
           (client, repo_config, repo_tree, base_branch_name, branch_name))
         <$> Dv.client ctx state
@@ -3183,7 +3167,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>= fun config ->
       let tag_query = wm.Wm.tag_query in
       Abbs_time_it.run (log_time state.State.request_id "MATCH_DIFF_LIST") (fun () ->
-          Abbs_future_combinators.to_result
+          Abbs_fc.to_result
           @@ Abb.Thread.run (fun () ->
               CCList.filter
                 (Terrat_change_match3.match_tag_query ~tag_query)
@@ -3206,7 +3190,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       { wm with Wm.changes }
 
     let create_token installation_id work_manifest_id db =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Terrat_user.create_system_user
         ~access_token_id:work_manifest_id
         ~capabilities:
@@ -3223,7 +3207,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let generate_index_work_manifest_initiate ctx state _encryption_key run_id sha work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       initiate_work_manifest state state.State.request_id (Ctx.storage ctx) run_id sha work_manifest
       >>= function
       | Some
@@ -3287,11 +3271,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               }
           in
           Some response
-      | Some _ | None -> Abbs_future_combinators.return_ok None
+      | Some _ | None -> Abbs_fc.return_ok None
 
     let generate_index_work_manifest_result ctx state result work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match result with
       | Terrat_api_components.Work_manifest_result.Work_manifest_index_result index ->
           store_index_result state.State.request_id (Ctx.storage ctx) work_manifest.Wm.id index
@@ -3362,7 +3346,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           (S.Api.Pull_request.repo pull_request)
           (S.Api.Pull_request.branch_ref pull_request)
           checks
-      else Abbs_future_combinators.return_ok ()
+      else Abbs_fc.return_ok ()
 
     (* Partitions a dirspaceflows by a few attributes:
 
@@ -3417,7 +3401,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         status =
       let module Wm = Terrat_work_manifest3 in
       match work_manifest.Wm.changes with
-      | [] -> Abbs_future_combinators.return_ok ()
+      | [] -> Abbs_fc.return_ok ()
       | dirspaces ->
           let run_type =
             match CCList.rev work_manifest.Wm.steps with
@@ -3583,7 +3567,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         apply_requirements =
       let module Ar = Terrat_base_repo_config_v1.Apply_requirements in
       if apply_requirements.Ar.create_pending_apply_check then
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         fetch_commit_checks request_id client repo ref_
         >>= fun commit_checks ->
         let commit_check_titles =
@@ -3637,12 +3621,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           repo
           ref_
           (missing_apply_check @ missing_commit_checks)
-      else Abbs_future_combinators.return_ok ()
+      else Abbs_fc.return_ok ()
 
     let run_drift_plan_op_work_manifest_iter_create ctx state =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun repo_config base_ref branch_ref working_branch_ref matches ->
           (repo_config, base_ref, branch_ref, working_branch_ref, matches))
         <$> Dv.repo_config ctx state
@@ -3673,7 +3657,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dirspaceflows_by_run_params =
         partition_by_run_params ~max_workspaces_per_batch all_dirspaceflows
       in
-      Abbs_future_combinators.List_result.map
+      Abbs_fc.List_result.map
         ~f:(fun ((environment, runs_on), dirspaceflows) ->
           let changes =
             let module Dsf = Terrat_change.Dirspaceflow in
@@ -3744,8 +3728,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let run_drift_plan_op_work_manifest_iter_update ctx state work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun repo_config base_ref branch_ref working_branch_ref matches ->
           (repo_config, base_ref, branch_ref, working_branch_ref, matches))
         <$> Dv.repo_config ctx state
@@ -3776,7 +3760,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dirspaceflows_by_run_params =
         partition_by_run_params ~max_workspaces_per_batch all_dirspaceflows
       in
-      Abbs_future_combinators.List_result.map
+      Abbs_fc.List_result.map
         ~f:(fun ((environment, runs_on), dirspaceflows) ->
           let changes =
             let module Dsf = Terrat_change.Dirspaceflow in
@@ -3899,8 +3883,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | `Apply | `Apply_autoapprove | `Stack_auto_apply ->
           Prmths.Counter.inc_one (Terrat_metrics.apply_total ~force:"false")
       | `Plan -> ());
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun repo_config base_ref branch_ref working_branch_ref matches access_control_results ->
           (repo_config, base_ref, branch_ref, working_branch_ref, matches, access_control_results))
         <$> Dv.repo_config ctx state
@@ -3952,7 +3936,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dirspaceflows_by_run_params =
         partition_by_run_params ~max_workspaces_per_batch dirspaceflows
       in
-      Abbs_future_combinators.List_result.map
+      Abbs_fc.List_result.map
         ~f:(fun ((environment, runs_on), dirspaceflows) ->
           let changes =
             let module Dsf = Terrat_change.Dirspaceflow in
@@ -4023,8 +4007,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let run_op_work_manifest_iter_update op ctx state work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun repo_config base_ref branch_ref working_branch_ref matches access_control_results ->
           (repo_config, base_ref, branch_ref, working_branch_ref, matches, access_control_results))
         <$> Dv.repo_config ctx state
@@ -4076,7 +4060,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dirspaceflows_by_run_params =
         partition_by_run_params ~max_workspaces_per_batch dirspaceflows
       in
-      Abbs_future_combinators.List_result.map
+      Abbs_fc.List_result.map
         ~f:(fun ((environment, runs_on), dirspaceflows) ->
           let changes =
             let module Dsf = Terrat_change.Dirspaceflow in
@@ -4206,13 +4190,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         dirspaceflows_by_run_params
 
     let run_op_work_manifest_iter_run_success op ctx state work_manifest =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       let maybe_publish_autoapply_running request_id client user pull_request = function
         | `Apply | `Apply_autoapprove | `Apply_force ->
             if Event.trigger_type state.State.event = `Auto then
               publish_msg request_id client user pull_request Msg.Autoapply_running
-            else Abbs_future_combinators.return_ok ()
-        | `Stack_auto_apply | `Plan -> Abbs_future_combinators.return_ok ()
+            else Abbs_fc.return_ok ()
+        | `Stack_auto_apply | `Plan -> Abbs_fc.return_ok ()
       in
       run_interactive ctx state (fun () ->
           Dv.client ctx state
@@ -4241,7 +4225,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>| fun _ -> ()
 
     let run_op_work_manifest_iter_run_failure ctx state err work_manifest =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       run_interactive ctx state (fun () ->
           Dv.client ctx state
           >>= fun client ->
@@ -4292,7 +4276,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let run_op_work_manifest_iter_initiate ctx state _encryption_key run_id sha work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       initiate_work_manifest state state.State.request_id (Ctx.storage ctx) run_id sha work_manifest
       >>= function
       | Some { Wm.account; id; steps; base_ref = _; branch_ref = _; changes; target; _ } -> (
@@ -4481,11 +4465,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | Wm.Step.Index -> assert false
           | Wm.Step.Build_config -> assert false
           | Wm.Step.Build_tree -> assert false)
-      | None -> Abbs_future_combinators.return_ok None
+      | None -> Abbs_fc.return_ok None
 
     let run_op_work_manifest_iter_result op ctx state result work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       match result with
       | Terrat_api_components_work_manifest_result.Work_manifest_index_result _ -> assert false
       | Terrat_api_components_work_manifest_result.Work_manifest_build_config_result _ ->
@@ -4528,8 +4512,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                  >>= fun account_status ->
                  (* TODO: HUGE HACK, redo this later *)
                  let run =
-                   let open Abbs_future_combinators.Infix_result_monad in
-                   Abbs_future_combinators.Infix_result_app.(
+                   let open Abbs_fc.Infix_result_monad in
+                   Abbs_fc.Infix_result_app.(
                      (fun client pull_request repo_config repo_tree ->
                        (client, pull_request, repo_config, repo_tree))
                      <$> Dv.client ctx state
@@ -4612,7 +4596,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         work_manifest;
                       })
                  >>| fun () -> state)
-           else Abbs_future_combinators.return_ok state)
+           else Abbs_fc.return_ok state)
           >>? fun state ->
           let module Wmr = Terrat_vcs_provider2.Work_manifest_result in
           if not work_manifest_result.Wmr.overall_success then
@@ -4643,7 +4627,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                    work_manifest
                    work_manifest_result
                  >>| fun () -> state)
-           else Abbs_future_combinators.return_ok state)
+           else Abbs_fc.return_ok state)
           >>? fun state ->
           let module Wmr = Terrat_vcs_provider2.Work_manifest_result in
           if not work_manifest_result.Wmr.overall_success then
@@ -4685,13 +4669,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
        If the goal is to reset context (for example caches), look at returning a
        [`Reset_ctx], which resets the context and resets caches. *)
-    let checkpoint _ctx state = Abbs_future_combinators.return_err (`Checkpoint state)
+    let checkpoint _ctx state = Abbs_fc.return_err (`Checkpoint state)
 
     let wait_for_initiate _ctx state =
       match state.State.input with
-      | Some (State.Io.I.Work_manifest_initiate _) -> Abbs_future_combinators.return_ok state
+      | Some (State.Io.I.Work_manifest_initiate _) -> Abbs_fc.return_ok state
       | _ ->
-          Abbs_future_combinators.return_err
+          Abbs_fc.return_err
             (`Yield { state with State.st = State.St.Waiting_for_work_manifest_initiate })
 
     let store_account_repository ctx state =
@@ -4703,16 +4687,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Pull_request_comment { account; repo; _ }
       | Event.Push { account; repo; _ }
       | Event.Run_drift { account; repo; _ } ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           store_account_repository state.State.request_id (Ctx.storage ctx) account repo
           >>? fun () ->
           (* Checkpoint here so that we do not hold up any other runs for this
              repository with a db lock *)
           Error (`Checkpoint state)
-      | Event.Run_scheduled_drift -> Abbs_future_combinators.return_ok state
+      | Event.Run_scheduled_drift -> Abbs_fc.return_ok state
 
     let test_account_status ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       query_account_status
         state.State.request_id
         (Ctx.storage ctx)
@@ -4725,7 +4709,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let account_disabled _ state =
       Prmths.Counter.inc_one Metrics.op_on_account_disabled_total;
       Logs.info (fun m -> m "%s : ACCOUNT_DISABLED" state.State.request_id);
-      Abbs_future_combinators.return_err (`Noop state)
+      Abbs_fc.return_err (`Noop state)
 
     let test_event_kind _ctx state =
       match state.State.event with
@@ -4735,28 +4719,27 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Pull_request_ready_for_review _
       | Event.Pull_request_comment
           { comment = Terrat_comment.(Plan _ | Apply _ | Apply_autoapprove _ | Apply_force _); _ }
-        -> Abbs_future_combinators.return_ok (Id.Event_kind_op, state)
+        -> Abbs_fc.return_ok (Id.Event_kind_op, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Help; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_help, state)
+          Abbs_fc.return_ok (Id.Event_kind_help, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Unlock _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_unlock, state)
+          Abbs_fc.return_ok (Id.Event_kind_unlock, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Repo_config; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_repo_config, state)
+          Abbs_fc.return_ok (Id.Event_kind_repo_config, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Feedback _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_feedback, state)
+          Abbs_fc.return_ok (Id.Event_kind_feedback, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Index; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_index, state)
+          Abbs_fc.return_ok (Id.Event_kind_index, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Gate_approval _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_gate_approval, state)
-      | Event.Push _ -> Abbs_future_combinators.return_ok (Id.Event_kind_push, state)
-      | Event.Run_scheduled_drift ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_run_drift, state)
+          Abbs_fc.return_ok (Id.Event_kind_gate_approval, state)
+      | Event.Push _ -> Abbs_fc.return_ok (Id.Event_kind_push, state)
+      | Event.Run_scheduled_drift -> Abbs_fc.return_ok (Id.Event_kind_run_drift, state)
       | Event.Run_drift _ ->
           (* This event type is only created internally *)
           assert false
 
     let test_index_required ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>= fun repo_config ->
       Dv.query_index ctx state
@@ -4771,7 +4754,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         ~name:"INDEX"
         ~create:(fun ctx state ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           Dv.client ctx state
@@ -4834,7 +4817,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           [ work_manifest ])
         ~update:(fun ctx state work_manifest ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let work_manifest =
             { work_manifest with Wm.steps = work_manifest.Wm.steps @ [ Wm.Step.Index ] }
           in
@@ -4866,7 +4849,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> [ work_manifest ])
         ~run_success:(fun ctx state work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -4894,7 +4877,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> ())
         ~run_failure:(fun ctx state err work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -4934,7 +4917,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let store_stacks ctx state =
       H.run_interactive ctx state (fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           Dv.repo_config ctx state
@@ -4990,13 +4973,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     (* This is run for its side effect.  If the repo config is not valid, the
        surrounding [eval_step] will publish the error. *)
     let test_repo_config_validity ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state >>| fun _ -> state
 
     let publish_repo_config ctx state =
       let run =
-        let open Abbs_future_combinators.Infix_result_monad in
-        Abbs_future_combinators.Infix_result_app.(
+        let open Abbs_fc.Infix_result_monad in
+        Abbs_fc.Infix_result_app.(
           (fun client pull_request repo_config repo_tree ->
             (client, pull_request, repo_config, repo_tree))
           <$> Dv.client ctx state
@@ -5048,7 +5031,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (Msg.Repo_config (provenance, repo_config))
             >>| fun () -> state
         | Error (#Terrat_change_match3.synthesize_config_err as err) ->
-            Abbs_future_combinators.Result.ignore
+            Abbs_fc.Result.ignore
               (publish_msg
                  state.State.request_id
                  client
@@ -5058,10 +5041,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             >>? fun () -> Error `Error
       in
       let open Abb.Future.Infix_monad in
-      run >>= fun _ -> Abbs_future_combinators.return_ok state
+      run >>= fun _ -> Abbs_fc.return_ok state
 
     let publish_help ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.client ctx state
       >>= fun client ->
       Dv.pull_request ctx state
@@ -5075,7 +5058,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>| fun () -> state
 
     let publish_index ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.client ctx state
       >>= fun client ->
       Dv.pull_request ctx state
@@ -5099,14 +5082,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let check_enabled_in_repo_config ctx state =
       let module V1 = Terrat_base_repo_config_v1 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>? fun repo_config -> if V1.enabled repo_config then Ok state else Error (`Noop state)
 
     let react_to_comment ctx state =
       match state.State.event with
       | Event.Pull_request_comment { comment_id; _ } ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Dv.client ctx state
           >>= fun client ->
           Dv.pull_request ctx state
@@ -5118,11 +5101,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Pull_request_ready_for_review _
       | Event.Push _
       | Event.Run_scheduled_drift
-      | Event.Run_drift _ -> Abbs_future_combinators.return_ok state
+      | Event.Run_drift _ -> Abbs_fc.return_ok state
 
     let test_batch_runs_enabled ctx state =
       let module V1 = Terrat_base_repo_config_v1 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>| fun repo_config ->
       let br = V1.batch_runs repo_config in
@@ -5130,7 +5113,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       else (Id.Batch_runs_disabled, state)
 
     let store_pull_request ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.client ctx state
       >>= fun _client ->
       Dv.pull_request ctx state
@@ -5150,7 +5133,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 (S.Api.Pull_request.Id.to_string pull_request_id)
                 (S.Api.User.to_string user)
                 feedback);
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | Event.Pull_request_comment _
       | Event.Pull_request_open _
       | Event.Pull_request_close _
@@ -5160,12 +5143,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Run_scheduled_drift
       | Event.Run_drift _ ->
           Logs.err (fun m -> m "%s : NOT_FEEDBACK_COMMENT" state.State.request_id);
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
 
     let complete_work_manifest ctx state =
       let maybe_complete_work_manifest work_manifest_id =
         let module Wm = Terrat_work_manifest3 in
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         query_work_manifest state.State.request_id (Ctx.storage ctx) work_manifest_id
         >>= function
         | Some { Wm.state = Wm.State.(Queued | Running); _ } ->
@@ -5174,11 +5157,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               (Ctx.storage ctx)
               work_manifest_id
               Wm.State.Completed
-        | Some _ | None -> Abbs_future_combinators.return_ok ()
+        | Some _ | None -> Abbs_fc.return_ok ()
       in
       match (state.State.st, state.State.input, state.State.work_manifest_id) with
       | (State.St.Initial | State.St.Work_manifest_completed), _, Some work_manifest_id ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           maybe_complete_work_manifest work_manifest_id
           >>? fun () ->
           Error (`Yield { state with State.st = State.St.Waiting_for_work_manifest_initiate })
@@ -5192,7 +5175,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           let open Abb.Future.Infix_monad in
           Abb.Future.Promise.set p (Ok (Some response))
           >>= fun () ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           maybe_complete_work_manifest work_manifest_id
           >>| fun () ->
           {
@@ -5204,7 +5187,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           }
       | _, Some (State.Io.I.Work_manifest_failure _), _ | _, _, None ->
           (* No work manifest was run so ignore *)
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | _, _, _ ->
           H.log_state_err
             state.State.request_id
@@ -5228,7 +5211,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               unlock_ids
       in
       let run state client pull_request unlock_ids =
-        let open Abbs_future_combinators.Infix_result_monad in
+        let open Abbs_fc.Infix_result_monad in
         Dv.repo_config ctx state
         >>= fun _repo_config ->
         fetch_remote_repo state.State.request_id client repo
@@ -5240,8 +5223,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         >>= function
         | Ok None ->
             Prmths.Counter.inc_one (Metrics.access_control_total ~t:"unlock" ~r:"allowed");
-            let open Abbs_future_combinators.Infix_result_monad in
-            Abbs_future_combinators.List_result.iter
+            let open Abbs_fc.Infix_result_monad in
+            Abbs_fc.List_result.iter
               ~f:(unlock state.State.request_id (Ctx.storage ctx) repo)
               unlock_ids
             >>= fun () ->
@@ -5253,7 +5236,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               Msg.Unlock_success
             >>| fun () -> state
         | Ok (Some match_list) ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Prmths.Counter.inc_one (Metrics.access_control_total ~t:"unlock" ~r:"denied");
             publish_msg
               state.State.request_id
@@ -5264,7 +5247,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                  (Access_control_engine.policy_branch access_control, `Unlock match_list))
             >>| fun () -> state
         | Error `Error ->
-            let open Abbs_future_combinators.Infix_result_monad in
+            let open Abbs_fc.Infix_result_monad in
             Prmths.Counter.inc_one (Metrics.access_control_total ~t:"unlock" ~r:"denied");
             publish_msg
               state.State.request_id
@@ -5275,7 +5258,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                  (Access_control_engine.policy_branch access_control, `Lookup_err))
             >>? fun () -> Error `Error
       in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.client ctx state
       >>= fun client ->
       Dv.pull_request ctx state
@@ -5288,7 +5271,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           run state client pull_request unlock_ids
           >>= function
           | Ok _ as r -> Abb.Future.return r
-          | Error (#Repo_config.fetch_err as err) -> Abbs_future_combinators.return_err err)
+          | Error (#Repo_config.fetch_err as err) -> Abbs_fc.return_err err)
       | Error (`Invalid_unlock_id s) ->
           publish_msg
             state.State.request_id
@@ -5296,7 +5279,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             (S.Api.User.to_string @@ Event.user state.State.event)
             pull_request
             (Msg.Invalid_unlock_id s)
-          >>= fun _ -> Abbs_future_combinators.return_err `Error
+          >>= fun _ -> Abbs_fc.return_err `Error
 
     let test_op_kind _ctx state =
       match state.State.event with
@@ -5304,16 +5287,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Pull_request_sync _
       | Event.Pull_request_ready_for_review _
       | Event.Pull_request_comment { comment = Terrat_comment.Plan _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Op_kind_plan, state)
+          Abbs_fc.return_ok (Id.Op_kind_plan, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Apply _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Op_kind_apply, state)
+          Abbs_fc.return_ok (Id.Op_kind_apply, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Apply_autoapprove _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Op_kind_apply_autoapprove, state)
+          Abbs_fc.return_ok (Id.Op_kind_apply_autoapprove, state)
       | Event.Pull_request_comment { comment = Terrat_comment.Apply_force _; _ } ->
-          Abbs_future_combinators.return_ok (Id.Op_kind_apply_force, state)
-      | Event.Pull_request_close _ -> Abbs_future_combinators.return_ok (Id.Op_kind_apply, state)
-      | Event.Run_scheduled_drift ->
-          Abbs_future_combinators.return_ok (Id.Event_kind_run_drift, state)
+          Abbs_fc.return_ok (Id.Op_kind_apply_force, state)
+      | Event.Pull_request_close _ -> Abbs_fc.return_ok (Id.Op_kind_apply, state)
+      | Event.Run_scheduled_drift -> Abbs_fc.return_ok (Id.Event_kind_run_drift, state)
       | Event.Pull_request_comment
           {
             comment =
@@ -5323,7 +5305,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Push _ | Event.Run_drift _ -> assert false
 
     let check_pull_request_state ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.pull_request ctx state
       >>= fun pull_request ->
       match S.Api.Pull_request.state pull_request with
@@ -5347,17 +5329,17 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           in
           create_commit_checks state.State.request_id client repo ref_ unfinished_checks
           >>? fun () -> Error (`Noop state)
-      | Terrat_pull_request.State.(Open | Merged _) -> Abbs_future_combinators.return_ok state
+      | Terrat_pull_request.State.(Open | Merged _) -> Abbs_fc.return_ok state
 
     let check_non_empty_matches ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.access_control_results ctx state `Plan
       >>= fun { Terrat_access_control2.R.pass = working_set_matches; _ } ->
       let trigger_type = Event.trigger_type state.State.event in
       match (working_set_matches, trigger_type) with
       | [], `Auto ->
           Logs.info (fun m -> m "%s : NOOP : AUTOPLAN_NO_MATCHES" state.State.request_id);
-          Abbs_future_combinators.Infix_result_app.(
+          Abbs_fc.Infix_result_app.(
             (fun pull_request repo_config matches base_ref branch_ref ->
               (pull_request, repo_config, matches, base_ref, branch_ref))
             <$> Dv.pull_request ctx state
@@ -5395,7 +5377,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                repo_config
                (Event.repo state.State.event)
                pull_request
-           else Abbs_future_combinators.return_ok ())
+           else Abbs_fc.return_ok ())
           >>? fun () -> Error (`Noop state)
       | [], `Manual ->
           Logs.info (fun m -> m "%s : PLAN_NO_MATCHING_DIRSPACES" state.State.request_id);
@@ -5412,23 +5394,23 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             pull_request
             (Msg.Plan_no_matching_dirspaces tag_query)
           >>? fun () -> Error (`Noop state)
-      | _ :: _, _ -> Abbs_future_combinators.return_ok state
+      | _ :: _, _ -> Abbs_fc.return_ok state
 
     let check_account_status_expired ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       query_account_status
         state.State.request_id
         (Ctx.storage ctx)
         (Event.account state.State.event)
       >>= function
-      | `Active -> Abbs_future_combinators.return_ok state
+      | `Active -> Abbs_fc.return_ok state
       | `Trial_ending duration ->
           Logs.info (fun m ->
               m
                 "EVALUATOR ; %s : TRIAL_ENDING : days=%d"
                 state.State.request_id
                 (Duration.to_day duration));
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | `Expired | `Disabled ->
           Logs.info (fun m -> m "%s : ACCOUNT_EXPIRED" state.State.request_id);
           Dv.client ctx state
@@ -5444,7 +5426,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>? fun () -> Error (`Noop state)
 
     let check_account_tier ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       H.run_interactive ctx state (fun () ->
           let user = Event.user state.State.event in
           let account = Event.account state.State.event in
@@ -5459,7 +5441,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     time))
             (fun () -> S.Tier.check ~request_id:state.State.request_id user account ctx.Ctx.storage)
           >>= function
-          | None -> Abbs_future_combinators.return_ok state
+          | None -> Abbs_fc.return_ok state
           | Some checks ->
               Dv.client ctx state
               >>= fun client ->
@@ -5474,8 +5456,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>? fun () -> Error `Silent_failure)
 
     let check_access_control_ci_change ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun access_control pull_request -> (access_control, pull_request))
         <$> Dv.access_control ctx state
         <*> Dv.pull_request ctx state)
@@ -5483,9 +5465,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let open Abb.Future.Infix_monad in
       Access_control_engine.eval_ci_change access_control (S.Api.Pull_request.diff pull_request)
       >>= function
-      | Ok None -> Abbs_future_combinators.return_ok state
+      | Ok None -> Abbs_fc.return_ok state
       | Ok (Some match_list) ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Dv.client ctx state
           >>= fun client ->
           publish_msg
@@ -5497,8 +5479,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                (Access_control_engine.policy_branch access_control, `Ci_config_update match_list))
           >>? fun () -> Error (`Noop state)
       | Error `Error ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5513,8 +5495,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>? fun () -> Error (`Noop state)
 
     let check_access_control_files ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun access_control pull_request -> (access_control, pull_request))
         <$> Dv.access_control ctx state
         <*> Dv.pull_request ctx state)
@@ -5522,9 +5504,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let open Abb.Future.Infix_monad in
       Access_control_engine.eval_files access_control (S.Api.Pull_request.diff pull_request)
       >>= function
-      | Ok None -> Abbs_future_combinators.return_ok state
+      | Ok None -> Abbs_fc.return_ok state
       | Ok (Some (fname, match_list)) ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Dv.client ctx state
           >>= fun client ->
           publish_msg
@@ -5536,8 +5518,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                (Access_control_engine.policy_branch access_control, `Files (fname, match_list)))
           >>? fun () -> Error (`Noop state)
       | Error `Error ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5552,8 +5534,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>? fun () -> Error (`Noop state)
 
     let check_access_control_repo_config ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun access_control pull_request -> (access_control, pull_request))
         <$> Dv.access_control ctx state
         <*> Dv.pull_request ctx state)
@@ -5561,9 +5543,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let open Abb.Future.Infix_monad in
       Access_control_engine.eval_repo_config access_control (S.Api.Pull_request.diff pull_request)
       >>= function
-      | Ok None -> Abbs_future_combinators.return_ok state
+      | Ok None -> Abbs_fc.return_ok state
       | Ok (Some match_list) ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Dv.client ctx state
           >>= fun client ->
           publish_msg
@@ -5576,8 +5558,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                  `Terrateam_config_update match_list ))
           >>? fun () -> Error (`Noop state)
       | Error `Error ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5662,8 +5644,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       in
       let module Rc = Terrat_base_repo_config_v1 in
       let module Ds = Rc.Destination_branches.Destination_branch in
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun client pull_request repo_config -> (client, pull_request, repo_config))
         <$> Dv.client ctx state
         <*> Dv.pull_request ctx state
@@ -5682,7 +5664,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let dest_branch = CCString.lowercase_ascii (S.Api.Ref.to_string base_branch_name) in
       let source_branch = CCString.lowercase_ascii (S.Api.Ref.to_string branch_name) in
       match eval_destination_branch_match dest_branch source_branch valid_branches with
-      | Ok () -> Abbs_future_combinators.return_ok state
+      | Ok () -> Abbs_fc.return_ok state
       | Error `No_matching_dest_branch -> (
           match Event.trigger_type state.State.event with
           | `Auto ->
@@ -5691,9 +5673,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     "%s : DEST_BRANCH_NOT_VALID : branch=%s"
                     state.State.request_id
                     (S.Api.Ref.to_string base_branch_name));
-              Abbs_future_combinators.return_err (`Noop state)
+              Abbs_fc.return_err (`Noop state)
           | `Manual ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               Logs.info (fun m ->
                   m
                     "%s : DEST_BRANCH_NOT_VALID_BRANCH_EXPLICIT : branch=%s"
@@ -5714,9 +5696,9 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     "%s : SOURCE_BRANCH_NOT_VALID : branch=%s"
                     state.State.request_id
                     (S.Api.Ref.to_string branch_name));
-              Abbs_future_combinators.return_err (`Noop state)
+              Abbs_fc.return_err (`Noop state)
           | `Manual ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               Logs.info (fun m ->
                   m
                     "%s : SOURCE_BRANCH_NOT_VALID_BRANCH_EXPLICIT : branch=%s"
@@ -5731,7 +5713,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>? fun () -> Error (`Noop state))
 
     let check_access_control_plan ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.access_control ctx state
       >>= fun access_control ->
       let open Abb.Future.Infix_monad in
@@ -5739,8 +5721,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       >>= function
       | Ok { Terrat_access_control2.R.pass = []; deny = _ :: _ as deny }
         when not (Access_control_engine.plan_require_all_dirspace_access access_control) ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5756,10 +5738,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Ok { Terrat_access_control2.R.pass = _; deny }
         when CCList.is_empty deny
              || not (Access_control_engine.plan_require_all_dirspace_access access_control) ->
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | Ok { Terrat_access_control2.R.deny; _ } ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5773,8 +5755,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                (Access_control_engine.policy_branch access_control, `Dirspaces deny))
           >>? fun () -> Error (`Noop state)
       | Error `Error ->
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request -> (client, pull_request))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state)
@@ -5788,10 +5770,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                (Access_control_engine.policy_branch access_control, `Lookup_err))
           >>? fun () -> Error (`Noop state)
       | Error ((#Repo_config.fetch_err | #Terrat_change_match3.synthesize_config_err) as err) ->
-          Abbs_future_combinators.return_err err
+          Abbs_fc.return_err err
 
     let check_merge_conflict ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.pull_request ctx state
       >>= fun pull_request ->
       match S.Api.Pull_request.state pull_request with
@@ -5806,7 +5788,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             (S.Api.Pull_request.id pull_request)
             client
           >>= function
-          | Some true -> Abbs_future_combinators.return_ok state
+          | Some true -> Abbs_fc.return_ok state
           | Some false | None ->
               Logs.info (fun m -> m "%s : MERGE_CONFLICT" state.State.request_id);
               publish_msg
@@ -5817,11 +5799,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 Msg.Pull_request_not_mergeable
               >>? fun () -> Error (`Noop state))
       | Terrat_pull_request.State.Closed | Terrat_pull_request.State.Merged _ ->
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
 
     let check_conflicting_work_manifests op ctx state =
       let module Vcs = Terrat_vcs_provider2 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.pull_request ctx state
       >>= fun pull_request ->
       Dv.access_control_results ctx state op
@@ -5843,7 +5825,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         dirspaces
         unified_op
       >>= function
-      | None -> Abbs_future_combinators.return_ok state
+      | None -> Abbs_fc.return_ok state
       | Some (Vcs.Conflicting_work_manifests.Conflicting wms) ->
           Dv.client ctx state
           >>= fun client ->
@@ -5899,10 +5881,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let check_gates op ctx state =
       match op with
-      | `Apply_force -> Abbs_future_combinators.return_ok state
+      | `Apply_force -> Abbs_fc.return_ok state
       | _ -> (
-          let open Abbs_future_combinators.Infix_result_monad in
-          Abbs_future_combinators.Infix_result_app.(
+          let open Abbs_fc.Infix_result_monad in
+          Abbs_fc.Infix_result_app.(
             (fun client pull_request matches -> (client, pull_request, matches))
             <$> Dv.client ctx state
             <*> Dv.pull_request ctx state
@@ -5914,7 +5896,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           in
           eval_gate ~request_id:state.State.request_id client dirspaces pull_request ctx.Ctx.storage
           >>= function
-          | [] -> Abbs_future_combinators.return_ok state
+          | [] -> Abbs_fc.return_ok state
           | denied ->
               publish_msg
                 state.State.request_id
@@ -5925,7 +5907,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>? fun () -> Error `Silent_failure)
 
     let check_access_control_apply op ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.apply_requirements ctx state op
       >>= fun apply_requirements ->
       let access_control_run_type =
@@ -5937,7 +5919,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                  (S.Apply_requirements.Result.approved_reviews apply_requirements))
         | (`Apply_autoapprove | `Apply_force | `Plan) as op -> op
       in
-      Abbs_future_combinators.Infix_result_app.(
+      Abbs_fc.Infix_result_app.(
         (fun access_control matches client pull_request access_control_result ->
           (access_control, matches, client, pull_request, access_control_result))
         <$> Dv.access_control ctx state
@@ -5974,7 +5956,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | { Terrat_access_control2.R.pass = _; deny }
         when CCList.is_empty deny
              || not (Access_control_engine.apply_require_all_dirspace_access access_control) ->
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | { Terrat_access_control2.R.deny; _ } ->
           publish_msg
             state.State.request_id
@@ -5986,14 +5968,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>? fun () -> Error (`Noop state)
 
     let check_non_empty_matches_apply op ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.access_control_results ctx state op
       >>= fun { Terrat_access_control2.R.pass = working_set_matches; _ } ->
       let trigger_type = Event.trigger_type state.State.event in
       match (op, working_set_matches, trigger_type) with
       | `Stack_auto_apply, [], _ | _, [], `Auto ->
           Logs.info (fun m -> m "%s : NOOP : AUTOAPPLY_NO_MATCHES" state.State.request_id);
-          Abbs_future_combinators.return_err (`Noop state)
+          Abbs_fc.return_err (`Noop state)
       | _, [], _ ->
           Logs.info (fun m -> m "%s : NOOP : APPLY_NO_MATCHING_DIRSPACES" state.State.request_id);
           Dv.client ctx state
@@ -6009,11 +5991,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             pull_request
             (Msg.Apply_no_matching_dirspaces tag_query)
           >>? fun () -> Error (`Noop state)
-      | _, _ :: _, _ -> Abbs_future_combinators.return_ok state
+      | _, _ :: _, _ -> Abbs_fc.return_ok state
 
     let check_dirspaces_owned_by_other_pull_requests op ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
-      Abbs_future_combinators.Infix_result_app.(
+      let open Abbs_fc.Infix_result_monad in
+      Abbs_fc.Infix_result_app.(
         (fun repo_config pull_request matches -> (repo_config, pull_request, matches))
         <$> Dv.repo_config ctx state
         <*> Dv.pull_request ctx state
@@ -6028,7 +6010,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         pull_request
         (CCList.map Terrat_change.Dirspaceflow.to_dirspace all_match_dirspaceflows)
       >>= function
-      | [] -> Abbs_future_combinators.return_ok state
+      | [] -> Abbs_fc.return_ok state
       | owned_dirspaces ->
           Dv.client ctx state
           >>= fun client ->
@@ -6041,7 +6023,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>? fun () -> Error (`Noop state)
 
     let check_dirspaces_missing_plans op ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.pull_request ctx state
       >>= fun pull_request ->
       Dv.branch_ref ctx state
@@ -6060,7 +6042,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
            (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } -> dirspace)
            working_set_matches)
       >>= function
-      | [] -> Abbs_future_combinators.return_ok state
+      | [] -> Abbs_fc.return_ok state
       | dirspaces ->
           Dv.client ctx state
           >>= fun client ->
@@ -6089,7 +6071,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
     let check_all_dirspaces_applied op ctx state =
       let automerge_config = Terrat_base_repo_config_v1.automerge in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.matches ctx state op
       >>= fun matches ->
       match (state.State.work_manifest_id, matches.Dv.Matches.all_unapplied_matches) with
@@ -6154,13 +6136,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                         client
                         (S.Api.Pull_request.repo pull_request)
                         (S.Api.Ref.to_string (S.Api.Pull_request.branch_name pull_request))
-                      >>= fun _ -> Abbs_future_combinators.return_ok state
-                    else Abbs_future_combinators.return_ok state
+                      >>= fun _ -> Abbs_fc.return_ok state
+                    else Abbs_fc.return_ok state
                 | Error (`Merge_err reason) ->
                     H.maybe_publish_msg ctx state (Msg.Automerge_failure (pull_request, reason))
-                    >>= fun () -> Abbs_future_combinators.return_ok state
+                    >>= fun () -> Abbs_fc.return_ok state
                 | Error `Error as err -> Abb.Future.return err
-              else Abbs_future_combinators.return_ok state
+              else Abbs_fc.return_ok state
           | None -> assert false)
       | Some work_manifest_id, unapplied_dirspaces ->
           let module Dsc = Terrat_change_match3.Dirspace_config in
@@ -6176,18 +6158,18 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       (fun { Dsc.dirspace = { Terrat_dirspace.dir; workspace }; _ } ->
                         dir ^ ":" ^ workspace)
                       (CCList.flatten unapplied_dirspaces))));
-          Abbs_future_combinators.return_ok state
+          Abbs_fc.return_ok state
       | None, _ -> assert false
 
     let recover_noop_complete_work_manifest ctx state =
       match state.State.work_manifest_id with
-      | None -> Abbs_future_combinators.return_ok state
+      | None -> Abbs_fc.return_ok state
       | Some _ -> complete_work_manifest ctx state
 
     let update_drift_schedule ctx state =
       let module V1 = Terrat_base_repo_config_v1 in
       let module D = Terrat_base_repo_config_v1.Drift in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>= fun repo_config ->
       let { D.enabled; schedules } = V1.drift repo_config in
@@ -6219,7 +6201,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let create_drift_events ctx state =
       match state.State.st with
       | State.St.Initial -> (
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           query_missing_drift_scheduled_runs state.State.request_id (Ctx.storage ctx)
           >>? function
           | [] -> Error (`Noop state)
@@ -6270,7 +6252,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     (S.Api.Repo.to_string repo)
                     (CCOption.map_or ~default:"" Bool.to_string reconcile)
                     (CCOption.map_or ~default:"" Terrat_tag_query.to_string tag_query));
-              Abbs_future_combinators.return_ok { state with State.st = State.St.Initial }
+              Abbs_fc.return_ok { state with State.st = State.St.Initial }
           | _ -> assert false)
       | _ ->
           H.log_state_err
@@ -6278,16 +6260,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
             state.State.st
             state.State.input
             state.State.work_manifest_id;
-          Abbs_future_combinators.return_err `Silent_failure
+          Abbs_fc.return_err `Silent_failure
 
     let run_drift_work_manifest_iter = run_drift_plan_work_manifest_iter
     let run_drift_reconcile_work_manifest_iter = run_apply_work_manifest_iter `Apply
 
     let check_reconcile _ctx state =
       match state.State.event with
-      | Event.Run_drift { reconcile = Some true; _ } -> Abbs_future_combinators.return_ok state
-      | Event.Run_drift { reconcile = Some false | None; _ } ->
-          Abbs_future_combinators.return_err (`Noop state)
+      | Event.Run_drift { reconcile = Some true; _ } -> Abbs_fc.return_ok state
+      | Event.Run_drift { reconcile = Some false | None; _ } -> Abbs_fc.return_err (`Noop state)
       | Event.Pull_request_open _ -> assert false
       | Event.Pull_request_close _ -> assert false
       | Event.Pull_request_sync _ -> assert false
@@ -6297,7 +6278,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       | Event.Run_scheduled_drift -> assert false
 
     let test_config_build_required ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>= fun repo_config ->
       let module V1 = Terrat_base_repo_config_v1 in
@@ -6307,10 +6288,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         >>| function
         | Some _ -> (Id.Config_build_not_required, state)
         | None -> (Id.Config_build_required, state)
-      else Abbs_future_combinators.return_ok (Id.Config_build_not_required, state)
+      else Abbs_fc.return_ok (Id.Config_build_not_required, state)
 
     let test_tree_build_required ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.repo_config ctx state
       >>= fun repo_config ->
       let module V1 = Terrat_base_repo_config_v1 in
@@ -6320,14 +6301,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         >>| function
         | Some _ -> (Id.Tree_build_not_required, state)
         | None -> (Id.Tree_build_required, state)
-      else Abbs_future_combinators.return_ok (Id.Tree_build_not_required, state)
+      else Abbs_fc.return_ok (Id.Tree_build_not_required, state)
 
     let run_tree_builder_work_manifest_iter =
       H.eval_work_manifest_iter
         ~name:"TREE_BUILDER"
         ~create:(fun ctx state ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           Dv.client ctx state
@@ -6390,7 +6371,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           [ work_manifest ])
         ~update:(fun ctx state work_manifest ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let work_manifest =
             { work_manifest with Wm.steps = work_manifest.Wm.steps @ [ Wm.Step.Build_tree ] }
           in
@@ -6422,7 +6403,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> [ work_manifest ])
         ~run_success:(fun ctx state work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -6450,7 +6431,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> ())
         ~run_failure:(fun ctx state err work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -6486,7 +6467,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>| fun _ -> ())
         ~initiate:(fun ctx state _encryption_key run_id sha work_manifest ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.initiate_work_manifest
             state
             state.State.request_id
@@ -6530,12 +6511,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   }
               in
               Some response
-          | Some _ | None -> Abbs_future_combinators.return_ok None)
+          | Some _ | None -> Abbs_fc.return_ok None)
         ~result:(fun ctx state result work_manifest ->
           let module Wmr = Terrat_api_components.Work_manifest_result in
           let module Bt = Terrat_api_components.Work_manifest_build_tree_result in
           let module Bf = Terrat_api_components.Work_manifest_build_result_failure in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let fail msg =
             H.run_interactive ctx state (fun () ->
                 let account = Event.account state.State.event in
@@ -6573,7 +6554,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           in
           match result with
           | Wmr.Work_manifest_build_tree_result { Bt.files } ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               let account = Event.account state.State.event in
               Dv.working_branch_ref ctx state
               >>= fun working_branch_ref' ->
@@ -6611,7 +6592,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   >>| fun () -> state)
               >>| fun _ -> ()
           | Wmr.Work_manifest_build_result_failure { Bf.msg } ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               fail (Msg.Build_tree_failure msg) >>? fun () -> Error (`Noop state)
           | Wmr.Work_manifest_build_config_result _ -> assert false
           | Terrat_api_components_work_manifest_result.Work_manifest_tf_operation_result _ ->
@@ -6626,7 +6607,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         ~name:"CONFIG_BUILDER"
         ~create:(fun ctx state ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let account = Event.account state.State.event in
           let repo = Event.repo state.State.event in
           Dv.client ctx state
@@ -6689,7 +6670,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           [ work_manifest ])
         ~update:(fun ctx state work_manifest ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let work_manifest =
             { work_manifest with Wm.steps = work_manifest.Wm.steps @ [ Wm.Step.Build_config ] }
           in
@@ -6721,7 +6702,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> [ work_manifest ])
         ~run_success:(fun ctx state work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -6749,7 +6730,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               >>| fun () -> state)
           >>| fun _ -> ())
         ~run_failure:(fun ctx state err work_manifest ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.run_interactive ctx state (fun () ->
               let account = Event.account state.State.event in
               let repo = Event.repo state.State.event in
@@ -6785,7 +6766,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           >>| fun _ -> ())
         ~initiate:(fun ctx state _encryption_key run_id sha work_manifest ->
           let module Wm = Terrat_work_manifest3 in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           H.initiate_work_manifest
             state
             state.State.request_id
@@ -6860,12 +6841,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   }
               in
               Some response
-          | Some _ | None -> Abbs_future_combinators.return_ok None)
+          | Some _ | None -> Abbs_fc.return_ok None)
         ~result:(fun ctx state result work_manifest ->
           let module Wmr = Terrat_api_components.Work_manifest_result in
           let module Bc = Terrat_api_components.Work_manifest_build_config_result in
           let module Bf = Terrat_api_components.Work_manifest_build_result_failure in
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           let fail msg =
             H.run_interactive ctx state (fun () ->
                 let account = Event.account state.State.event in
@@ -6908,7 +6889,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
               Abb.Future.return (V1.of_version_1_json config)
               >>= function
               | Ok _ ->
-                  let open Abbs_future_combinators.Infix_result_monad in
+                  let open Abbs_fc.Infix_result_monad in
                   let account = Event.account state.State.event in
                   Dv.repo_config_build_cache_ref ctx state
                   >>= fun build_cache_ref ->
@@ -6946,13 +6927,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       >>| fun () -> state)
                   >>| fun _ -> ()
               | Error (#Terrat_base_repo_config_v1.of_version_1_err as err) ->
-                  let open Abbs_future_combinators.Infix_result_monad in
+                  let open Abbs_fc.Infix_result_monad in
                   fail (Msg.Build_config_err err) >>? fun () -> Error (`Noop state)
               | Error (`Repo_config_schema_err _ as err) ->
-                  let open Abbs_future_combinators.Infix_result_monad in
+                  let open Abbs_fc.Infix_result_monad in
                   fail (Msg.Build_config_err err) >>? fun () -> Error (`Noop state))
           | Wmr.Work_manifest_build_result_failure { Bf.msg } ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               fail (Msg.Build_config_failure msg) >>? fun () -> Error (`Noop state)
           | Wmr.Work_manifest_build_tree_result _ -> assert false
           | Terrat_api_components_work_manifest_result.Work_manifest_tf_operation_result _ ->
@@ -6963,11 +6944,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         ~fallthrough:H.log_state_err_iter
 
     let test_more_layers_to_run op ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.matches ctx state op
       >>= fun matches ->
       match matches.Dv.Matches.working_layer with
-      | [] -> Abbs_future_combinators.return_ok (Id.All_layers_completed, state)
+      | [] -> Abbs_fc.return_ok (Id.All_layers_completed, state)
       | working_layer -> (
           let module Dc = Terrat_change_match3.Dirspace_config in
           let working_layer_dirspaces =
@@ -7006,7 +6987,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                        things being merged in an order we did not anticipate) in
                        which case this also prevents us from getting into an
                        infinite loop. *)
-                    Abbs_future_combinators.return_ok (Id.More_layers_to_run, state)
+                    Abbs_fc.return_ok (Id.More_layers_to_run, state)
                   else if
                     op = `Plan
                     && CCList.exists
@@ -7016,15 +6997,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                               }
                             -> CCOption.get_or ~default:false auto_apply)
                          working_layer
-                  then Abbs_future_combinators.return_ok (Id.Can_run_stack_auto_apply, state)
+                  then Abbs_fc.return_ok (Id.Can_run_stack_auto_apply, state)
                   else
                     (* This does not mean that all layers are completely
                        finished, but it means all layers are done as far as they
                        can be and there are no more layers that can be
                        automatically run. *)
-                    Abbs_future_combinators.return_ok (Id.All_layers_completed, state)
+                    Abbs_fc.return_ok (Id.All_layers_completed, state)
               | None -> assert false)
-          | None -> Abbs_future_combinators.return_ok (Id.More_layers_to_run, state))
+          | None -> Abbs_fc.return_ok (Id.More_layers_to_run, state))
 
     let synthesize_pull_request_sync _ctx state =
       let account = Event.account state.State.event in
@@ -7032,13 +7013,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let repo = Event.repo state.State.event in
       let pull_request_id = Event.pull_request_id state.State.event in
       let event = Event.Pull_request_sync { account; user; repo; pull_request_id } in
-      Abbs_future_combinators.return_ok { state with State.event }
+      Abbs_fc.return_ok { state with State.event }
 
     let complete_no_change_dirspaces ctx state =
       let module Wm = Terrat_work_manifest3 in
       let module Dsf = Terrat_change.Dirspaceflow in
       let module Dc = Terrat_change_match3.Dirspace_config in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       H.run_interactive ctx state (fun () ->
           match state.State.work_manifest_id with
           | Some work_manifest_id -> (
@@ -7082,16 +7063,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   >>= fun ref_ ->
                   create_commit_checks state.State.request_id client repo ref_ checks
                   >>| fun () -> state
-              | None -> Abbs_future_combinators.return_ok state)
-          | None -> Abbs_future_combinators.return_ok state)
+              | None -> Abbs_fc.return_ok state)
+          | None -> Abbs_fc.return_ok state)
 
     let store_gate_approval ctx state =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Dv.pull_request ctx state
       >>= fun pull_request ->
       let approver = S.Api.User.to_string @@ Event.user state.State.event in
       let tokens = Event.gate_approval_tokens state.State.event in
-      Abbs_future_combinators.List_result.iter
+      Abbs_fc.List_result.iter
         ~f:(fun token ->
           store_gate_approval
             ~request_id:state.State.request_id
@@ -7252,8 +7233,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                     ~id:Id.Unset_work_manifest_id
                     ~f:
                       (eval_step (fun _ state ->
-                           Abbs_future_combinators.return_ok
-                             { state with State.work_manifest_id = None }))
+                           Abbs_fc.return_ok { state with State.work_manifest_id = None }))
                     ();
                 ] );
             (Id.Batch_runs_disabled, action []);
@@ -7567,9 +7547,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                            (Id.Op_kind_apply_force, gen (op_kind_apply_flow `Apply_force));
                          ])))))
           ~f:(fun _ _state -> function
-            | `Step_err (_, `Noop state) ->
-                Abbs_future_combinators.return_ok (Id.Recover_noop, state)
-            | _ -> Abbs_future_combinators.return_err `Error)
+            | `Step_err (_, `Noop state) -> Abbs_fc.return_ok (Id.Recover_noop, state)
+            | _ -> Abbs_fc.return_err `Error)
           ~recover:[ (Id.Recover_noop, recover_noop_flow) ])
     in
     let event_kind_run_drift_flow =
@@ -7601,8 +7580,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                    ~id:Id.Unset_work_manifest_id
                    ~f:
                      (eval_step (fun _ state ->
-                          Abbs_future_combinators.return_ok
-                            { state with State.work_manifest_id = None }))
+                          Abbs_fc.return_ok { state with State.work_manifest_id = None }))
                    ();
                  Flow.Step.make ~id:Id.Check_reconcile ~f:(eval_step F.check_reconcile) ();
                  Flow.Step.make
@@ -7615,9 +7593,8 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                    ();
                ])
           ~f:(fun _ _state -> function
-            | `Step_err (_, `Noop state) ->
-                Abbs_future_combinators.return_ok (Id.Recover_noop, state)
-            | _ -> Abbs_future_combinators.return_err `Error)
+            | `Step_err (_, `Noop state) -> Abbs_fc.return_ok (Id.Recover_noop, state)
+            | _ -> Abbs_fc.return_err `Error)
           ~recover:[ (Id.Recover_noop, recover_noop_flow) ])
     in
     let event_kind_push_flow =
@@ -7718,7 +7695,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
          create a new request ID before resuming a run, ensuring it gets a
          unique value. *)
       let request_id' = Ouuid.to_string (Ouuid.v4 ()) in
-      Abbs_future_combinators.with_finally
+      Abbs_fc.with_finally
         (fun () ->
           Logs.info (fun m ->
               m
@@ -7740,15 +7717,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       let open Abb.Future.Infix_monad in
       Flow.resume ctx resume' flow
       >>= function
-      | (`Success _ | `Failure _) as ret -> Abbs_future_combinators.return_ok [ ret ]
+      | (`Success _ | `Failure _) as ret -> Abbs_fc.return_ok [ ret ]
       | `Yield resume' -> (
           let state = Flow.Yield.state resume' in
           match state.State.output with
           | Some (State.Io.O.Clone states) ->
-              let open Abbs_future_combinators.Infix_result_monad in
+              let open Abbs_fc.Infix_result_monad in
               (* Cloning is used to fan a state out.  The new state's are
                  immediately resumed from where they left off. *)
-              Abbs_future_combinators.List_result.map
+              Abbs_fc.List_result.map
                 ~f:(fun state ->
                   let request_id = Ouuid.to_string (Ouuid.v4 ()) in
                   Logs.info (fun m ->
@@ -7788,15 +7765,15 @@ module Make (S : Terrat_vcs_provider2.S) = struct
           | Some _ | None -> (
               match state.State.work_manifest_id with
               | Some work_manifest_id ->
-                  let open Abbs_future_combinators.Infix_result_monad in
+                  let open Abbs_fc.Infix_result_monad in
                   let data = Flow.Yield.to_string resume' in
                   store_flow_state (Ctx.request_id ctx) (Ctx.storage ctx) work_manifest_id data
                   >>| fun () -> [ `Yield resume' ]
-              | None -> Abbs_future_combinators.return_ok [ `Yield resume' ]))
+              | None -> Abbs_fc.return_ok [ `Yield resume' ]))
 
     let rec run_work_manifests request_id ctx =
       let module Wm = Terrat_work_manifest3 in
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
           Pgsql_io.tx db ~f:(fun () ->
               query_next_pending_work_manifest request_id db
@@ -7819,7 +7796,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       >>= fun _ ->
                       Abb.Future.fork
                         (notify_work_manifest_run_success request_id ctx work_manifest)
-                      >>= fun _ -> Abbs_future_combinators.return_ok `Cont
+                      >>= fun _ -> Abbs_fc.return_ok `Cont
                   | Error err ->
                       update_work_manifest_state
                         request_id
@@ -7829,14 +7806,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       >>= fun _ ->
                       Abb.Future.fork
                         (notify_work_manifest_run_failure request_id ctx work_manifest err)
-                      >>= fun _ -> Abbs_future_combinators.return_ok `Cont)
-              | None -> Abbs_future_combinators.return_ok `Done))
+                      >>= fun _ -> Abbs_fc.return_ok `Cont)
+              | None -> Abbs_fc.return_ok `Done))
       >>= function
       | `Cont -> run_work_manifests request_id ctx
-      | `Done -> Abbs_future_combinators.return_ok ()
+      | `Done -> Abbs_fc.return_ok ()
 
     and resume_raw ctx resume_point update =
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
           Pgsql_io.tx db ~f:(fun () ->
               match resume_point with
@@ -7849,14 +7826,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                       let state = update (Flow.Yield.state resume') in
                       let resume' = Flow.Yield.set_state state resume' in
                       resume_event (Ctx.set_storage db ctx) resume' exec_flow
-                  | None -> Abbs_future_combinators.return_err `Error)
+                  | None -> Abbs_fc.return_err `Error)
               | `Resume resume' ->
                   let state = update (Flow.Yield.state resume') in
                   let resume' = Flow.Yield.set_state state resume' in
                   resume_event (Ctx.set_storage db ctx) resume' exec_flow))
       >>= fun rets ->
       let open Abb.Future.Infix_monad in
-      Abbs_future_combinators.List.map
+      Abbs_fc.List.map
         ~f:(function
           | `Success _ ->
               let open Abb.Future.Infix_monad in
@@ -7864,16 +7841,16 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                 | `Work_manifest work_manifest_id ->
                     Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
                         delete_flow_state (Ctx.request_id ctx) db work_manifest_id)
-                | `Resume _ -> Abbs_future_combinators.return_ok ())
-              >>= fun _ -> Abbs_future_combinators.return_ok ()
+                | `Resume _ -> Abbs_fc.return_ok ())
+              >>= fun _ -> Abbs_fc.return_ok ()
           | `Failure _ ->
               let open Abb.Future.Infix_monad in
               (match resume_point with
                 | `Work_manifest work_manifest_id ->
                     Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
                         delete_flow_state (Ctx.request_id ctx) db work_manifest_id)
-                | `Resume _ -> Abbs_future_combinators.return_ok ())
-              >>= fun _ -> Abbs_future_combinators.return_err `Error
+                | `Resume _ -> Abbs_fc.return_ok ())
+              >>= fun _ -> Abbs_fc.return_err `Error
           | `Yield resume' -> (
               let state = Flow.Yield.state resume' in
               match state with
@@ -7897,27 +7874,26 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   let resume' = Flow.Yield.set_state state resume' in
                   resume_raw ctx (`Resume resume') (fun state ->
                       { state with State.input = Some State.Io.I.Checkpointed; output = None })
-              | _ -> Abbs_future_combinators.return_ok ()))
+              | _ -> Abbs_fc.return_ok ()))
         rets
       >>= fun rets ->
-      let open Abbs_future_combinators.Infix_result_monad in
+      let open Abbs_fc.Infix_result_monad in
       Abb.Future.return (CCResult.flatten_l rets) >>| fun _ -> ()
 
     and resume ctx work_manifest_id update =
-      Abbs_future_combinators.with_finally
+      Abbs_fc.with_finally
         (fun () -> resume_raw ctx (`Work_manifest work_manifest_id) update)
-        ~finally:(fun () ->
-          Abbs_future_combinators.ignore (run_work_manifests (Ctx.request_id ctx) ctx))
+        ~finally:(fun () -> Abbs_fc.ignore (run_work_manifests (Ctx.request_id ctx) ctx))
 
     and notify_work_manifest_run_success _request_id ctx work_manifest =
       let module Wm = Terrat_work_manifest3 in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (resume_raw ctx (`Work_manifest work_manifest.Wm.id) (fun state ->
              { state with State.input = Some State.Io.I.Work_manifest_run_success }))
 
     and notify_work_manifest_run_failure _request_id ctx work_manifest err =
       let module Wm = Terrat_work_manifest3 in
-      Abbs_future_combinators.ignore
+      Abbs_fc.ignore
         (resume_raw ctx (`Work_manifest work_manifest.Wm.id) (fun state ->
              { state with State.input = Some (State.Io.I.Work_manifest_run_failure err) }))
 
@@ -8016,7 +7992,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let run_event ctx event =
     let open Abb.Future.Infix_monad in
     Abb.Future.fork
-      (Abbs_future_combinators.with_finally
+      (Abbs_fc.with_finally
          (fun () ->
            Logs.info (fun m -> m "%s : FLOW : START" (Ctx.request_id ctx));
            let state =
@@ -8033,7 +8009,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
            Runner.resume_raw ctx (`Resume (Flow.yield_of_state state)) CCFun.id)
          ~finally:(fun () ->
            Logs.info (fun m -> m "%s : FLOW : END" (Ctx.request_id ctx));
-           Abbs_future_combinators.ignore (Abb.Future.fork (Runner.run ctx))))
+           Abbs_fc.ignore (Abb.Future.fork (Runner.run ctx))))
     >>= fun _ -> Abb.Future.return ()
 
   let resume_work ctx work_manifest_id update =
@@ -8042,7 +8018,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         | `Det r -> Abb.Future.return r
         | `Aborted ->
             Logs.err (fun m -> m "%s : RUNNER : ABORTED" (Ctx.request_id ctx));
-            Abbs_future_combinators.return_err `Error
+            Abbs_fc.return_err `Error
         | `Exn (exn, bt_opt) ->
             Logs.err (fun m ->
                 m
@@ -8050,13 +8026,13 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                   (Ctx.request_id ctx)
                   (Printexc.to_string exn)
                   (CCOption.map_or ~default:"" Printexc.raw_backtrace_to_string bt_opt));
-            Abbs_future_combinators.return_err `Error)
+            Abbs_fc.return_err `Error)
       (let open Abb.Future.Infix_monad in
-       Abbs_future_combinators.with_finally
+       Abbs_fc.with_finally
          (fun () ->
            Runner.resume ctx work_manifest_id update
            >>= function
-           | Ok () -> Abbs_future_combinators.return_ok ()
+           | Ok () -> Abbs_fc.return_ok ()
            | Error (#Pgsql_pool.err as err) ->
                Logs.err (fun m ->
                    m
@@ -8066,7 +8042,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      work_manifest_id
                      Pgsql_pool.pp_err
                      err);
-               Abbs_future_combinators.return_err `Error
+               Abbs_fc.return_err `Error
            | Error (#Pgsql_io.err as err) ->
                Logs.err (fun m ->
                    m
@@ -8076,7 +8052,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      work_manifest_id
                      Pgsql_io.pp_err
                      err);
-               Abbs_future_combinators.return_err `Error
+               Abbs_fc.return_err `Error
            | Error (#Flow.Yield.of_string_err as err) ->
                Logs.err (fun m ->
                    m
@@ -8086,7 +8062,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      work_manifest_id
                      Flow.Yield.pp_of_string_err
                      err);
-               Abbs_future_combinators.return_err `Error
+               Abbs_fc.return_err `Error
            | Error `Error ->
                Logs.err (fun m ->
                    m
@@ -8094,48 +8070,47 @@ module Make (S : Terrat_vcs_provider2.S) = struct
                      (Ctx.request_id ctx)
                      Uuidm.pp
                      work_manifest_id);
-               Abbs_future_combinators.return_err `Error)
-         ~finally:(fun () -> Abbs_future_combinators.ignore (Abb.Future.fork (Runner.run ctx))))
+               Abbs_fc.return_err `Error)
+         ~finally:(fun () -> Abbs_fc.ignore (Abb.Future.fork (Runner.run ctx))))
 
   (* If the flow future finishes first, fail, otherwise return what the flow's
      promise would return. *)
   let first ?(timeout = 120.0) workflow fut =
     let open Abb.Future.Infix_monad in
-    Abbs_future_combinators.first
-      (Abbs_future_combinators.first (Abb.Sys.sleep timeout >>| fun () -> Error `Timeout) workflow
-      >>= fun (_, other) ->
-      Abb.Future.abort other >>= fun () -> Abbs_future_combinators.return_err `Error)
+    Abbs_fc.first
+      (Abbs_fc.first (Abb.Sys.sleep timeout >>| fun () -> Error `Timeout) workflow
+      >>= fun (_, other) -> Abb.Future.abort other >>= fun () -> Abbs_fc.return_err `Error)
       (fut
       >>= function
-      | Ok r -> Abbs_future_combinators.return_ok r
-      | Error err -> Abbs_future_combinators.return_err err)
+      | Ok r -> Abbs_fc.return_ok r
+      | Error err -> Abbs_fc.return_err err)
     >>= fun (r, _) -> Abb.Future.return r
 
   let run_pull_request_open ~ctx ~account ~user ~repo ~pull_request_id () =
     let open Abb.Future.Infix_monad in
     let event = Event.Pull_request_open { account; user; repo; pull_request_id } in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
   let run_pull_request_close ~ctx ~account ~user ~repo ~pull_request_id () =
     let open Abb.Future.Infix_monad in
     let event = Event.Pull_request_close { account; user; repo; pull_request_id } in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
   let run_pull_request_sync ~ctx ~account ~user ~repo ~pull_request_id () =
     let open Abb.Future.Infix_monad in
     let event = Event.Pull_request_sync { account; user; repo; pull_request_id } in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
   let run_pull_request_ready_for_review ~ctx ~account ~user ~repo ~pull_request_id () =
     let open Abb.Future.Infix_monad in
     let event = Event.Pull_request_ready_for_review { account; user; repo; pull_request_id } in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
@@ -8144,14 +8119,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     let event =
       Event.Pull_request_comment { account; user; comment; repo; pull_request_id; comment_id }
     in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
   let run_push ~ctx ~account ~user ~repo ~branch () =
     let open Abb.Future.Infix_monad in
     let event = Event.Push { account; user; repo; branch } in
-    (run_event ctx event >>= fun _ -> Abbs_future_combinators.return_ok ()
+    (run_event ctx event >>= fun _ -> Abbs_fc.return_ok ()
       : (unit, [ `Error ]) result Abb.Future.t
       :> (unit, [> `Error ]) result Abb.Future.t)
 
@@ -8232,7 +8207,7 @@ module Make (S : Terrat_vcs_provider2.S) = struct
 
   let run_scheduled_drift ctx =
     Logs.info (fun m -> m "%s : SCHEDULED_DRIFT" (Ctx.request_id ctx));
-    Abbs_future_combinators.to_result (run_event ctx Event.Run_scheduled_drift)
+    Abbs_fc.to_result (run_event ctx Event.Run_scheduled_drift)
 
   let run_plan_cleanup ctx =
     let open Abb.Future.Infix_monad in
@@ -8242,11 +8217,11 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       (fun () ->
         Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db -> cleanup_plans (Ctx.request_id ctx) db))
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Error -> Abbs_fc.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : PLAN_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let run_repo_tree_cleanup ctx =
     let open Abb.Future.Infix_monad in
@@ -8258,12 +8233,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
         Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
             cleanup_repo_trees (Ctx.request_id ctx) db))
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Error -> Abbs_fc.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m ->
             m "%s : REPO_TREE_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let run_flow_state_cleanup ctx =
     let open Abb.Future.Infix_monad in
@@ -8271,12 +8246,12 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
         cleanup_flow_states (Ctx.request_id ctx) db)
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Error -> Abbs_fc.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m ->
             m "%s : FLOW_STATE_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 
   let run_repo_config_cleanup ctx =
     let open Abb.Future.Infix_monad in
@@ -8284,10 +8259,10 @@ module Make (S : Terrat_vcs_provider2.S) = struct
     Pgsql_pool.with_conn (Ctx.storage ctx) ~f:(fun db ->
         cleanup_repo_configs (Ctx.request_id ctx) db)
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Error -> Abbs_future_combinators.return_err `Error
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Error -> Abbs_fc.return_err `Error
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m ->
             m "%s : REPO_CONFIG_CLEANUP : %a" (Ctx.request_id ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err `Error
+        Abbs_fc.return_err `Error
 end

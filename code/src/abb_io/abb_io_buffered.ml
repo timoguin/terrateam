@@ -20,7 +20,7 @@ type close_err =
 [@@deriving show, eq]
 
 module Make (Fut : Abb_intf.Future.S) = struct
-  module Fut_comb = Abb_future_combinators.Make (Fut)
+  module Fut_comb = Abb_fc.Make (Fut)
 
   module View = struct
     type t = {

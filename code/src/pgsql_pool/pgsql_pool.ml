@@ -106,7 +106,7 @@ module Server = struct
     let open Abb.Future.Infix_monad in
     (* Don't let a ping eat up the whole pool indefinitely, timeout so we can at
        least make progress, even if it's slow.  *)
-    Abbs_future_combinators.timeout ~timeout:(Abb.Sys.sleep ping_timeout) (Pgsql_io.ping conn)
+    Abbs_fc.timeout ~timeout:(Abb.Sys.sleep ping_timeout) (Pgsql_io.ping conn)
     >>= function
     | `Ok true ->
         Abb.Sys.monotonic ()
@@ -114,7 +114,7 @@ module Server = struct
     | `Ok false | `Timeout -> Pgsql_io.destroy conn >>= fun () -> Abb.Future.return None
 
   let verify_conns t =
-    Abbs_future_combinators.List.fold_left
+    Abbs_fc.List.fold_left
       ~f:(fun t conn ->
         let open Abb.Future.Infix_monad in
         verify_conn conn
@@ -127,7 +127,7 @@ module Server = struct
   let destroy_idle_conns t =
     let open Abb.Future.Infix_monad in
     let num_idle = CCList.length t.conns in
-    Abbs_future_combinators.List.iter
+    Abbs_fc.List.iter
       ~f:(fun { Conn.conn; last_used = _; uses = _ } -> Pgsql_io.destroy conn)
       t.conns
     >>= fun () -> Abb.Future.return { t with conns = []; num_conns = t.num_conns - num_idle }
@@ -135,7 +135,7 @@ module Server = struct
   let reject_waiting t =
     let reqs = Queue.fold (fun acc { Waiting.req } -> req :: acc) [] t.waiting in
     Queue.clear t.waiting;
-    Abbs_future_combinators.List.iter
+    Abbs_fc.List.iter
       ~f:(fun req ->
         let open Abb.Future.Infix_monad in
         deliver_chan req (Error ()) >>= fun _ -> Abb.Future.return ())
@@ -236,7 +236,7 @@ module Server = struct
      timeout) and hand it to the caller. *)
   and create_connection t chan req =
     let open Abb.Future.Infix_monad in
-    Abbs_future_combinators.timeout
+    Abbs_fc.timeout
       ~timeout:(Abb.Sys.sleep t.connect_timeout)
       (Pgsql_io.create
          ?tls_config:t.tls_config
@@ -289,7 +289,7 @@ module Server = struct
     let open Abb.Future.Infix_monad in
     let cleanup : (unit, Pgsql_io.err) result Abb.Future.t =
       if Pgsql_io.has_listens conn.Conn.conn then Pgsql_io.unlisten_all conn.Conn.conn
-      else Abbs_future_combinators.return_ok ()
+      else Abbs_fc.return_ok ()
     in
     cleanup
     >>= function
@@ -341,7 +341,7 @@ module Server = struct
           conn_timeout_check);
     Abb.Sys.monotonic ()
     >>= fun now ->
-    Abbs_future_combinators.List.fold_left
+    Abbs_fc.List.fold_left
       ~f:(fun t ({ Conn.conn; last_used; uses = _ } as c) ->
         let age = now -. last_used in
         Logs.debug (fun m -> m "CONN_TIMEOUT_CHECK : TEST : age=%0.0f" age);
@@ -357,9 +357,8 @@ module Server = struct
 
   (* The request channel closed: tear down by destroying every idle connection. *)
   and handle_shutdown t =
-    Abbs_future_combinators.List.iter
-      ~f:(fun { Conn.conn; last_used = _; uses = _ } ->
-        Abbs_future_combinators.ignore (Pgsql_io.destroy conn))
+    Abbs_fc.List.iter
+      ~f:(fun { Conn.conn; last_used = _; uses = _ } -> Abbs_fc.ignore (Pgsql_io.destroy conn))
       t.conns
 
   let run t chan =
@@ -370,7 +369,7 @@ end
 type t = Msg.t Service.t
 
 let create
-    ?(metrics = fun _ -> Abbs_future_combinators.unit)
+    ?(metrics = fun _ -> Abbs_fc.unit)
     ?(idle_check = Duration.of_min 5)
     ?(conn_timeout_check = Duration.of_min 1)
     ?(max_uses = 10)
@@ -383,7 +382,7 @@ let create
     ~user
     ~max_conns
     database =
-  let on_connect = CCOption.get_or ~default:(fun _ -> Abbs_future_combinators.unit) on_connect in
+  let on_connect = CCOption.get_or ~default:(fun _ -> Abbs_fc.unit) on_connect in
   let t =
     {
       Server.metrics;
@@ -408,7 +407,7 @@ let create
 
 let destroy ?(timeout = Duration.of_sec 30) t =
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.timeout
+  Abbs_fc.timeout
     ~timeout:(Abb.Sys.sleep (Duration.to_f timeout))
     (Service.call t (fun req -> Msg.Destroy req) ())
   >>= function
@@ -421,7 +420,7 @@ let destroy ?(timeout = Duration.of_sec 30) t =
 
 let with_conn t ~f =
   let open Abb.Future.Infix_monad in
-  Abbs_future_combinators.protect_finally
+  Abbs_fc.protect_finally
     ~setup:(fun () ->
       Abb.Sys.monotonic ()
       >>= fun queued_at ->
@@ -433,12 +432,12 @@ let with_conn t ~f =
       | Ok conn ->
           Logs.debug (fun m -> m "GET : %s" (Uuidm.to_string @@ Pgsql_io.id conn.Conn.conn));
           f conn.Conn.conn
-      | Error () -> Abbs_future_combinators.return_err `Pgsql_pool_error)
+      | Error () -> Abbs_fc.return_err `Pgsql_pool_error)
     ~finally:(function
       | Ok conn -> (
           Logs.debug (fun m -> m "RETURN : %s" (Uuidm.to_string @@ Pgsql_io.id conn.Conn.conn));
           Service.notify t (Msg.Return conn)
           >>= function
           | Ok () -> Abb.Future.return ()
-          | Error `Chan_closed -> Abbs_future_combinators.ignore (Pgsql_io.destroy conn.Conn.conn))
+          | Error `Chan_closed -> Abbs_fc.ignore (Pgsql_io.destroy conn.Conn.conn))
       | Error () -> Abb.Future.return ())

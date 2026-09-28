@@ -1,4 +1,4 @@
-module Irm = Abbs_future_combinators.Infix_result_monad
+module Irm = Abbs_fc.Infix_result_monad
 module Tjc = Terrat_job_context
 
 let unreasonable_number_of_aborts = 10
@@ -27,7 +27,7 @@ struct
   let publish_comment' f msg = Tasks_base.publish_comment' f msg
 
   let create_token installation_id work_manifest_id db =
-    let open Abbs_future_combinators.Infix_result_monad in
+    let open Abbs_fc.Infix_result_monad in
     Terrat_user.create_system_user
       ~access_token_id:work_manifest_id
       ~capabilities:
@@ -47,7 +47,7 @@ struct
     | Ok _ as r -> Abb.Future.return r
     | Error (#Terrat_user.Token.to_token_err as err) ->
         Logs.err (fun m -> m "%s : CREATE_TOKEN : %a" log_id Terrat_user.Token.pp_to_token_err err);
-        Abbs_future_combinators.return_err (`Msg_err "CREATE_TOKEN")
+        Abbs_fc.return_err (`Msg_err "CREATE_TOKEN")
 
   let match_tag_queries ~accessor ~changes queries =
     CCList.map
@@ -270,15 +270,15 @@ struct
             >>| function
             | Some _ -> None
             | None -> Some compute_node)
-        | Some _ | None -> Abbs_future_combinators.return_ok None)
-    | None -> Abbs_future_combinators.return_ok None
+        | Some _ | None -> Abbs_fc.return_ok None)
+    | None -> Abbs_fc.return_ok None
 
   (* Give each new work manifest a compute node.  A work manifest joins the
      compute node of this evaluation when that node can take it, and gets a node
      of its own when it cannot. *)
   let make_compute_nodes ~compute_node ~merge_steps ~max_workspaces s wms db =
     let open Irm in
-    Abbs_future_combinators.List_result.iter
+    Abbs_fc.List_result.iter
       ~f:(fun wm ->
         node_that_can_take_it ~merge_steps ~max_workspaces s compute_node wm db
         >>= function
@@ -313,7 +313,7 @@ struct
       (fun m log_id time ->
         m "%s : JOB : ADD_WORK_MANIFESTS : job_id=%a : time=%f" log_id Uuidm.pp job_id time)
       (fun () ->
-        Abbs_future_combinators.List_result.iter
+        Abbs_fc.List_result.iter
           ~f:(fun { Wm.id = work_manifest_id; _ } ->
             S.Job_context.Job.add_work_manifest
               ~request_id:(Builder.log_id s)
@@ -356,7 +356,7 @@ struct
           (Terrat_vcs_provider2.Msg.Work_manifest_run_failed { run_id })
     | `Result_handling_err ->
         (* The evaluation that failed has already published its own message. *)
-        Abbs_future_combinators.return_ok ()
+        Abbs_fc.return_ok ()
     | `Error ->
         (* Dispatching the work manifest failed, so nothing has run and nothing
            else has spoken to the user. *)
@@ -455,16 +455,16 @@ struct
       | Keys.Refs.Pinned_run -> (
           (match membership with
             | Refs { stored; eq = _; steps = _ } -> stored s fetcher
-            | Steps _ -> Abbs_future_combinators.return_ok false)
+            | Steps _ -> Abbs_fc.return_ok false)
           >>= function
           | true ->
               Logs.info (fun m ->
                   m "%s : WM : CREATE : PINNED_STORED : name=%s" (Builder.log_id s) name);
-              Abbs_future_combinators.return_ok []
+              Abbs_fc.return_ok []
           | false ->
               Logs.info (fun m ->
                   m "%s : WM : CREATE : PINNED_NO_CREATE : name=%s" (Builder.log_id s) name);
-              Abbs_future_combinators.return_err (`Suspend_eval name))
+              Abbs_fc.return_err (`Suspend_eval name))
       | Keys.Refs.Live -> (
           Logs.info (fun m -> m "%s : WM : CREATE : name=%s" (Builder.log_id s) name);
           create ~dest_branch_ref ~branch_ref ~branch s fetcher
@@ -472,7 +472,7 @@ struct
           | [] ->
               Logs.info (fun m ->
                   m "%s : WM : CREATE : name=%s : NO_WORK_MANIFESTS" (Builder.log_id s) name);
-              Abbs_future_combinators.return_ok []
+              Abbs_fc.return_ok []
           | wms ->
               CCList.iter
                 (fun {
@@ -537,7 +537,7 @@ struct
     let settle job_wms =
       if too_many_aborts job_wms then (
         Logs.info (fun m -> m "%s : WM : TOO_MANY_ABORTS" (Builder.log_id s));
-        Abbs_future_combinators.return_err (`Compute_aborted_err (num_aborts job_wms)))
+        Abbs_fc.return_err (`Compute_aborted_err (num_aborts job_wms)))
       else
         let slot_wms = CCList.filter in_slot job_wms in
         let live = rem_aborted slot_wms in
@@ -549,21 +549,21 @@ struct
         | [] when aborted <> [] -> (
             (match membership with
               | Steps { superseded; start = _; steps = _ } -> superseded aborted s fetcher
-              | Refs _ -> Abbs_future_combinators.return_ok false)
+              | Refs _ -> Abbs_fc.return_ok false)
             >>= function
             | true ->
                 Logs.info (fun m -> m "%s : WM : SUPERSEDED : name=%s" (Builder.log_id s) name);
-                Abbs_future_combinators.return_err `Noop
+                Abbs_fc.return_err `Noop
             | false -> create_wms ())
         | [] -> create_wms ()
         | live when not (all_wms_completed live) ->
             Logs.info (fun m ->
                 m "%s : WM : SETTLE : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-            Abbs_future_combinators.return_err (`Suspend_eval name)
+            Abbs_fc.return_err (`Suspend_eval name)
         | live when Terrat_data.Dirspace_set.is_empty uncovered ->
             Logs.info (fun m ->
                 m "%s : WM : SETTLE : name=%s : all_wms_completed" (Builder.log_id s) name);
-            Abbs_future_combinators.return_ok live
+            Abbs_fc.return_ok live
         | _ ->
             Logs.info (fun m ->
                 m
@@ -583,11 +583,11 @@ struct
       | slot_wms when all_wms_completed slot_wms ->
           Logs.info (fun m ->
               m "%s : WM : EVENT : name=%s : all_wms_completed" (Builder.log_id s) name);
-          Abbs_future_combinators.return_ok slot_wms
+          Abbs_fc.return_ok slot_wms
       | _ ->
           Logs.info (fun m ->
               m "%s : WM : EVENT : name=%s : not_all_wms_completed" (Builder.log_id s) name);
-          Abbs_future_combinators.return_err (`Suspend_eval name)
+          Abbs_fc.return_err (`Suspend_eval name)
     in
     (* Explicitly query the work manifests for this job because we might have already created work
        manifests in parallel operations so we don't need to do it again. *)
@@ -609,7 +609,7 @@ struct
         (match membership with
           | Steps { start; steps = _; superseded = _ } ->
               start ~sha:(S.Api.Ref.of_string sha) work_manifest s fetcher
-          | Refs _ -> Abbs_future_combinators.return_ok (Run { head = None; dest_head = None }))
+          | Refs _ -> Abbs_fc.return_ok (Run { head = None; dest_head = None }))
         >>= function
         | Restart ->
             (* The commits moved before the run began and they changed its files.  Nothing ran,
@@ -617,7 +617,7 @@ struct
                outside of this start, which makes the work at the head now. *)
             Logs.info (fun m -> m "%s : WM : INITIATE : RESTART : name=%s" (Builder.log_id s) name);
             Builder.run_db s ~f:(fun db -> Tasks_base.abort_work_manifest s db id run_id)
-            >>= fun () -> Abbs_future_combinators.return_err (`Suspend_eval name)
+            >>= fun () -> Abbs_fc.return_err (`Suspend_eval name)
         | Run { head; dest_head } ->
             Builder.run_db s ~f:(fun db -> update_run_id s name id run_id db)
             >>= fun () ->
@@ -629,7 +629,7 @@ struct
                      id
                      ~start_sha:head
                      ~start_dest_sha:dest_head)
-             else Abbs_future_combinators.return_ok ())
+             else Abbs_fc.return_ok ())
             >>= fun () ->
             initiate work_manifest s fetcher
             >>= fun response ->
@@ -638,7 +638,7 @@ struct
             (* An initiate event comes from a poll only, and a poll always knows its
                compute node.  Fail loudly if that stops being true. *)
             CCOption.map_or
-              ~default:(Abbs_future_combinators.return_err (`Missing_dep_err "compute_node_id"))
+              ~default:(Abbs_fc.return_err (`Missing_dep_err "compute_node_id"))
               (fun compute_node_id ->
                 Builder.run_db s ~f:(fun db -> set_work s compute_node_id id response db))
               compute_node_id
@@ -653,7 +653,7 @@ struct
         >>= fun () ->
         (* A late result of an aborted work manifest is stored, and the work manifest stays
            aborted: the work was given to another work manifest. *)
-        (if is_aborted work_manifest then Abbs_future_combinators.return_ok ()
+        (if is_aborted work_manifest then Abbs_fc.return_ok ()
          else Builder.run_db s ~f:(fun db -> update_state_completed s name work_manifest.Wm.id db))
         >>= fun () -> job_wms () >>= finish_event
     | Some

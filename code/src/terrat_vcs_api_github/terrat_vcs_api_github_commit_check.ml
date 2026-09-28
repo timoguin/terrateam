@@ -46,7 +46,7 @@ let list_status_checks ~log_id ~owner ~repo ~ref_ client =
 let list ~log_id ~owner ~repo ~ref_ client =
   let open Abb.Future.Infix_monad in
   let module S = Githubc2_components.Status in
-  Abbs_future_combinators.Infix_result_app.(
+  Abbs_fc.Infix_result_app.(
     (fun statuses checks -> (statuses, checks))
     <$> list_commit_statuses ~log_id ~owner ~repo ~sha:ref_ client
     <*> list_status_checks ~log_id ~owner ~repo ~ref_ client)
@@ -144,8 +144,7 @@ let list ~log_id ~owner ~repo ~ref_ client =
         |> Sln_map.String.values
         |> Iter.to_list
       in
-      Abbs_future_combinators.return_ok all_unique_checks
+      Abbs_fc.return_ok all_unique_checks
   | Error #Githubc2_abb.call_err as err -> Abb.Future.return err
   | Error (#Terrat_github.Commit_status.list_err as err) ->
-      Abbs_future_combinators.return_err
-        (`Commit_check_list_err (Terrat_github.Commit_status.show_list_err err))
+      Abbs_fc.return_err (`Commit_check_list_err (Terrat_github.Commit_status.show_list_err err))

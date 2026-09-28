@@ -27,11 +27,11 @@ struct
     Pgsql_pool.with_conn storage ~f:(fun db ->
         S.enforce_installation_access ~request_id:(Brtl_ctx.token ctx) user installation_id db)
     >>= function
-    | Ok () -> Abbs_future_combinators.return_ok ()
-    | Error `Forbidden -> Abbs_future_combinators.return_err (Brtl_ctx.set_response `Forbidden ctx)
+    | Ok () -> Abbs_fc.return_ok ()
+    | Error `Forbidden -> Abbs_fc.return_err (Brtl_ctx.set_response `Forbidden ctx)
     | Error (#Pgsql_pool.err as err) ->
         Logs.err (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+        Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
 
   let make_key installation_id key =
     (S.namespace_prefix ^ ":" ^ P.Api.Account.Id.to_string installation_id, key)
@@ -57,22 +57,21 @@ struct
         | Ok _ as r -> Abb.Future.return r
         | Error #Terrat_kv_store.err as err -> Abb.Future.return err)
     >>= function
-    | Ok res -> Abbs_future_combinators.return_ok (r res)
+    | Ok res -> Abbs_fc.return_ok (r res)
     | Error (#Pgsql_pool.err as err) ->
         Logs.info (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Pgsql_pool.pp_err err);
-        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+        Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
     | Error (`Syntax_err _) ->
         Logs.info (fun m -> m "%s : PARSE FAILURE" (Brtl_ctx.token ctx));
-        Abbs_future_combinators.return_ok
-          (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
+        Abbs_fc.return_ok (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
     | Error (#Terrat_kv_store.err as err) ->
         Logs.info (fun m -> m "%s : %a" (Brtl_ctx.token ctx) Terrat_kv_store.pp_err err);
-        Abbs_future_combinators.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
+        Abbs_fc.return_err (Brtl_ctx.set_response `Internal_server_error ctx)
 
   module Get = struct
     let run _config storage installation_id key committed idx select =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -96,7 +95,7 @@ struct
   module Set = struct
     let run _config storage installation_id key body =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_write ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -126,18 +125,18 @@ struct
                 (Terrat_kv_store.set ?read_caps ?write_caps ?idx ?committed ~key data)
           | Error read_caps_err, _ ->
               Logs.info (fun m -> m "%s : READ_CAPS : %s" (Brtl_ctx.token ctx) read_caps_err);
-              Abbs_future_combinators.return_ok
+              Abbs_fc.return_ok
                 (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           | _, Error write_caps_err ->
               Logs.info (fun m -> m "%s : WRITE_CAPS : %s" (Brtl_ctx.token ctx) write_caps_err);
-              Abbs_future_combinators.return_ok
+              Abbs_fc.return_ok
                 (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
   end
 
   module Cas = struct
     let run _config storage installation_id key body =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read; Cap.Kv_store_write ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -172,18 +171,18 @@ struct
                 (Terrat_kv_store.cas ?read_caps ?write_caps ?idx ?committed ?version ~key data)
           | Error read_caps_err, _ ->
               Logs.info (fun m -> m "%s : READ_CAPS : %s" (Brtl_ctx.token ctx) read_caps_err);
-              Abbs_future_combinators.return_ok
+              Abbs_fc.return_ok
                 (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx)
           | _, Error write_caps_err ->
               Logs.info (fun m -> m "%s : WRITE_CAPS : %s" (Brtl_ctx.token ctx) write_caps_err);
-              Abbs_future_combinators.return_ok
+              Abbs_fc.return_ok
                 (Brtl_ctx.set_response (Brtl_rspnc.create ~status:`Bad_request "") ctx))
   end
 
   module Delete = struct
     let run _config storage installation_id key idx version =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read; Cap.Kv_store_write ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -206,7 +205,7 @@ struct
   module Count = struct
     let run _config storage installation_id key committed =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -231,7 +230,7 @@ struct
   module Size = struct
     let run _config storage installation_id key idx committed =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -255,7 +254,7 @@ struct
   module Iter = struct
     let run _config storage installation_id key select idx inclusive committed prefix limit =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_read ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx
@@ -278,7 +277,7 @@ struct
   module Commit = struct
     let run _config storage installation_id commit =
       Brtl_ep.run_result_json ~f:(fun ctx ->
-          let open Abbs_future_combinators.Infix_result_monad in
+          let open Abbs_fc.Infix_result_monad in
           Terrat_session.with_session ~caps:[ Cap.Kv_store_write ] ctx
           >>= fun user ->
           enforce_installation_access storage user installation_id ctx

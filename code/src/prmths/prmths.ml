@@ -238,19 +238,19 @@ module Gauge = struct
 
   let track_inprogress t fn =
     inc_one t;
-    Abbs_future_combinators.with_finally fn ~finally:(fun () ->
+    Abbs_fc.with_finally fn ~finally:(fun () ->
         dec_one t;
-        Abbs_future_combinators.unit)
+        Abbs_fc.unit)
 
   let time t fn =
     let open Abb.Future.Infix_monad in
     Abb.Sys.monotonic ()
     >>= fun start ->
-    Abbs_future_combinators.with_finally fn ~finally:(fun () ->
+    Abbs_fc.with_finally fn ~finally:(fun () ->
         Abb.Sys.monotonic ()
         >>= fun finish ->
         inc t (finish -. start);
-        Abbs_future_combinators.unit)
+        Abbs_fc.unit)
 end
 
 module Summary = struct
@@ -280,11 +280,11 @@ module Summary = struct
     let open Abb.Future.Infix_monad in
     Abb.Sys.monotonic ()
     >>= fun start ->
-    Abbs_future_combinators.with_finally fn ~finally:(fun () ->
+    Abbs_fc.with_finally fn ~finally:(fun () ->
         Abb.Sys.monotonic ()
         >>= fun finish ->
         observe t (finish -. start);
-        Abbs_future_combinators.unit)
+        Abbs_fc.unit)
 end
 
 module Histogram_spec = struct
@@ -376,11 +376,11 @@ module Histogram (Buckets : BUCKETS) = struct
     let open Abb.Future.Infix_monad in
     Abb.Sys.monotonic ()
     >>= fun start ->
-    Abbs_future_combinators.with_finally fn ~finally:(fun () ->
+    Abbs_fc.with_finally fn ~finally:(fun () ->
         Abb.Sys.monotonic ()
         >>= fun finish ->
         observe t (finish -. start);
-        Abbs_future_combinators.unit)
+        Abbs_fc.unit)
 end
 
 module DefaultHistogram = Histogram (struct

@@ -1,7 +1,7 @@
 module Abb = Abb_scheduler_select
 module Oth_abb = Oth_abb.Make (Abb)
 module Fut = Abb.Future
-module Fc = Abb_future_combinators.Make (Fut)
+module Fc = Abb_fc.Make (Fut)
 module Exec = Abb_bounded_suspendable_executor.Make (Abb) (CCString)
 
 (* These tests exercise the Chan-based bounded suspendable executor against the
