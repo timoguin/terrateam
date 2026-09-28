@@ -70,6 +70,11 @@ delete_dirspace_pull_request_locks as (
     using pull_requests as pr
     where dirspace_pull_request_locks.pull_request = pr.core_id
 ),
+delete_pruned_dirspaces as (
+    delete from pruned_dirspaces
+    using pull_requests as pr
+    where pruned_dirspaces.pull_request = pr.core_id
+),
 delete_pull_request_unlocks as (
     delete from pull_request_unlocks
     using pull_requests as pr

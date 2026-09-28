@@ -125,6 +125,22 @@ let test_or =
       | Ok None -> Oth.Assert.false_ "Or: unexpected value"
       | Error _ -> Oth.Assert.false_ "Or: unexpected value")
 
+(* RFD 2110, TQ-19.  An [outputs:] term has no meaning in SQL, so the
+   conversion must refuse it with an error and not raise. *)
+let test_outputs_not_supported =
+  Oth.test ~tags:[ "rfd_2110" ] ~name:"TQ-19: outputs is an error, not an exception" (fun _ ->
+      let tq = "foo.bar in outputs:app/db" in
+      match Terrat_tag_query_ast.of_string tq with
+      | Ok (Some ast) -> (
+          match
+            Tag_query_sql.of_ast ~tag_map:[ ("dir", (T.Json_array "dir", "dirspaces")) ] ast
+          with
+          | Ok _ -> Oth.Assert.false_ "TQ-19: expected an error"
+          | Error _ -> ())
+      | Ok None -> Oth.Assert.false_ "TQ-19: empty query"
+      | Error err ->
+          Oth.Assert.false_ ("TQ-19: does not parse: " ^ Terrat_tag_query_ast.show_err err))
+
 let test =
   Oth.parallel
     [
@@ -136,6 +152,7 @@ let test =
       test_simple_not;
       test_and;
       test_or;
+      test_outputs_not_supported;
     ]
 
 let () =

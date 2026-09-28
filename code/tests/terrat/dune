@@ -1,5 +1,5 @@
 (tests
  (names change_matcher3 plan_diff tag_query tag_set)
- (libraries containers oth terrat)
+ (libraries containers oth terrat terrat_output_diff yojson)
  (preprocess
   (pps ppx_deriving.show)))

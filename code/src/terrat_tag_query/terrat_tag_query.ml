@@ -2,9 +2,10 @@ module Ctx = struct
   type t = {
     dirspace : Terrat_dirspace.t;
     working_dirspace : Terrat_dirspace.t option;
+    outputs : Terrat_output_diff.t option;
   }
 
-  let make ?working_dirspace ~dirspace () = { dirspace; working_dirspace }
+  let make ?working_dirspace ?outputs ~dirspace () = { dirspace; working_dirspace; outputs }
 end
 
 module Q = struct
@@ -14,7 +15,15 @@ module Q = struct
     | Tag of string
     | Dir_glob of (string * ((string -> bool)[@opaque]))
     | Not of t
+    | Outputs of {
+        target : outputs_target;
+        path : string list option;
+      }
     | Any
+
+  and outputs_target =
+    | Dir of string
+    | Relative_dir of string
   [@@deriving show]
 end
 
@@ -69,10 +78,26 @@ let rec match' ~ctx ~tag_set = function
       | Some ("relative_dir", relative_dir) -> test_relative_dir ctx relative_dir
       | _ -> Terrat_tag_set.mem tag tag_set)
   | Q.Dir_glob (_, eq) -> eq ctx.Ctx.dirspace.Terrat_dirspace.dir
+  | Q.Outputs { target; path } ->
+      (* The target is tested the same way as a [dir:] tag or a [relative_dir:] tag. *)
+      let names_dirspace =
+        match target with
+        | Q.Dir dir -> Terrat_tag_set.mem (dir_prefix ^ dir) tag_set
+        | Q.Relative_dir relative_dir -> test_relative_dir ctx relative_dir
+      in
+      names_dirspace
+      && CCOption.map_or
+           ~default:true
+           (fun outputs -> Terrat_output_diff.changed outputs ~path)
+           ctx.Ctx.outputs
   | Q.And (l, r) -> match' ~ctx ~tag_set l && match' ~ctx ~tag_set r
   | Q.Or (l, r) -> match' ~ctx ~tag_set l || match' ~ctx ~tag_set r
 
 let match_ ~ctx ~tag_set t = match' ~ctx ~tag_set t.q
+
+let outputs_target = function
+  | Terrat_tag_query_parser_value.Outputs dir -> Q.Dir dir
+  | Terrat_tag_query_parser_value.Relative_outputs relative_dir -> Q.Relative_dir relative_dir
 
 let rec of_ast =
   let module T = Terrat_tag_query_parser_value in
@@ -84,7 +109,12 @@ let rec of_ast =
       let glob_str = CCString.drop dir_in_prefix_len q in
       let glob = Path_glob.Glob.parse (Printf.sprintf "<**/%s/**>" (escape_glob glob_str)) in
       Q.Dir_glob (glob_str, Path_glob.Glob.eval glob)
-  | T.Tag tag -> Q.Tag tag
+  | T.In_outputs { path; target } ->
+      Q.Outputs { target = outputs_target target; path = Some (CCString.split_on_char '.' path) }
+  | T.Tag tag -> (
+      match T.outputs_target_of_string tag with
+      | Some target -> Q.Outputs { target = outputs_target target; path = None }
+      | None -> Q.Tag tag)
   | T.And (l, r) | T.Implicit_and (l, r) -> Q.And (of_ast l, of_ast r)
   | T.Or (l, r) -> Q.Or (of_ast l, of_ast r)
   | T.Not e -> Q.Not (of_ast e)
@@ -95,7 +125,7 @@ let rec has_implicit_and =
   | T.Implicit_and _ -> true
   | T.And (l, r) | T.Or (l, r) -> has_implicit_and l || has_implicit_and r
   | T.Not e -> has_implicit_and e
-  | T.Tag _ | T.In_dir _ -> false
+  | T.Tag _ | T.In_dir _ | T.In_outputs _ -> false
 
 (* Collect the operands of a query that is nothing but directory selectors joined
    by [or]s and implicit [and]s, in the order they were written.  A dirspace is in
@@ -114,7 +144,7 @@ let rec dir_selectors =
     when CCString.starts_with ~prefix:dir_prefix tag
          || CCString.starts_with ~prefix:dir_in_prefix tag -> Some [ tag ]
   | T.In_dir glob_str -> Some [ glob_str ^ " in dir" ]
-  | T.Tag _ | T.And _ | T.Not _ -> None
+  | T.Tag _ | T.And _ | T.Not _ | T.In_outputs _ -> None
 
 (* The order the selectors were written in is the order to offer them back in, so
    this keeps the first of any repeat rather than sorting. *)
@@ -142,9 +172,17 @@ let rec selects_dirspaces_only' = function
       CCString.starts_with ~prefix:dir_prefix tag
       || CCString.starts_with ~prefix:workspace_prefix tag
   | Q.And (l, r) | Q.Or (l, r) -> selects_dirspaces_only' l && selects_dirspaces_only' r
-  | Q.Dir_glob _ | Q.Not _ | Q.Any -> false
+  | Q.Dir_glob _ | Q.Not _ | Q.Outputs _ | Q.Any -> false
 
 let selects_dirspaces_only t = selects_dirspaces_only' t.q
+
+let rec uses_outputs' = function
+  | Q.Outputs _ -> true
+  | Q.And (l, r) | Q.Or (l, r) -> uses_outputs' l || uses_outputs' r
+  | Q.Not t -> uses_outputs' t
+  | Q.Tag _ | Q.Dir_glob _ | Q.Any -> false
+
+let uses_outputs t = uses_outputs' t.q
 
 let of_string s =
   match Terrat_tag_query_ast.of_string s with

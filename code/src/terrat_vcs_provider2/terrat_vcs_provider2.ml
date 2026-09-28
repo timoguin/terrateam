@@ -830,6 +830,27 @@ module type S = sig
       'diff Api.Pull_request.t ->
       (Terrat_change.Dirspace.t list, [> `Error ]) result Abb.Future.t
 
+    (** Record [dirspaces] as the dirspaces that output pruning removed from the run of the pull
+        request, and forget the dirspaces it removed before. A pruned dirspace needs no apply, thus
+        a merged pull request keeps no lock for it. The caller must already hold a transaction:
+        implementations run on the connection they are given and must not open a nested
+        [Pgsql_io.tx] — that raises [Pgsql_io.Nested_tx_not_supported]. *)
+    val store_pruned_dirspaces_in_tx :
+      request_id:string ->
+      t ->
+      'diff Api.Pull_request.t ->
+      Terrat_dirspace.t list ->
+      (unit, [> `Error ]) result Abb.Future.t
+
+    (** The baseline and the current outputs of each of [dirspaces] that the pull request has
+        applied. A dirspace that the pull request has not applied is not in the result. *)
+    val query_dirspace_outputs :
+      request_id:string ->
+      t ->
+      'diff Api.Pull_request.t ->
+      Terrat_dirspace.t list ->
+      ((Terrat_dirspace.t * Terrat_output_diff.t) list, [> `Error ]) result Abb.Future.t
+
     val query_applied_dirspaces_for_context :
       request_id:string ->
       t ->

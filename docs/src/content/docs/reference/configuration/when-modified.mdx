@@ -32,7 +32,7 @@ when_modified:
 | autoplan             | Boolean | Automatically run a plan operation on a new pull request or an update on an existing one. Default is true. |
 | autoplan_draft_pr    | Boolean | Automatically run a plan operation on a new draft pull request or an update on an existing one. Default is true. |
 | autoapply            | Boolean | Automatically run an apply operation after merging a pull request. Default is false. |
-| depends_on           | String or Object | Defines dependencies between different directories or environments, allowing for sequential operations. Supports `dir:` for absolute paths or `relative_dir:` for relative paths within the repository. Can also combine dependencies using [tag queries](/advanced-workflows/tags/#tag-query-syntax). Default is an empty string. May also be an object to enable additional behavior such as `prune_on_no_change` (see [Depends-On](#depends-on)). |
+| depends_on           | String or Object | Defines dependencies between different directories or environments, allowing for sequential operations. Supports `dir:` for absolute paths or `relative_dir:` for relative paths within the repository, and `outputs:` or `relative_outputs:` to depend on the outputs of a directory (see [Depending on Outputs](#depending-on-outputs)). Can also combine dependencies using [tag queries](/advanced-workflows/tags/#tag-query-syntax). Default is an empty string. May also be an object to enable additional behavior such as `prune_on_no_change` (see [Depends-On](#depends-on)). |
 | prechecks            | List    | Cheap checks that decide, before any setup job runs, whether a pull request is worth any work. Only valid in the global `when_modified`. Default is an empty list. See [Prechecks](#prechecks). |
 
 ### File Patterns
@@ -158,6 +158,53 @@ dirs:
       file_patterns: ["${DIR}/*.tf"]
 ```
 In this example, `database` is ordered after `network` in layering calculations, but it is only planned and applied when `database` itself has changes — a change in `network` alone will not trigger it.
+
+#### Depending on Outputs
+A `depends_on` tag query can name the outputs of a dependency instead of the dependency alone. The dirspace then runs only when the value it names actually changed, rather than every time the dependency is applied.
+
+| Term | Meaning |
+|------|---------|
+| `<path> in outputs:<dir>` | The value at `<path>` in the outputs of `<dir>` changed. |
+| `outputs:<dir>` | Any output of `<dir>` changed. |
+| `<path> in relative_outputs:<dir>` | The same as `outputs:`, with `<dir>` relative to the directory that declares the dependency, as with `relative_dir:`. |
+
+```yaml
+dirs:
+  app/database:
+    when_modified:
+      file_patterns: ["${DIR}/*.tf"]
+  app/web:
+    when_modified:
+      depends_on: 'db.host in outputs:app/database'
+      file_patterns: ["${DIR}/*.tf"]
+```
+
+Here `app/web` is ordered after `app/database`, as it would be with `dir:app/database`. The difference comes after the apply: if the apply of `app/database` left `db.host` at the value it already had, `app/web` is dropped from the run and its own dependents are dropped with it. If nothing is left to run, the pull request is complete and its checks are closed.
+
+The path is a dotted path into the outputs of the dependency. Its first element is the output name. For the Terraform family of engines (`terraform`, `tofu`, `terragrunt`, `cdktf`) the comparison uses the `value` of the output, so `db.host` reads the `host` key of the output named `db`, and a change to the `sensitive` or `type` field alone is not a change. For the `custom` engine the path reads the JSON that the `outputs` command printed.
+
+Values are compared as JSON. The order of the keys of an object does not matter; the order of the items of a list does. A path that does not exist reads as `null`, thus an output that is absent on one side and `null` on the other is not a change.
+
+The comparison is always against the most recent successful apply of that dirspace in **another** pull request, which is what the infrastructure holds now. A second apply in the same pull request is still compared against that other pull request.
+
+##### What Runs Anyway
+- A dirspace whose own files changed always runs. Output pruning only removes a dirspace that is in the run through `depends_on`.
+- Before the dependency has been applied in the pull request, an `outputs:` term means the same as `dir:`, and `relative_outputs:` the same as `relative_dir:`. The dependent therefore waits for its dependency, exactly as it would without outputs.
+- A plan that reports no changes counts as applied, but it is not an apply and records no outputs, so the dependent runs.
+- `prune_on_no_change` takes precedence: a dirspace that sets it is dropped whenever it has no changes of its own.
+
+##### Reviving a Pruned Dirspace
+A pruned dirspace can be brought back with an explicit plan comment that names it:
+
+```
+terrateam plan dir:app/web
+```
+
+Add `workspace:<name>` to name one workspace of the directory. This reaches any dirspace the pull request would run if nothing were pruned, and it is the same mechanism a scoped re-plan already uses. The revived dirspace plans, and once planned it can be applied. Its own dependents follow the same rule as before: if its outputs do not change, they stay pruned, and another explicit plan brings the next one back. This way you can walk a pruned branch one dirspace at a time.
+
+:::caution
+If the dependency records no outputs, nothing can change, and the dependent is pruned. This is the case when the engine sends no outputs (`pulumi`, `stategraph` and `fly`), and when the [`outputs` configuration](/reference/configuration/engine/#outputs) of the engine sets `collect: false`. A value that Terrateam masks as a secret is stored as `***`, so two different secrets compare equal. Use `dir:` instead of `outputs:` for a dependency whose outputs you cannot compare.
+:::
 
 ## Configuration Examples
 

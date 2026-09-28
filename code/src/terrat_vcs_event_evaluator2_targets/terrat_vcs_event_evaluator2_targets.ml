@@ -242,6 +242,22 @@ module Make (S : Terrat_vcs_provider2.S) = struct
       Key.t =
     Hmap.Key.create "intra_pr_selection"
 
+  (* The baseline and the current outputs of the applied dirspaces of a run, which the [outputs:]
+     terms of [depends_on] compare.  A function, as [intra_pr_selection] is, because the dirspaces
+     are known only inside the computation of the matches.  The answer is [None] for a dirspace with
+     no current apply. *)
+  let dirspace_outputs :
+      (dirspaces:Terrat_dirspace.t list ->
+      (Terrat_dirspace.t -> Terrat_output_diff.t option, err) result Abb.Future.t)
+      Key.t =
+    Hmap.Key.create "dirspace_outputs"
+
+  (* Record the dirspaces that output pruning removed from the run.  A function, as
+     [dirspace_outputs] is, because the dirspaces are known only inside the computation of the
+     matches. *)
+  let store_pruned_dirspaces : (Terrat_dirspace.t list -> (unit, err) result Abb.Future.t) Key.t =
+    Hmap.Key.create "store_pruned_dirspaces"
+
   (* Work manifest state machine *)
   let work_manifest_event : Work_manifest_event.t option Key.t =
     Hmap.Key.create "work_manifest_event"

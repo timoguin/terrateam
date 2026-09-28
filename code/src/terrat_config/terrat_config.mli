@@ -98,6 +98,41 @@ end
 val admin_token : t -> string option
 val api_base : t -> string
 val create : unit -> (t, [> err ]) result
+
+(** Build a configuration from explicit values, with no read of the environment. A test uses it to
+    get a configuration that differs from the process environment, for example a test that runs
+    several databases at the same time and must not change the environment that the others read. An
+    optional argument that is not given is [None]. *)
+val make :
+  ?admin_token:string ->
+  api_base:string ->
+  db:string ->
+  db_connect_timeout:float ->
+  db_host:string ->
+  db_port:int ->
+  db_idle_tx_timeout:string ->
+  db_lock_timeout:string ->
+  db_max_pool_size:int ->
+  db_password:string ->
+  db_user:string ->
+  default_tier:string ->
+  event_evaluator_slots:int ->
+  gc:Gc.t ->
+  ?github:Github.t ->
+  ?gitlab:Gitlab.t ->
+  ?infracost:Infracost.t ->
+  ?nginx_status_uri:Uri.t ->
+  port:int ->
+  python_exec:string ->
+  session_cookie_name:string ->
+  ?stategraph_ui_base:Uri.t ->
+  statement_timeout:string ->
+  telemetry:Telemetry.t ->
+  ?terrateam_ui_base:Uri.t ->
+  terrateam_web_base_url:Uri.t ->
+  unit ->
+  t
+
 val db : t -> string
 val db_connect_timeout : t -> float
 val db_host : t -> string

@@ -5,6 +5,7 @@
   path_glob
   ppx_deriving
   terrat_dirspace
+  terrat_output_diff
   terrat_tag_query_ast
   terrat_tag_set)
  (preprocess

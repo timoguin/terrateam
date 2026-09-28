@@ -1,0 +1,5 @@
+(library
+ (name terrat_output_diff)
+ (libraries containers sln yojson)
+ (preprocess
+  (pps ppx_deriving_yojson)))

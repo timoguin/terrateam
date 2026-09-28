@@ -90,7 +90,7 @@ All custom engine steps are optional and will simply be skipped if they are not 
 
 ## outputs
 
-By default, Terrateam collects the outputs of all apply runs and stores them.  The `outputs` configuration controls this behaviour.
+By default, Terrateam collects the outputs of all apply runs and stores them.  The `outputs` configuration controls this behaviour.  Stored outputs are what a [`depends_on` that names an output](/reference/configuration/when-modified/#depending-on-outputs) compares, thus a directory with `collect: false` reports no change and its dependents are pruned.
 
 | Key | Type | Description |
 |-----|------|-------------|

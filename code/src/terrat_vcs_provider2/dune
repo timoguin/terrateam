@@ -16,9 +16,11 @@
   terrat_change
   terrat_commit_check
   terrat_config
+  terrat_dirspace
   terrat_gate
   terrat_intra_pr_hash
   terrat_job_context
+  terrat_output_diff
   terrat_pull_request
   terrat_tag_query
   terrat_tier

@@ -86,8 +86,9 @@ end
 (* Does [dependency] declare a [depends_on] that [dependent] answers?  The
    [modified_by] relation is not tested here: [collect_dependents] follows it
    through [modifies_lookup], which reaches every dirspace it names rather than
-   only those the topology already joins. *)
-let match_dependency ~dependent ~dependency =
+   only those the topology already joins.  [outputs] gives the outputs of
+   [dependent] to the [outputs:] terms. *)
+let match_dependency ?(outputs = CCFun.const None) ~dependent ~dependency () =
   let module Wm = R.When_modified in
   let module Depends_on = R.Depends_on in
   let { Dirspace_config.dirspace; tags; _ } = dependent in
@@ -97,7 +98,9 @@ let match_dependency ~dependent ~dependency =
   CCOption.map_or
     ~default:false
     (fun { Depends_on.tag_query; prune_on_no_change = _ } ->
-      let ctx = Terrat_tag_query.Ctx.make ~working_dirspace ~dirspace () in
+      let ctx =
+        Terrat_tag_query.Ctx.make ~working_dirspace ?outputs:(outputs dirspace) ~dirspace ()
+      in
       Terrat_tag_query.match_ ~ctx ~tag_set:tags tag_query)
     depends_on
 
@@ -165,7 +168,7 @@ let match_apply_after_dependency ~dependent ~dependency =
    diamond doubles with each level.  [seen] also ends a [modified_by] cycle,
    which nothing in the configuration forbids -- [assert_no_stack_cycle] covers
    nested stacks, [plan_after] and [apply_after], but not [modified_by]. *)
-let collect_dependents topology modifies_lookup dirspaces matches =
+let collect_dependents ?outputs topology modifies_lookup dirspaces matches =
   let rec go acc matches =
     CCListLabels.fold_left
       ~f:(fun
@@ -181,7 +184,8 @@ let collect_dependents topology modifies_lookup dirspaces matches =
                  let open CCOption.Infix in
                  Dirspace_map.get ds dirspaces
                  >>= fun dependency ->
-                 if match_dependency ~dependent:dirspace_config ~dependency then Some dependency
+                 if match_dependency ?outputs ~dependent:dirspace_config ~dependency () then
+                   Some dependency
                  else None)
                (Dirspace_map.get_or ~default:[] dirspace topology)
             @ Sln_map.String.get_or ~default:[] stack_name modifies_lookup))
@@ -976,7 +980,7 @@ let prune_no_change_dirspaces real_change_set layers =
     | [] -> false
     | _ :: _ -> true)
 
-let match_diff_list ?(force_matches = []) config diff_list =
+let roots ?(force_matches = []) config diff_list =
   (* If this fpath maps to a symlink we want to rewrite it to be the symlink *)
   let map_symlink_file_path symlinks fpath =
     match
@@ -989,24 +993,47 @@ let match_diff_list ?(force_matches = []) config diff_list =
         CCList.map (fun src -> CCString.replace ~which:`Left ~sub:dst ~by:src fpath) srcs
     | _, (Some _ | None) -> [ fpath ]
   in
-  let modifies_lookup =
-    build_modifies_lookup @@ Iter.to_list @@ Dirspace_map.values config.Config.dirspaces
-  in
-  let real_matches =
-    diff_list
-    |> CCList.flat_map files_of_diff
-    |> CCList.flat_map (map_symlink_file_path config.Config.symlinks)
-    |> make_dir_map
-    |> match_dir_map config.Config.dirspaces
-    |> CCList.append force_matches
-  in
+  diff_list
+  |> CCList.flat_map files_of_diff
+  |> CCList.flat_map (map_symlink_file_path config.Config.symlinks)
+  |> make_dir_map
+  |> match_dir_map config.Config.dirspaces
+  |> CCList.append force_matches
+
+let modifies_lookup config =
+  build_modifies_lookup @@ Iter.to_list @@ Dirspace_map.values config.Config.dirspaces
+
+let match_diff_list ?force_matches config diff_list =
+  let real_matches = roots ?force_matches config diff_list in
   let real_change_set =
     Dirspace_set.of_list (CCList.map (fun { Dirspace_config.dirspace; _ } -> dirspace) real_matches)
   in
   real_matches
-  |> collect_dependents config.Config.topology modifies_lookup config.Config.dirspaces
+  |> collect_dependents config.Config.topology (modifies_lookup config) config.Config.dirspaces
   |> sort ~edge:match_plan_after_dependency config.Config.topology config.Config.dirspaces
   |> prune_no_change_dirspaces real_change_set
+
+let reachable ~outputs config ~roots =
+  roots
+  |> collect_dependents
+       ~outputs
+       config.Config.topology
+       (modifies_lookup config)
+       config.Config.dirspaces
+  |> CCList.map
+       (fun
+         {
+           Dirspace_config.dirspace;
+           file_pattern_matcher = _;
+           lock_branch_target = _;
+           stack_config = _;
+           stack_name = _;
+           stack_paths = _;
+           tags = _;
+           when_modified = _;
+         }
+       -> dirspace)
+  |> Dirspace_set.of_list
 
 (* Both of these re-layer a subset of a run, so both contract through the
    dirspaces they are not given.  They differ only in which stack rule counts

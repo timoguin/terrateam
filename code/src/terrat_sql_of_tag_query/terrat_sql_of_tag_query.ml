@@ -236,7 +236,9 @@ let rec of_ast' ~tag_map t =
       >>= fun () ->
       Buffer.add_char t.q ')';
       Ok ()
-  | T.In_dir _ -> Error `In_dir_not_supported
+  (* SQL cannot evaluate an [in] term. An [in outputs:] term uses the same error as [in dir], thus
+     the callers need no new error. *)
+  | T.In_dir _ | T.In_outputs _ -> Error `In_dir_not_supported
 
 let empty ?(timezone = "UTC") ?(sort_dir = `Asc) () =
   {

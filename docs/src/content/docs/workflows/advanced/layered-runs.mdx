@@ -106,6 +106,48 @@ dirs:
 ```
 Here, `database` is ordered after `network`, but a change to `network` alone will not trigger a plan or apply for `database` — only changes within `database` will.
 
+#### Pruning Layers When Outputs Do Not Change
+
+`prune_on_no_change` asks whether the dependent layer changed. An `outputs:` dependency asks a different question: did the apply of the layer below actually change anything the layer above reads? A layer that depends on an output runs only when that output changed.
+
+```yaml
+dirs:
+  network:
+    when_modified:
+      file_patterns: ["${DIR}/*.tf"]
+  database:
+    when_modified:
+      depends_on: 'vpc_id in outputs:network'
+      file_patterns: ["${DIR}/*.tf"]
+  application:
+    when_modified:
+      depends_on: 'endpoint in outputs:database'
+      file_patterns: ["${DIR}/*.tf"]
+```
+
+A change to a tag of the VPC changes no output, so the apply of `network` completes and `database` is dropped from the run. `application` depends on an output of `database`, and `database` never ran, so it is dropped as well: the whole branch above the change disappears and the pull request is complete.
+
+<MermaidDiagram chart={`
+flowchart LR
+  network["network<br/>applied"]
+  database["database<br/>pruned"]
+  application["application<br/>pruned"]
+  network -- "vpc_id unchanged" --> database
+  database -- "nothing ran" --> application
+`} />
+
+Change the CIDR of the VPC instead and `vpc_id` changes, so `database` plans and applies as usual. Whether `application` then runs depends on the `endpoint` output of `database`, decided the same way.
+
+The comparison is against the most recent successful apply of that layer in another pull request, so it answers "did this pull request move the value" rather than "was this layer applied". See [Depending on Outputs](/reference/configuration/when-modified/#depending-on-outputs) for the path syntax, the engines that record outputs, and the cases that always run.
+
+To bring a pruned layer back, comment an explicit plan that names it:
+
+```
+terrateam plan dir:database
+```
+
+Add `workspace:<name>` to name one workspace of the directory. The layer plans, and once planned it can be applied. Its own dependents are decided again from its outputs, so an explicit plan walks the branch one layer at a time.
+
 ## Use Cases
 
 ### Sequential Infrastructure Deployment

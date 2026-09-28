@@ -2,8 +2,18 @@ module Ctx : sig
   type t
 
   (** [working_dirspace] is the dirspace that is currently being evaluated. This is necessary to use
-      [relative_dir] in the tag query. *)
-  val make : ?working_dirspace:Terrat_dirspace.t -> dirspace:Terrat_dirspace.t -> unit -> t
+      [relative_dir] in the tag query.
+
+      [outputs] is the baseline and current outputs of [dirspace], present once [dirspace] has been
+      applied. The [outputs:] and [relative_outputs:] terms use it to decide whether an output
+      changed. When it is absent, those terms mean the same as [dir:] and [relative_dir:], so the
+      dependency graph can be built before anything has been applied. *)
+  val make :
+    ?working_dirspace:Terrat_dirspace.t ->
+    ?outputs:Terrat_output_diff.t ->
+    dirspace:Terrat_dirspace.t ->
+    unit ->
+    t
 end
 
 type t [@@deriving show, eq]
@@ -36,10 +46,15 @@ val match_ : ctx:Ctx.t -> tag_set:Terrat_tag_set.t -> t -> bool
     other query keeps the defaults of the algorithm and plans the work which has no current plan.
 
     An [in dir <glob>] selector, and the [dir~<glob>] form of it, answer false: they choose
-    directories by a glob rather than naming them. A negation answers false wherever it sits,
-    because a negation says what must not run, and a force must say what must run. The empty query,
-    which matches everything, answers false. *)
+    directories by a glob rather than naming them. An [outputs:] term answers false: it can select
+    no dirspace when the outputs did not change. A negation answers false wherever it sits, because
+    a negation says what must not run, and a force must say what must run. The empty query, which
+    matches everything, answers false. *)
 val selects_dirspaces_only : t -> bool
+
+(** Whether the query holds an [outputs:] or a [relative_outputs:] term. Only such a query can prune
+    a dependent when the outputs of its dependency did not change. *)
+val uses_outputs : t -> bool
 
 (** A pre-defined matcher that matches anything, equivalent to [of_string ""] *)
 val any : t

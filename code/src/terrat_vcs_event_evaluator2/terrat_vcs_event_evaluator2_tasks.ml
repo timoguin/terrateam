@@ -129,6 +129,32 @@ struct
     |> Hmap.rem Keys.working_branch_ref
     |> Hmap.rem Keys.refs
 
+  let dirspace_of
+      {
+        Terrat_change_match3.Dirspace_config.dirspace;
+        file_pattern_matcher = _;
+        lock_branch_target = _;
+        stack_config = _;
+        stack_name = _;
+        stack_paths = _;
+        tags = _;
+        when_modified = _;
+      } =
+    dirspace
+
+  (* Only the applied dirspaces of the run have outputs to compare, and a run with no [outputs:]
+     term compares none, thus it does not query them. *)
+  let fetch_applied_outputs dirspace_outputs ~applied all_matches =
+    match Work_set.uses_outputs all_matches with
+    | false -> Abbs_fc.return_ok (CCFun.const None)
+    | true ->
+        dirspace_outputs
+          ~dirspaces:
+            (all_matches
+            |> CCList.flatten
+            |> CCList.map dirspace_of
+            |> CCList.filter (CCFun.flip Terrat_data.Dirspace_set.mem applied))
+
   module H = struct
     let complete_job s job fut =
       let open Abb.Future.Infix_monad in
@@ -475,6 +501,10 @@ struct
             >>= fun job ->
             fetch Keys.intra_pr_selection
             >>= fun intra_pr_selection ->
+            fetch Keys.dirspace_outputs
+            >>= fun dirspace_outputs ->
+            fetch Keys.store_pruned_dirspaces
+            >>= fun store_pruned_dirspaces ->
             let out_of_change_dirspace_configs =
               CCList.flat_map
                 CCFun.(Terrat_change_match3.of_dirspace config %> CCOption.to_list)
@@ -515,12 +545,30 @@ struct
               all_matches |> CCList.flatten |> CCList.map (fun dc -> dc.Dc.dirspace)
             in
             intra_pr_selection ~dirspaces ~force
-            >>| fun { Terrat_intra_pr_hash.Selection.to_run; out_of_order = _; applied } ->
+            >>= fun { Terrat_intra_pr_hash.Selection.to_run; out_of_order = _; applied } ->
             (* The files of a dirspace decide whether it is still applied, and no longer the sha of
                the work manifest.  Thus a push which does not touch a dirspace keeps it applied and
                the evaluation stays at the layer it reached. *)
             let applied_dirspaces = Terrat_data.Dirspace_set.of_list applied in
+            fetch_applied_outputs dirspace_outputs ~applied:applied_dirspaces all_matches
+            >>= fun outputs ->
+            let file_changed =
+              Terrat_change_match3.roots ~force_matches:out_of_change_dirspace_configs config diff
+              |> CCList.map dirspace_of
+              |> Terrat_data.Dirspace_set.of_list
+            in
             let to_run = Terrat_data.Dirspace_set.of_list to_run in
+            (* A dirspace of the run that is not in [to_run] has a good plan or counts as applied,
+               thus it ran in this pull request.  With the dirspaces that an explicit plan names, these
+               are what the user brought back into the run. *)
+            let revived =
+              all_matches
+              |> CCList.flatten
+              |> CCList.map dirspace_of
+              |> Terrat_data.Dirspace_set.of_list
+              |> CCFun.flip Terrat_data.Dirspace_set.diff to_run
+              |> Terrat_data.Dirspace_set.union force
+            in
             let dirs =
               all_matches
               |> CCList.flatten
@@ -568,8 +616,11 @@ struct
               | T.Unlock _
               | T.Push -> Work_set.Op.Layer_plan
             in
-            let { Work_set.working_set_matches; all_unapplied_matches; working_layer } =
+            let { Work_set.working_set_matches; all_unapplied_matches; working_layer; pruned } =
               Work_set.make
+                ~outputs
+                ~file_changed
+                ~revived
                 ~config
                 ~op
                 ~tag_query
@@ -577,6 +628,13 @@ struct
                 ~dir_exists:(CCFun.flip Dir_set.mem existing_dirs)
                 ~all_matches
             in
+            (* The record of the prune outlives the evaluation: a merged pull request keeps a lock
+               for each dirspace of its run that nobody applied, and a pruned dirspace is one.  The
+               write runs on every evaluation, including the evaluations that prune nothing, because
+               it also forgets what the evaluation before it recorded.  A configuration that loses
+               its [outputs:] term would otherwise keep the prune of the run that had it. *)
+            store_pruned_dirspaces (Terrat_data.Dirspace_set.to_list pruned)
+            >>| fun () ->
             (* A dirspace whose files did not change since its last good plan needs no new plan.
                An apply is not filtered this way: it runs what was planned, and not what
                changed. *)
@@ -3571,7 +3629,12 @@ struct
                       fetch Keys.maybe_create_completed_apply_check
                       >>= fun () ->
                       fetch Keys.finalize_unfinished_terrateam_checks
-                      >>= fun () -> fetch Keys.maybe_automerge
+                      >>= fun () ->
+                      (* The run is complete: the kept dirspaces get their checks and their
+                         summary states here.  A dirspace the run output-pruned (RFD 2110) is
+                         neither in the work manifests of the job nor unapplied, so it settles
+                         applied in the unified summary comment. *)
+                      fetch Keys.kept_dirspace_checks >>= fun () -> fetch Keys.maybe_automerge
                   | _ :: _ as all_unapplied_matches -> (
                       fetch Keys.working_layer
                       >>= fun working_layer ->

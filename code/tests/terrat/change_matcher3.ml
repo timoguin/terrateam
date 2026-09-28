@@ -3640,81 +3640,221 @@ let test_synthesize_config_skips_dirspaces_that_declare_nothing =
         (no_dir_declares *. 50.0 < every_dir_declares);
       ())
 
+(* RFD 2110, "Unit tests: dependency graph build".  No outputs exist when the
+   graph is built, so an [outputs:] term selects the directory it names, the
+   same as [dir:], and [relative_outputs:] the same as [relative_dir:]. *)
+module Rfd_2110 = struct
+  module R = Terrat_base_repo_config_v1
+
+  let tags = [ "rfd_2110" ]
+
+  let dir ?prune_on_no_change depends_on =
+    R.Dirs.Dir.make
+      ~workspaces:
+        (Sln_map.String.of_list
+           [
+             ( "default",
+               R.Dirs.Workspace.make
+                 ~when_modified:
+                   (R.When_modified.make
+                      ~depends_on:(depends_on_q ?prune_on_no_change depends_on)
+                      ())
+                 () );
+           ])
+      ()
+
+  let synthesize ~file_list dirs =
+    Terrat_change_match3.synthesize_config
+      ~index:R.Index.empty
+      (derive
+         ~ctx
+         ~index:R.Index.empty
+         ~file_list
+         (R.of_view (R.View.make ~dirs:(Sln_map.String.of_list dirs) ())))
+
+  (* The directories of each layer, each layer sorted. *)
+  let layers ~file_list ~changed dirs =
+    let config = CCResult.get_exn (synthesize ~file_list dirs) in
+    Terrat_change_match3.match_diff_list
+      config
+      (CCList.map (fun filename -> Terrat_change.Diff.Change { filename }) changed)
+    |> CCList.map
+         (CCList.map (fun { Terrat_change_match3.Dirspace_config.dirspace; _ } ->
+              dirspace.Terrat_dirspace.dir))
+    |> CCList.map (CCList.sort CCString.compare)
+
+  let assert_layers name ~expected actual =
+    let show l = "[" ^ CCString.concat "; " (CCList.map (CCString.concat ", ") l) ^ "]" in
+    Oth.Assert.true_
+      ~fail_msg:(Printf.sprintf "%s: expected %s, got %s" name (show expected) (show actual))
+      (CCList.equal (CCList.equal CCString.equal) expected actual)
+
+  let two = [ "ds1/main.tf"; "ds2/main.tf" ]
+
+  let test_dg_1 =
+    Oth.test ~tags ~name:"DG-1: path in outputs: builds the graph as dir:" (fun _ ->
+        let expected = [ [ "ds1" ]; [ "ds2" ] ] in
+        assert_layers
+          "DG-1"
+          ~expected
+          (layers
+             ~file_list:two
+             ~changed:[ "ds1/main.tf" ]
+             [ ("ds2", dir "foo.bar in outputs:ds1") ]);
+        assert_layers
+          "DG-1 dir: twin"
+          ~expected
+          (layers ~file_list:two ~changed:[ "ds1/main.tf" ] [ ("ds2", dir "dir:ds1") ]);
+        ())
+
+  let test_dg_2 =
+    Oth.test ~tags ~name:"DG-2: outputs: builds the graph as dir:" (fun _ ->
+        assert_layers
+          "DG-2"
+          ~expected:[ [ "ds1" ]; [ "ds2" ] ]
+          (layers ~file_list:two ~changed:[ "ds1/main.tf" ] [ ("ds2", dir "outputs:ds1") ]);
+        ())
+
+  let test_dg_3 =
+    Oth.test ~tags ~name:"DG-3: relative_outputs: builds the graph as relative_dir:" (fun _ ->
+        let file_list = [ "app/ds1/main.tf"; "app/ds2/main.tf"; "other/ds1/main.tf" ] in
+        let expected = [ [ "app/ds1" ]; [ "app/ds2" ] ] in
+        assert_layers
+          "DG-3"
+          ~expected
+          (layers
+             ~file_list
+             ~changed:[ "app/ds1/main.tf" ]
+             [ ("app/ds2", dir "relative_outputs:../ds1") ]);
+        assert_layers
+          "DG-3 relative_dir: twin"
+          ~expected
+          (layers
+             ~file_list
+             ~changed:[ "app/ds1/main.tf" ]
+             [ ("app/ds2", dir "relative_dir:../ds1") ]);
+        ())
+
+  let test_dg_4 =
+    Oth.test ~tags ~name:"DG-4: a chain of outputs: terms gives one layer each" (fun _ ->
+        assert_layers
+          "DG-4"
+          ~expected:[ [ "ds1" ]; [ "ds2" ]; [ "ds3" ] ]
+          (layers
+             ~file_list:[ "ds1/main.tf"; "ds2/main.tf"; "ds3/main.tf" ]
+             ~changed:[ "ds1/main.tf" ]
+             [ ("ds2", dir "a in outputs:ds1"); ("ds3", dir "b in outputs:ds2") ]);
+        ())
+
+  let test_dg_5 =
+    Oth.test ~tags ~name:"DG-5: a cycle of outputs: terms is a cycle error" (fun _ ->
+        (match
+           synthesize
+             ~file_list:two
+             [ ("ds1", dir "a in outputs:ds2"); ("ds2", dir "b in outputs:ds1") ]
+         with
+        | Error (`Depends_on_cycle_err _) -> ()
+        | Ok _ | Error _ -> Oth.Assert.false_ "DG-5: expected a cycle error");
+        ())
+
+  let test_dg_6 =
+    Oth.test ~tags ~name:"DG-6: prune_on_no_change takes precedence" (fun _ ->
+        assert_layers
+          "DG-6"
+          ~expected:[ [ "ds1" ] ]
+          (layers
+             ~file_list:two
+             ~changed:[ "ds1/main.tf" ]
+             [ ("ds2", dir ~prune_on_no_change:true "a in outputs:ds1") ]);
+        ())
+
+  let test_dg_7 =
+    Oth.test ~tags ~name:"DG-7: a change to the dependent does not run the dependency" (fun _ ->
+        assert_layers
+          "DG-7"
+          ~expected:[ [ "ds2" ] ]
+          (layers ~file_list:two ~changed:[ "ds2/main.tf" ] [ ("ds2", dir "a in outputs:ds1") ]);
+        ())
+
+  let tests = [ test_dg_1; test_dg_2; test_dg_3; test_dg_4; test_dg_5; test_dg_6; test_dg_7 ]
+end
+
 let test =
   Oth.parallel
-    [
-      test_simple;
-      test_workflow_idx;
-      test_dir_match;
-      test_dirspace_map;
-      test_dir_file_pattern;
-      test_workflow_idx_tag_in_dir;
-      test_workflow_idx_multiple_dirs;
-      test_workflow_override;
-      test_dir_config_iam;
-      test_dir_config_ebl;
-      test_dir_config_ebl_modules;
-      test_dir_config_ebl_and_modules;
-      test_dir_config_s3;
-      test_dir_config_lambda_json;
-      test_dir_config_module;
-      test_dir_config_null_file_patterns;
-      test_recursive_dirs_template_dir;
-      test_recursive_dirs_aws_prod;
-      test_recursive_dirs_tags;
-      test_recursive_dirs_without_tags;
-      test_bad_dir_config_iam;
-      test_bad_dir_config_ec2;
-      test_bad_dir_config_ec2_root_dir_change;
-      test_bad_dir_config_s3;
-      test_module_dir_with_root_dir;
-      test_large_directory_count_matching_files;
-      test_large_directory_count_unmatching_files;
-      (* FIX: This fails on ARM builds, for now just comment it out and fix later *)
-      (* test_large_directory_count_matching_files; *)
-      test_large_file_count_with_low_match_count;
-      test_large_file_count_with_low_match_count_lesser_dir_depth;
-      test_large_directory_count_non_default_when_modified;
-      test_not_match;
-      test_not_match_multiple;
-      test_relative_path_file_pattern;
-      test_relative_path_file_pattern_multiple_dots;
-      test_index_basic;
-      test_index_with_dirs_section;
-      test_index_module_in_same_dir;
-      test_index_symlinks;
-      test_index_symlinks_dir_config;
-      test_depends_on;
-      test_depends_on_multiple_depends;
-      test_depends_on_multiple_depends_2;
-      test_depends_on_multiple_depends_disjoint;
-      test_depends_on_cycle;
-      test_depends_on_relative_dir;
-      test_depends_on_prune_on_no_change_chain;
-      test_depends_on_prune_on_no_change_all_pruned;
-      test_force_matches_not_pruned;
-      test_layer_is_earliest_possible;
-      test_layer_is_earliest_possible_shared_dependent;
-      test_collect_dependents_visits_each_dirspace_once;
-      test_modified_by_pull_collects_depends_on;
-      test_modified_by_cycle_terminates;
-      test_files_in_same_dir_match_multiple_dirs;
-      test_layers_of_dependency_outside_subset;
-      test_layers_of_dependency_inside_subset;
-      test_dependencies_of_chain;
-      test_dependencies_of_independent_branches;
-      test_layers_of_contracts_through_a_missing_dirspace;
-      test_apply_layers_of_counts_apply_after;
-      test_layers_of_frees_a_branch_after_an_apply;
-      test_depends_on_crossing_a_stack_boundary;
-      test_depends_on_inside_a_nested_stack;
-      test_depends_on_crossing_a_boundary_a_stack_rule_also_orders;
-      test_depends_on_cycle_names_the_rule;
-      test_layers_of_agrees_with_match_diff_list_through_an_empty_stack;
-      test_layers_of_contraction_is_not_quadratic;
-      test_synthesize_config_skips_dirspaces_that_declare_nothing;
-      test_large_directory_timing;
-    ]
+    ([
+       test_simple;
+       test_workflow_idx;
+       test_dir_match;
+       test_dirspace_map;
+       test_dir_file_pattern;
+       test_workflow_idx_tag_in_dir;
+       test_workflow_idx_multiple_dirs;
+       test_workflow_override;
+       test_dir_config_iam;
+       test_dir_config_ebl;
+       test_dir_config_ebl_modules;
+       test_dir_config_ebl_and_modules;
+       test_dir_config_s3;
+       test_dir_config_lambda_json;
+       test_dir_config_module;
+       test_dir_config_null_file_patterns;
+       test_recursive_dirs_template_dir;
+       test_recursive_dirs_aws_prod;
+       test_recursive_dirs_tags;
+       test_recursive_dirs_without_tags;
+       test_bad_dir_config_iam;
+       test_bad_dir_config_ec2;
+       test_bad_dir_config_ec2_root_dir_change;
+       test_bad_dir_config_s3;
+       test_module_dir_with_root_dir;
+       test_large_directory_count_matching_files;
+       test_large_directory_count_unmatching_files;
+       (* FIX: This fails on ARM builds, for now just comment it out and fix later *)
+       (* test_large_directory_count_matching_files; *)
+       test_large_file_count_with_low_match_count;
+       test_large_file_count_with_low_match_count_lesser_dir_depth;
+       test_large_directory_count_non_default_when_modified;
+       test_not_match;
+       test_not_match_multiple;
+       test_relative_path_file_pattern;
+       test_relative_path_file_pattern_multiple_dots;
+       test_index_basic;
+       test_index_with_dirs_section;
+       test_index_module_in_same_dir;
+       test_index_symlinks;
+       test_index_symlinks_dir_config;
+       test_depends_on;
+       test_depends_on_multiple_depends;
+       test_depends_on_multiple_depends_2;
+       test_depends_on_multiple_depends_disjoint;
+       test_depends_on_cycle;
+       test_depends_on_relative_dir;
+       test_depends_on_prune_on_no_change_chain;
+       test_depends_on_prune_on_no_change_all_pruned;
+       test_force_matches_not_pruned;
+       test_layer_is_earliest_possible;
+       test_layer_is_earliest_possible_shared_dependent;
+       test_collect_dependents_visits_each_dirspace_once;
+       test_modified_by_pull_collects_depends_on;
+       test_modified_by_cycle_terminates;
+       test_files_in_same_dir_match_multiple_dirs;
+       test_layers_of_dependency_outside_subset;
+       test_layers_of_dependency_inside_subset;
+       test_dependencies_of_chain;
+       test_dependencies_of_independent_branches;
+       test_layers_of_contracts_through_a_missing_dirspace;
+       test_apply_layers_of_counts_apply_after;
+       test_layers_of_frees_a_branch_after_an_apply;
+       test_depends_on_crossing_a_stack_boundary;
+       test_depends_on_inside_a_nested_stack;
+       test_depends_on_crossing_a_boundary_a_stack_rule_also_orders;
+       test_depends_on_cycle_names_the_rule;
+       test_layers_of_agrees_with_match_diff_list_through_an_empty_stack;
+       test_layers_of_contraction_is_not_quadratic;
+       test_synthesize_config_skips_dirspaces_that_declare_nothing;
+       test_large_directory_timing;
+     ]
+    @ Rfd_2110.tests)
 
 let () =
   Random.self_init ();
