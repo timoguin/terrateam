@@ -88,6 +88,58 @@ let test_headers_are_case_insensitive =
       assert_wait ~expected:5.0 (decision [ ("Retry-After", "5") ]);
       ())
 
+let mergeable ?(has_conflicts = Some false) detailed_merge_status =
+  Terrat_vcs_api_gitlab.mergeable_of_status ~detailed_merge_status ~has_conflicts
+
+let assert_mergeable expected actual =
+  Oth.Assert.eq ~eq:(CCOption.equal CCBool.equal) ~pp:(CCOption.pp CCBool.pp) expected actual
+
+let test_not_approved_is_mergeable =
+  Oth.test ~name:"a merge request that waits for approval is mergeable" (fun _ ->
+      assert_mergeable (Some true) (mergeable (Some "not_approved"));
+      ())
+
+(* GitLab runs the conflict check after the approval check, so a conflict can hide behind
+   [not_approved]. *)
+let test_conflict_behind_not_approved_is_not_mergeable =
+  Oth.test ~name:"a conflict behind not_approved is not mergeable" (fun _ ->
+      assert_mergeable (Some false) (mergeable ~has_conflicts:(Some true) (Some "not_approved"));
+      ())
+
+let test_conflict_is_not_mergeable =
+  Oth.test ~name:"a conflict is not mergeable" (fun _ ->
+      assert_mergeable (Some false) (mergeable ~has_conflicts:(Some true) (Some "conflict"));
+      ())
+
+let test_policy_statuses_are_mergeable =
+  Oth.test ~name:"a policy status without a conflict is mergeable" (fun _ ->
+      CCList.iter
+        (fun status -> assert_mergeable (Some true) (mergeable (Some status)))
+        [
+          "mergeable";
+          "ci_must_pass";
+          "ci_still_running";
+          "discussions_not_resolved";
+          "draft_status";
+          "requested_changes";
+          "need_rebase";
+          "blocked_status";
+        ];
+      ())
+
+let test_merge_in_progress_has_no_verdict =
+  Oth.test ~name:"no verdict while GitLab computes the merge" (fun _ ->
+      CCList.iter
+        (fun status -> assert_mergeable None (mergeable (Some status)))
+        [ "preparing"; "checking"; "unchecked" ];
+      ())
+
+let test_missing_fields_have_no_verdict =
+  Oth.test ~name:"no verdict without detailed_merge_status or has_conflicts" (fun _ ->
+      assert_mergeable None (mergeable None);
+      assert_mergeable None (mergeable ~has_conflicts:None (Some "mergeable"));
+      ())
+
 let () =
   Oth.run
     ~file:__FILE__
@@ -107,4 +159,10 @@ let () =
           test_reset_beyond_timeout_fails_fast;
           test_remaining_above_zero_is_not_a_rate_limit;
           test_headers_are_case_insensitive;
+          test_not_approved_is_mergeable;
+          test_conflict_behind_not_approved_is_not_mergeable;
+          test_conflict_is_not_mergeable;
+          test_policy_statuses_are_mergeable;
+          test_merge_in_progress_has_no_verdict;
+          test_missing_fields_have_no_verdict;
         ])
