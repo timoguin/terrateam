@@ -1,0 +1,942 @@
+{
+  "tables": [
+    {
+      "columns": [
+        {
+          "name": "branch_target",
+          "type": "text"
+        },
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "pull_request",
+          "type": "uuid"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        }
+      ],
+      "name": "dirspace_pull_request_locks",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "reconcile",
+          "type": "boolean"
+        },
+        {
+          "name": "schedule",
+          "type": "text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "tag_query",
+          "type": "text"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "repo",
+          "type": "uuid"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        },
+        {
+          "name": "last_tried_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "drift_schedules",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "branch",
+          "type": "text"
+        },
+        {
+          "name": "work_manifest",
+          "type": "uuid"
+        }
+      ],
+      "name": "drift_work_manifests",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "approver",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "pull_request",
+          "type": "uuid"
+        },
+        {
+          "name": "token",
+          "type": "text"
+        }
+      ],
+      "name": "gate_approvals",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "dir",
+          "type": "text"
+        },
+        {
+          "name": "gate",
+          "type": "jsonb"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        },
+        {
+          "name": "pull_request",
+          "type": "uuid"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "token",
+          "type": "text"
+        }
+      ],
+      "name": "gates",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        },
+        {
+          "name": "lock_policy",
+          "type": "text"
+        },
+        {
+          "name": "branch_target",
+          "type": "text"
+        }
+      ],
+      "name": "github_change_dirspaces",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint"
+        },
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "owner",
+          "type": "text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "setup",
+          "type": "boolean"
+        }
+      ],
+      "name": "github_installation_repositories",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "id",
+          "type": "bigint"
+        },
+        {
+          "name": "login",
+          "type": "text"
+        },
+        {
+          "name": "org",
+          "type": "uuid"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "target_type",
+          "type": "text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "account_status",
+          "type": "text"
+        },
+        {
+          "name": "trial_ends_at",
+          "type": "date"
+        },
+        {
+          "name": "tier",
+          "type": "text"
+        },
+        {
+          "name": "last_suspended_by",
+          "type": "text"
+        },
+        {
+          "name": "last_suspended_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "last_unsuspended_by",
+          "type": "text"
+        },
+        {
+          "name": "last_unsuspended_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "installed_by",
+          "type": "text"
+        },
+        {
+          "name": "uninstalled_by",
+          "type": "text"
+        },
+        {
+          "name": "uninstalled_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "github_installations",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "github_installations_map",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "unlocked_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "github_pull_request_latest_unlocks",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_branch",
+          "type": "text"
+        },
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "merged_sha",
+          "type": "text"
+        },
+        {
+          "name": "merged_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "username",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "github_pull_requests",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository_id",
+          "type": "bigint"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "github_pull_requests_map",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository_id",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "github_repositories_map",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "run_id",
+          "type": "text"
+        },
+        {
+          "name": "run_type",
+          "type": "text"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "tag_query",
+          "type": "text"
+        },
+        {
+          "name": "username",
+          "type": "text"
+        },
+        {
+          "name": "dirspaces",
+          "type": "jsonb"
+        },
+        {
+          "name": "run_kind",
+          "type": "text"
+        },
+        {
+          "name": "environment",
+          "type": "text"
+        },
+        {
+          "name": "runs_on",
+          "type": "jsonb"
+        },
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "repo_owner",
+          "type": "text"
+        },
+        {
+          "name": "repo_name",
+          "type": "text"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        }
+      ],
+      "name": "github_work_manifests",
+      "provider": "github"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        },
+        {
+          "name": "lock_policy",
+          "type": "text"
+        },
+        {
+          "name": "branch_target",
+          "type": "text"
+        }
+      ],
+      "name": "gitlab_change_dirspaces",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "id",
+          "type": "bigint"
+        },
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "owner",
+          "type": "text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "setup",
+          "type": "boolean"
+        }
+      ],
+      "name": "gitlab_installation_repositories",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "account_status",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "id",
+          "type": "bigint"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "tier",
+          "type": "text"
+        },
+        {
+          "name": "trial_ends_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "gitlab_installations",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "gitlab_installations_map",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "unlocked_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "gitlab_pull_request_latest_unlocks",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_branch",
+          "type": "text"
+        },
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        },
+        {
+          "name": "merged_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "merged_sha",
+          "type": "text"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "username",
+          "type": "text"
+        }
+      ],
+      "name": "gitlab_pull_requests",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository_id",
+          "type": "bigint"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "gitlab_pull_requests_map",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "repository_id",
+          "type": "bigint"
+        },
+        {
+          "name": "core_id",
+          "type": "uuid"
+        }
+      ],
+      "name": "gitlab_repositories_map",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "base_sha",
+          "type": "text"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "pull_number",
+          "type": "bigint"
+        },
+        {
+          "name": "repository",
+          "type": "bigint"
+        },
+        {
+          "name": "run_id",
+          "type": "text"
+        },
+        {
+          "name": "run_type",
+          "type": "text"
+        },
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "type": "text"
+        },
+        {
+          "name": "tag_query",
+          "type": "text"
+        },
+        {
+          "name": "username",
+          "type": "text"
+        },
+        {
+          "name": "dirspaces",
+          "type": "jsonb"
+        },
+        {
+          "name": "run_kind",
+          "type": "text"
+        },
+        {
+          "name": "environment",
+          "type": "text"
+        },
+        {
+          "name": "runs_on",
+          "type": "jsonb"
+        },
+        {
+          "name": "installation_id",
+          "type": "bigint"
+        },
+        {
+          "name": "repo_owner",
+          "type": "text"
+        },
+        {
+          "name": "repo_name",
+          "type": "text"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        }
+      ],
+      "name": "gitlab_work_manifests",
+      "provider": "gitlab"
+    },
+    {
+      "columns": [
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "work_manifest",
+          "type": "uuid"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        },
+        {
+          "name": "has_changes",
+          "type": "boolean"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ],
+      "name": "plans",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "pull_request",
+          "type": "uuid"
+        },
+        {
+          "name": "stacks",
+          "type": "jsonb"
+        }
+      ],
+      "name": "pull_request_stacks",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "sha",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "data",
+          "type": "jsonb"
+        },
+        {
+          "name": "installation",
+          "type": "uuid"
+        },
+        {
+          "name": "kind",
+          "type": "text"
+        },
+        {
+          "name": "repo",
+          "type": "uuid"
+        },
+        {
+          "name": "branch",
+          "type": "text"
+        }
+      ],
+      "name": "repo_configs",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "work_manifest",
+          "type": "uuid"
+        },
+        {
+          "name": "workflow_idx",
+          "type": "smallint"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        }
+      ],
+      "name": "work_manifest_dirspaceflows",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "path",
+          "type": "text"
+        },
+        {
+          "name": "success",
+          "type": "boolean"
+        },
+        {
+          "name": "work_manifest",
+          "type": "uuid"
+        },
+        {
+          "name": "workspace",
+          "type": "text"
+        }
+      ],
+      "name": "work_manifest_results",
+      "provider": "shared"
+    },
+    {
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        },
+        {
+          "name": "idx",
+          "type": "smallint"
+        },
+        {
+          "name": "ignore_errors",
+          "type": "boolean"
+        },
+        {
+          "name": "payload",
+          "type": "jsonb"
+        },
+        {
+          "name": "scope",
+          "type": "jsonb"
+        },
+        {
+          "name": "step",
+          "type": "text"
+        },
+        {
+          "name": "success",
+          "type": "boolean"
+        },
+        {
+          "name": "work_manifest",
+          "type": "uuid"
+        }
+      ],
+      "name": "workflow_step_outputs",
+      "provider": "shared"
+    }
+  ]
+}

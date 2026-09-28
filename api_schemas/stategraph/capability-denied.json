@@ -1,0 +1,153 @@
+{
+  "$ref": "#/definitions/response",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "reason": {
+      "description": "One reason a capability check denied the request. The \"kind\" discriminates the shape: session capability kinds carry a human-readable \"detail\"; transaction-scoped kinds name the denied object (tenant, state, or resource).",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/reason-capability"
+        },
+        {
+          "$ref": "#/definitions/reason-tenant"
+        },
+        {
+          "$ref": "#/definitions/reason-state"
+        },
+        {
+          "$ref": "#/definitions/reason-resource"
+        },
+        {
+          "$ref": "#/definitions/reason-subgraph"
+        }
+      ]
+    },
+    "reason-capability": {
+      "additionalProperties": false,
+      "description": "A session capability check failed. \"kind\" identifies the unmet capability (or \"identity\" for an is-user check); \"detail\" is a human-readable explanation.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "admin",
+            "access-token-create",
+            "access-token-refresh",
+            "commit",
+            "preview",
+            "sudo",
+            "users-manage",
+            "identity"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "reason-resource": {
+      "additionalProperties": false,
+      "description": "A modified resource in an allowed state matches none of that state's patterns. \"fq_address\" is the resource's fully-qualified address; \"state_id\" identifies the state it lives in (the same fq_address can appear in multiple states).",
+      "properties": {
+        "fq_address": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "resource",
+          "type": "string"
+        },
+        "state_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "state_id",
+        "fq_address"
+      ],
+      "type": "object"
+    },
+    "reason-state": {
+      "additionalProperties": false,
+      "description": "A modified state is absent from the capability's states map. \"state_id\" identifies the state.",
+      "properties": {
+        "kind": {
+          "const": "state",
+          "type": "string"
+        },
+        "state_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "state_id"
+      ],
+      "type": "object"
+    },
+    "reason-subgraph": {
+      "additionalProperties": false,
+      "description": "A node in the transaction's generated subgraph (a cone/blast dependency, not a directly-modified resource) matches none of the capability's subgraph patterns. \"fq_address\" is the node's fully-qualified address.",
+      "properties": {
+        "fq_address": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "subgraph",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "fq_address"
+      ],
+      "type": "object"
+    },
+    "reason-tenant": {
+      "additionalProperties": false,
+      "description": "The transaction's tenant is not permitted. \"tenant_id\" identifies the tenant.",
+      "properties": {
+        "kind": {
+          "const": "tenant",
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "tenant_id"
+      ],
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "description": "Returned with HTTP 403 (or recorded as a failed transaction task's result) when the caller's capabilities do not authorize the request. \"reasons\" lists every unmet requirement; for an OR of requirements, all failing alternatives are listed. \"truncated\" is true when more reasons exist than are listed (transaction-scoped denials cap the list; session denials never truncate).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/definitions/reason"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "reasons",
+        "truncated"
+      ],
+      "type": "object"
+    }
+  }
+}

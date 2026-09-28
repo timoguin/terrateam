@@ -1,0 +1,4 @@
+(library
+ (name sgs_eplib)
+ (wrapped false)
+ (libraries brtl cohttp logs pgsql_io pgsql_pool sgs_api yojson))

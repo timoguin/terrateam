@@ -1,0 +1,18 @@
+-- Take the installation-admin mutation lock, held until the end of the current transaction.
+--
+-- The last-admin guard is a read followed by a write that can lower what it read: "how many
+-- installation admins are there?", then "remove this one's grant". We need to forbid racing runs,
+-- otherwise demoting the last admin would be possible.
+--
+-- The lock is advisory rather than a row lock because the guard's subject is a population, not a
+-- row: the count spans every active human user, so locking the one user being demoted would not
+-- exclude a concurrent demotion of a different one.
+--
+-- 2128 is an arbitrary constant naming this one critical section (the issue that introduced it).
+-- It carries no meaning beyond being distinct from every other advisory lock this installation
+-- takes, and must never change: two servers holding different keys would not exclude each other.
+--
+-- `is null` is only there to give the void-returning lock call a decodable boolean result; it is
+-- always false.  Prepared_stmt.execute cannot run this -- it rejects any statement that answers
+-- with a row -- so the caller fetches and discards.
+select pg_advisory_xact_lock(2128) is null

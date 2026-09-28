@@ -1,0 +1,13 @@
+(library
+ (name sgs_service_license_oss)
+ (wrapped false)
+ (libraries
+  abb
+  brtl
+  brtl_ep
+  sgs_api
+  sgs_config
+  sgs_service_license
+  sgs_setup
+  sgs_storage
+  yojson))

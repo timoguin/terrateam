@@ -1,0 +1,631 @@
+{
+  "$ref": "#/definitions/run-result",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "reason-bad-request": {
+      "additionalProperties": false,
+      "description": "The server rejected an actuator request. \"id\" is the server error id; \"data\" is an optional human-readable detail message (e.g. the specific lock-merge conflict).",
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "bad_request",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "reason-capability-denied": {
+      "additionalProperties": false,
+      "description": "A session or transaction capability check denied the run. \"denied\" carries the same structured reasons a synchronous capability check returns.",
+      "properties": {
+        "denied": {
+          "$ref": "capability-denied.json#/definitions/response"
+        },
+        "kind": {
+          "const": "capability_denied",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "denied"
+      ],
+      "type": "object"
+    },
+    "reason-client-create": {
+      "additionalProperties": false,
+      "description": "The API client could not be created (e.g. a malformed base URL). Reported only when reachable; a failure this early may instead be logged locally by the actuator.",
+      "properties": {
+        "kind": {
+          "const": "client_create",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-failed-apply": {
+      "additionalProperties": false,
+      "description": "[terraform apply] failed.",
+      "properties": {
+        "kind": {
+          "const": "apply",
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stdout",
+        "stderr"
+      ],
+      "type": "object"
+    },
+    "reason-failed-transport-call": {
+      "additionalProperties": false,
+      "description": "An HTTP call to the server failed at the transport level.",
+      "properties": {
+        "kind": {
+          "const": "call",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-hcl-parse": {
+      "additionalProperties": false,
+      "description": "The HCL bundle could not be parsed.",
+      "properties": {
+        "kind": {
+          "const": "hcl_parse",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-init": {
+      "additionalProperties": false,
+      "description": "[terraform init] failed.",
+      "properties": {
+        "kind": {
+          "const": "init",
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stdout",
+        "stderr"
+      ],
+      "type": "object"
+    },
+    "reason-next-task-failed": {
+      "additionalProperties": false,
+      "description": "The server-side actuator/next task did not complete, so the actuator was never told what to do. \"state\" is the task's terminal state.",
+      "properties": {
+        "kind": {
+          "const": "next_task_failed",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/task-state"
+        }
+      },
+      "required": [
+        "kind",
+        "state"
+      ],
+      "type": "object"
+    },
+    "reason-next-timeout": {
+      "additionalProperties": false,
+      "description": "The actuator gave up waiting for an actuator/next task to reach a terminal state. \"seconds\" is the bound it waited, from STATEGRAPH_ACTUATOR_NEXT_TIMEOUT_SECONDS.",
+      "properties": {
+        "kind": {
+          "const": "next_timeout",
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "seconds"
+      ],
+      "type": "object"
+    },
+    "reason-params-fetch": {
+      "additionalProperties": false,
+      "description": "Fetching the transaction parameters from the server failed.",
+      "properties": {
+        "kind": {
+          "const": "params_fetch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-plan": {
+      "additionalProperties": false,
+      "description": "[terraform plan] failed.",
+      "properties": {
+        "kind": {
+          "const": "plan",
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stdout",
+        "stderr"
+      ],
+      "type": "object"
+    },
+    "reason-preview-decode": {
+      "additionalProperties": false,
+      "description": "Base64-decoding the fetched preview plan failed. \"message\" is the underlying error.",
+      "properties": {
+        "kind": {
+          "const": "preview_decode",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "reason-preview-fetch": {
+      "additionalProperties": false,
+      "description": "Fetching the preview plan from the server (during a commit) failed.",
+      "properties": {
+        "kind": {
+          "const": "preview_fetch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-read": {
+      "additionalProperties": false,
+      "description": "Reading a generated file (plan or state) failed.",
+      "properties": {
+        "kind": {
+          "const": "read",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-results-task-failed": {
+      "additionalProperties": false,
+      "description": "The server-side results-delivery task did not complete. \"state\" is the task's terminal state.",
+      "properties": {
+        "kind": {
+          "const": "results_task_failed",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/task-state"
+        }
+      },
+      "required": [
+        "kind",
+        "state"
+      ],
+      "type": "object"
+    },
+    "reason-show-json": {
+      "additionalProperties": false,
+      "description": "[terraform show -json] failed.",
+      "properties": {
+        "kind": {
+          "const": "show_json",
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stdout",
+        "stderr"
+      ],
+      "type": "object"
+    },
+    "reason-state-schema-behind": {
+      "additionalProperties": false,
+      "description": "One or more states pulled into the transaction's subgraph store their configuration in an older Stategraph representation than this server understands, so the run was refused before terraform ran. The client upgrades the states it is planning against, but a state reached through a cross-state reference (a terraform_remote_state data source) lives in a checkout this client does not have, so only its own operator can upgrade it. \"states\" names the offending states so the operator knows which; \"server_schema_version\" is what they must reach.",
+      "properties": {
+        "kind": {
+          "const": "state_schema_behind",
+          "type": "string"
+        },
+        "server_schema_version": {
+          "type": "integer"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/definitions/state-schema-behind-state"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "states",
+        "server_schema_version"
+      ],
+      "type": "object"
+    },
+    "reason-temp-dir": {
+      "additionalProperties": false,
+      "description": "A temporary working directory could not be created.",
+      "properties": {
+        "kind": {
+          "const": "temp_dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-tf-binary-not-found": {
+      "additionalProperties": false,
+      "description": "The OpenTofu/Terraform binary was not found. \"tf\" is the command that was attempted.",
+      "properties": {
+        "kind": {
+          "const": "tf_binary_not_found",
+          "type": "string"
+        },
+        "tf": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "tf"
+      ],
+      "type": "object"
+    },
+    "reason-tx-conflict": {
+      "additionalProperties": false,
+      "description": "The transaction conflicts with another transaction that modified overlapping resources.",
+      "properties": {
+        "conflicting_tx_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "tx_conflict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "conflicting_tx_ids"
+      ],
+      "type": "object"
+    },
+    "reason-tx-invalid-state": {
+      "additionalProperties": false,
+      "description": "The transaction was not in the state the operation requires (preview requires 'open'; commit requires 'previewed').",
+      "properties": {
+        "actual_state": {
+          "type": "string"
+        },
+        "expected_state": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "tx_invalid_state",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "expected_state"
+      ],
+      "type": "object"
+    },
+    "reason-unauthorized": {
+      "additionalProperties": false,
+      "description": "The server rejected an actuator request as unauthorized.",
+      "properties": {
+        "kind": {
+          "const": "unauthorized",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reason-write": {
+      "additionalProperties": false,
+      "description": "Writing a bundle file failed. \"message\" is the underlying error.",
+      "properties": {
+        "kind": {
+          "const": "write",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "run-failure": {
+      "additionalProperties": false,
+      "description": "A run failed. \"reason\" is the structured cause.",
+      "properties": {
+        "kind": {
+          "const": "failure",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/definitions/run-failure-reason"
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "run-failure-reason": {
+      "description": "One cause of an actuator-run failure. The \"kind\" discriminates the shape; terraform-phase failures (init/plan/show_json/apply) carry the captured stdout and stderr.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/reason-tf-binary-not-found"
+        },
+        {
+          "$ref": "#/definitions/reason-hcl-parse"
+        },
+        {
+          "$ref": "#/definitions/reason-write"
+        },
+        {
+          "$ref": "#/definitions/reason-init"
+        },
+        {
+          "$ref": "#/definitions/reason-plan"
+        },
+        {
+          "$ref": "#/definitions/reason-show-json"
+        },
+        {
+          "$ref": "#/definitions/reason-failed-apply"
+        },
+        {
+          "$ref": "#/definitions/reason-read"
+        },
+        {
+          "$ref": "#/definitions/reason-temp-dir"
+        },
+        {
+          "$ref": "#/definitions/reason-preview-fetch"
+        },
+        {
+          "$ref": "#/definitions/reason-preview-decode"
+        },
+        {
+          "$ref": "#/definitions/reason-params-fetch"
+        },
+        {
+          "$ref": "#/definitions/reason-bad-request"
+        },
+        {
+          "$ref": "#/definitions/reason-unauthorized"
+        },
+        {
+          "$ref": "#/definitions/reason-failed-transport-call"
+        },
+        {
+          "$ref": "#/definitions/reason-client-create"
+        },
+        {
+          "$ref": "#/definitions/reason-next-task-failed"
+        },
+        {
+          "$ref": "#/definitions/reason-next-timeout"
+        },
+        {
+          "$ref": "#/definitions/reason-results-task-failed"
+        },
+        {
+          "$ref": "#/definitions/reason-capability-denied"
+        },
+        {
+          "$ref": "#/definitions/reason-tx-conflict"
+        },
+        {
+          "$ref": "#/definitions/reason-tx-invalid-state"
+        },
+        {
+          "$ref": "#/definitions/reason-state-schema-behind"
+        }
+      ]
+    },
+    "run-result": {
+      "description": "The structured outcome of a single actuator run (preview or commit), stored as the run task's result so a client polling the task -- including a remote actuator the CLI never shares a process with -- learns the same success/failure detail the in-process actuator used to return directly. The \"kind\" discriminates success from failure.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/run-success-preview"
+        },
+        {
+          "$ref": "#/definitions/run-success-commit"
+        },
+        {
+          "$ref": "#/definitions/run-failure"
+        },
+        {
+          "$ref": "#/definitions/run-success-noop"
+        }
+      ]
+    },
+    "run-success-commit": {
+      "additionalProperties": false,
+      "description": "A commit run completed. \"state\" is the resulting Terraform state JSON; \"output\" is the apply output (vendor-rebranded).",
+      "properties": {
+        "kind": {
+          "const": "success_commit",
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "state": {}
+      },
+      "required": [
+        "kind",
+        "state",
+        "output"
+      ],
+      "type": "object"
+    },
+    "run-success-noop": {
+      "additionalProperties": false,
+      "description": "A preview run that had nothing to do, so no plan was produced and terraform was never run (RFD 584). Reached only by a transaction whose configuration did not change: such a plan still opens a transaction, carrying a single refresh entry, so that a data source whose RESULT moved is reachable. \"reason\" says which of the two ways it turned out there was nothing to plan.",
+      "properties": {
+        "kind": {
+          "const": "success_noop",
+          "type": "string"
+        },
+        "reason": {
+          "description": "\"no_data_sources\": no state in the transaction declares a data source, so there is no result that could have moved. \"refresh_skipped\": the caller passed skip_data_source_refresh, so the data sources were not refreshed and nothing else in the transaction needs planning.",
+          "enum": [
+            "no_data_sources",
+            "refresh_skipped"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "run-success-preview": {
+      "additionalProperties": false,
+      "description": "A preview run completed. \"has_changes\" is the [tofu plan -detailed-exitcode] outcome; \"plan\" is the base64 binary plan; \"plan_json\" is the demangled plan JSON (demangled server-side from the actuator's mangled plan).",
+      "properties": {
+        "has_changes": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "success_preview",
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "plan_json": {}
+      },
+      "required": [
+        "kind",
+        "has_changes",
+        "plan",
+        "plan_json"
+      ],
+      "type": "object"
+    },
+    "state-schema-behind-state": {
+      "additionalProperties": false,
+      "description": "One state whose stored configuration is at an older Stategraph schema version than the server understands. Named well enough for an operator to find it: the id is unambiguous, the name and workspace are what they will recognise.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "workspace",
+        "schema_version"
+      ],
+      "type": "object"
+    },
+    "task-state": {
+      "enum": [
+        "aborted",
+        "completed",
+        "failed",
+        "pending",
+        "running"
+      ],
+      "type": "string"
+    }
+  }
+}

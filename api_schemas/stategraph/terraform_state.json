@@ -1,0 +1,205 @@
+{
+  "$ref": "#/definitions/state",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "check": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_messages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "object_addr": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_addr",
+        "status"
+      ],
+      "type": "object"
+    },
+    "check_results": {
+      "additionalProperties": false,
+      "properties": {
+        "config_addr": {
+          "type": "string"
+        },
+        "object_kind": {
+          "type": "string"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/definitions/check"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "config_addr",
+        "object_kind",
+        "status"
+      ],
+      "type": "object"
+    },
+    "index_key_count": {
+      "type": "integer"
+    },
+    "index_key_foreach": {
+      "type": "string"
+    },
+    "instance": {
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {},
+        "create_before_destroy": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deposed": {
+          "type": "string"
+        },
+        "identity": {},
+        "identity_schema_version": {
+          "type": "integer"
+        },
+        "index_key": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/index_key_foreach"
+            },
+            {
+              "$ref": "#/definitions/index_key_count"
+            }
+          ]
+        },
+        "private": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "sensitive_attributes": {},
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version"
+      ],
+      "type": "object"
+    },
+    "outputs": {
+      "additionalProperties": false,
+      "properties": {
+        "sensitive": {
+          "type": "boolean"
+        },
+        "type": {},
+        "value": {}
+      },
+      "required": [
+        "value",
+        "type"
+      ],
+      "type": "object"
+    },
+    "resource": {
+      "additionalProperties": false,
+      "properties": {
+        "instances": {
+          "items": {
+            "$ref": "#/definitions/instance"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "managed",
+            "data"
+          ],
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instances",
+        "mode",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "additionalProperties": false,
+      "description": "Schema for Terraform state file (version 4, this version has been around since terraform 0.12 (2019), and so we expect any change to this version number to be vastly breaking)",
+      "properties": {
+        "check_results": {
+          "items": {
+            "$ref": "#/definitions/check_results"
+          },
+          "type": "array"
+        },
+        "lineage": {
+          "type": "string"
+        },
+        "outputs": {
+          "additionalProperties": {
+            "$ref": "#/definitions/outputs"
+          },
+          "type": "object"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/definitions/resource"
+          },
+          "type": "array"
+        },
+        "serial": {
+          "type": "integer"
+        },
+        "terraform_version": {
+          "type": "string"
+        },
+        "version": {
+          "const": 4,
+          "description": "4 is the version number of the state file since terraform 0.12 (2019). We don't validate that the version is '4' (we could but the JSON Schema generator doesn't do it).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "terraform_version",
+        "serial",
+        "lineage",
+        "resources"
+      ],
+      "title": "Terraform State",
+      "type": "object"
+    }
+  }
+}
