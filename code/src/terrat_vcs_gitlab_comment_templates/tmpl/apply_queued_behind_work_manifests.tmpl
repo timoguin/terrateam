@@ -15,7 +15,7 @@ The apply starts on its own when the work below completes.  You do not have to c
 If these runs are not really running, for example their GitLab CI workflow was cancelled or never started, unlock them by commenting in any pull request:
 
 ```
-stategraph unlock@-#work_manifests@ @id@@/work_manifests@
+stategraph unlock@-#unlock_ids@ @id@@/unlock_ids@
 ```
 
 An unlock of a pull request also cancels this queued apply.  Comment `stategraph apply` again after such an unlock.

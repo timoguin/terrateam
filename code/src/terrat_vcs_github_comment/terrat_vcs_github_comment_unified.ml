@@ -649,7 +649,15 @@ let refresh ~request_id ~fetch_brand config storage work_manifest_id =
   >>= function
   | Ok (`Done | `Skip) -> Abbs_fc.return_ok `Done
   | Ok `Race -> Abbs_fc.return_ok `Race
-  | Error _ as err -> Abb.Future.return err
+  | Error (#Pgsql_io.err as e) as err ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err e);
+      Abb.Future.return err
+  | Error (#Terrat_vcs_api.call_err as e) as err ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Terrat_vcs_api.pp_call_err e);
+      Abb.Future.return err
+  | Error (#Pgsql_pool.err as e) as err ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_pool.pp_err e);
+      Abb.Future.return err
 
 (* Publish the unified summary comment as a run starts, before any result
    comment posts.  Runs in the caller's open transaction so the comment's
@@ -692,7 +700,15 @@ let publish_at_start ~request_id ~fetch_brand ~config ~output_details db work_ma
   go ()
   >>= function
   | Ok () -> Abbs_fc.return_ok ()
-  | Error _ -> Abbs_fc.return_err `Error
+  | Error (#Pgsql_io.err as err) ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_io.pp_err err);
+      Abbs_fc.return_err `Error
+  | Error (#Terrat_vcs_api.call_err as err) ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Terrat_vcs_api.pp_call_err err);
+      Abbs_fc.return_err `Error
+  | Error (#Pgsql_pool.err as err) ->
+      Logs.err (fun m -> m "%s : ERROR : %a" request_id Pgsql_pool.pp_err err);
+      Abbs_fc.return_err `Error
 
 let drain ~request_id ~fetch_brand config storage work_manifest_id =
   let open Abb.Future.Infix_monad in

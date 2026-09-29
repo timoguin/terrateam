@@ -3650,10 +3650,7 @@ module Comment = struct
         (CCList.map
            (fun { Wm.created_at; steps; state; target; _ } ->
              let id, is_pr =
-               match target with
-               | Terrat_vcs_provider2.Target.Pr pr ->
-                   (CCInt.to_string (Api.Pull_request.id pr), true)
-               | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
+               Terrat_vcs_provider2.target_unlock_id ~pull_request_id:Api.Pull_request.id target
              in
              Map.of_list
                [
@@ -3689,14 +3686,16 @@ module Comment = struct
     CCList.map
       (fun ({ Wm.target; _ } as wm) ->
         let id, is_pr =
-          match target with
-          | Terrat_vcs_provider2.Target.Pr pr -> (CCInt.to_string (Api.Pull_request.id pr), true)
-          | Terrat_vcs_provider2.Target.Drift _ -> ("drift", false)
+          Terrat_vcs_provider2.target_unlock_id ~pull_request_id:Api.Pull_request.id target
         in
         ((id, is_pr), wm))
       wms
     |> CCList.sort_uniq ~cmp:(fun (a, _) (b, _) -> Key.compare a b)
     |> CCList.map snd
+
+  (* The [unlock_ids] key every unlock command template renders. *)
+  let unlock_ids_kv unlock_ids =
+    Snabela.Kv.(list (CCList.map (fun id -> Map.of_list [ ("id", string id) ]) unlock_ids))
 
   let publish_comment' ~request_id ~brand client user pull_request =
     let module Gcm_api = Terrat_vcs_gitlab_comment_publishers.Comment_api in
@@ -3991,6 +3990,9 @@ module Comment = struct
           (Tmpl.apply_requirements_validation_err brand)
           kv
     | Msg.Apply_queued_behind_work_manifests wms ->
+        let unlock_ids =
+          Terrat_vcs_provider2.work_manifest_unlock_ids ~pull_request_id:Api.Pull_request.id wms
+        in
         let kv =
           Snabela.Kv.(
             Map.of_list
@@ -3999,6 +4001,7 @@ module Comment = struct
                   work_manifests_kv
                     ~name:"Apply_queued_behind_work_manifests"
                     (uniq_work_manifests_by_target wms) );
+                ("unlock_ids", unlock_ids_kv unlock_ids);
               ])
         in
         Gcm_api.apply_template_and_publish
@@ -4059,6 +4062,9 @@ module Comment = struct
           (Tmpl.build_tree_failure brand)
           kv
     | Msg.Conflicting_work_manifests wms ->
+        let unlock_ids =
+          Terrat_vcs_provider2.work_manifest_unlock_ids ~pull_request_id:Api.Pull_request.id wms
+        in
         let kv =
           Snabela.Kv.(
             Map.of_list
@@ -4067,6 +4073,7 @@ module Comment = struct
                   work_manifests_kv
                     ~name:"Conflicting_work_manifests"
                     (uniq_work_manifests_by_target wms) );
+                ("unlock_ids", unlock_ids_kv unlock_ids);
               ])
         in
         Gcm_api.apply_template_and_publish
@@ -4353,10 +4360,16 @@ module Comment = struct
           (Tmpl.invalid_lock_id brand)
           kv
     | Msg.Maybe_stale_work_manifests wms ->
+        let unlock_ids =
+          Terrat_vcs_provider2.work_manifest_unlock_ids ~pull_request_id:Api.Pull_request.id wms
+        in
         let kv =
           Snabela.Kv.(
             Map.of_list
-              [ ("work_manifests", work_manifests_kv ~name:"Maybe_stale_work_manifests" wms) ])
+              [
+                ("work_manifests", work_manifests_kv ~name:"Maybe_stale_work_manifests" wms);
+                ("unlock_ids", unlock_ids_kv unlock_ids);
+              ])
         in
         Gcm_api.apply_template_and_publish
           ~request_id

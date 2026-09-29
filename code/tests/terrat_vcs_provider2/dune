@@ -1,5 +1,13 @@
 (test
  (name test)
- (libraries containers oth oth_abb terrat_api terrat_vcs_provider2)
+ (libraries
+  containers
+  oth
+  oth_abb
+  terrat_api
+  terrat_tag_query
+  terrat_vcs_provider2
+  terrat_work_manifest3
+  uuidm)
  (preprocess
   (pps ppx_deriving.show)))

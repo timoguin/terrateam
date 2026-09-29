@@ -204,6 +204,23 @@ module Target = struct
   [@@deriving show]
 end
 
+(* The token a target renders in an unlock command, and whether it names a
+   pull request.  All drift targets share the one [drift] token. *)
+let target_unlock_id ~pull_request_id target =
+  match target with
+  | Target.Pr pr -> (CCInt.to_string (pull_request_id pr), true)
+  | Target.Drift _ -> ("drift", false)
+
+(* Returns the unlock command arguments for the list of work manifests.  The
+   result has one token per pull request, and one [drift] token for all drift
+   targets.  Comment templates print one token per element, so the list has no
+   duplicates.  [Sln_list] sorts the strings, so [drift] is last. *)
+let work_manifest_unlock_ids ~pull_request_id wms =
+  wms
+  |> CCList.map (fun { Terrat_work_manifest3.target; _ } ->
+      fst (target_unlock_id ~pull_request_id target))
+  |> Sln_list.String.sort_uniq
+
 module Index = struct
   module Failure = struct
     type t = {

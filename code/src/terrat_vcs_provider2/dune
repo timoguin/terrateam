@@ -8,6 +8,7 @@
   pgsql_io
   pgsql_pool
   prmths
+  sln
   str_template
   terrat_access_control2
   terrat_api
