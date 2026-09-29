@@ -200,12 +200,28 @@ let test =
             build_str
               [
                 "select * from test";
-                "where (id = $texts[3]::uuid or name = $texts[2]) and created_at < \
-                 $texts[1]::timestamptz limit 20";
+                "where (id = $texts[2]::uuid or name = $texts[1]) and created_at < \
+                 $timestamptzs[1] limit 20";
               ]
           in
           assert_eq sql query;
           ());
+      Oth.test ~name:"tables lists the schema tables, not the CTEs" (fun _ ->
+          let query =
+            build_str
+              [
+                "with x as (select id from test)";
+                "select x.id from x inner join test2 as t2 on t2.id = x.id";
+                "where exists (select 1 from test3 as t3 where t3.a = 1)";
+              ]
+          in
+          let ast = Oth.Assert.ok_pp ~pp:Mql.Ast.pp_err @@ Mql.Ast.of_string query in
+          let q =
+            Oth.Assert.ok_pp ~pp:Mql_to_pgsql.pp_of_mql_err @@ Mql_to_pgsql.of_mql ~schema ast
+          in
+          Oth.Assert.Eq.string_list
+            ~expected:[ "test"; "test2"; "test3" ]
+            ~actual:(Mql_to_pgsql.tables q));
       Oth.test ~name:"Success 6" (fun _ ->
           let query = build_str [ "select * from test where id is not null" ] in
           let sql = build_str [ "select * from test where id is not null limit 20" ] in

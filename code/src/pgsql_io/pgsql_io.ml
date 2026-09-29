@@ -587,28 +587,65 @@ module Typed_sql = struct
             | Some v -> t.f v vs);
       }
 
+    (* An element type that is sent in binary gives the binary array format:
+       a header, then a length and the raw bytes of each element. An element
+       type that is sent as text ([make_text]) does not have a binary form that
+       [f] can give. For such a type, the array is sent in the text format
+       [{"a","b",NULL}]: each element is put in double quotes, and a backslash
+       escapes each backslash and double quote in it (#2469). *)
     let array t =
-      make_array
-        t.oid
-        (fun arr vs ->
-          let module Bv = Pgsql_codec.Binary_value.Encode in
-          let buf = Buffer.create 64 in
-          Buffer.add_string buf (Bv.int4 1l);
-          Buffer.add_string buf (Bv.int4 0l);
-          Buffer.add_string buf (Bv.int4 (Int32.of_int t.oid_num));
-          Buffer.add_string buf (Bv.int4 (Int32.of_int (List.length arr)));
-          Buffer.add_string buf (Bv.int4 1l);
-          List.iter
-            (fun v ->
-              match t.f v [] with
-              | [ Some encoded ] ->
-                  Buffer.add_string buf (Bv.int4 (Int32.of_int (String.length encoded)));
-                  Buffer.add_string buf encoded
-              | [ None ] -> Buffer.add_string buf (Bv.int4 (-1l))
-              | _ -> assert false)
-            arr;
-          Some (Buffer.contents buf) :: vs)
-        t.name
+      if t.binary then
+        make_array
+          t.oid
+          (fun arr vs ->
+            let module Bv = Pgsql_codec.Binary_value.Encode in
+            let buf = Buffer.create 64 in
+            Buffer.add_string buf (Bv.int4 1l);
+            Buffer.add_string buf (Bv.int4 0l);
+            Buffer.add_string buf (Bv.int4 (Int32.of_int t.oid_num));
+            Buffer.add_string buf (Bv.int4 (Int32.of_int (List.length arr)));
+            Buffer.add_string buf (Bv.int4 1l);
+            List.iter
+              (fun v ->
+                match t.f v [] with
+                | [ Some encoded ] ->
+                    Buffer.add_string buf (Bv.int4 (Int32.of_int (String.length encoded)));
+                    Buffer.add_string buf encoded
+                | [ None ] -> Buffer.add_string buf (Bv.int4 (-1l))
+                | _ -> assert false)
+              arr;
+            Some (Buffer.contents buf) :: vs)
+          t.name
+      else
+        let quote s =
+          let buf = Buffer.create (CCString.length s + 2) in
+          Buffer.add_char buf '"';
+          CCString.iter
+            (fun c ->
+              if c = '"' || c = '\\' then Buffer.add_char buf '\\';
+              Buffer.add_char buf c)
+            s;
+          Buffer.add_char buf '"';
+          Buffer.contents buf
+        in
+        {
+          (make_array
+             t.oid
+             (fun arr vs ->
+               let elems =
+                 CCList.map
+                   (fun v ->
+                     match t.f v [] with
+                     | [ Some s ] -> quote s
+                     | [ None ] -> "NULL"
+                     | _ -> assert false)
+                   arr
+               in
+               Some ("{" ^ CCString.concat "," elems ^ "}") :: vs)
+             t.name)
+          with
+          binary = false;
+        }
 
     let str_array = array
   end
@@ -1628,7 +1665,10 @@ and create_sm_perform_login r w ?passwd ~notice_response ~buf_size_threshold ~us
       tx_bytes = 0;
     }
   in
-  let msgs = [ ("user", user); ("database", database) ] in
+  (* The session always uses UTF8, whatever the server default is. [Var.array]
+     escapes the text array format byte by byte, which is correct only when no
+     multibyte character has a byte that is a backslash or a double quote. *)
+  let msgs = [ ("user", user); ("database", database); ("client_encoding", "UTF8") ] in
   let startup = Pgsql_codec.Frame.Frontend.(StartupMessage { msgs }) in
   Logs.debug (fun m -> m "Sent startup frame");
   Io.send_frame t startup >>= fun () -> create_sm_login ?passwd ~user t
