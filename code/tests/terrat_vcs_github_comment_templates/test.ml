@@ -419,25 +419,31 @@ let test_published_bodies_carry_the_self_marker =
         [ Terrat_brand.Stategraph; Terrat_brand.Terrateam ];
       ())
 
-(* The [work_manifests] payload both providers build for every message that lists work manifests,
-   see [work_manifests_kv] in the service providers. *)
-let work_manifests_kv rows =
+(* The [work_manifests] table rows both providers build for every message that lists work
+   manifests, see [work_manifests_kv] in the service providers. *)
+let work_manifests_rows rows =
+  Snabela.Kv.(
+    list
+      (CCList.map
+         (fun (id, is_pr, run_type, state, created_at) ->
+           Map.of_list
+             [
+               ("id", string id);
+               ("is_pr", bool is_pr);
+               ("run_type", string run_type);
+               ("state", string state);
+               ("created_at", string created_at);
+             ])
+         rows))
+
+(* Builds the payload the publishers build.  The table has one row per listed run.  The unlock
+   command iterates the [unlock_ids] list, and the publisher has already deduped that list. *)
+let work_manifests_kv ~unlock_ids rows =
   Snabela.Kv.(
     Map.of_list
       [
-        ( "work_manifests",
-          list
-            (CCList.map
-               (fun (id, is_pr, run_type, state, created_at) ->
-                 Map.of_list
-                   [
-                     ("id", string id);
-                     ("is_pr", bool is_pr);
-                     ("run_type", string run_type);
-                     ("state", string state);
-                     ("created_at", string created_at);
-                   ])
-               rows) );
+        ("work_manifests", work_manifests_rows rows);
+        ("unlock_ids", list (CCList.map (fun id -> Map.of_list [ ("id", string id) ]) unlock_ids));
       ])
 
 let render_snabela template kv =
@@ -452,7 +458,9 @@ let test_apply_queued_behind_pull_request =
       let body =
         render_snabela
           Tmpl.apply_queued_behind_work_manifests
-          (work_manifests_kv [ ("42", true, "Plan", "Running", "2026-8-21 9:14") ])
+          (work_manifests_kv
+             ~unlock_ids:[ "42" ]
+             [ ("42", true, "Plan", "Running", "2026-8-21 9:14") ])
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"Apply queued";
       Oth.Assert.str_contains_all
@@ -466,7 +474,9 @@ let test_apply_queued_behind_drift =
       let body =
         render_snabela
           Tmpl.apply_queued_behind_work_manifests
-          (work_manifests_kv [ ("drift", false, "Plan", "Running", "2026-8-21 0:02") ])
+          (work_manifests_kv
+             ~unlock_ids:[ "drift" ]
+             [ ("drift", false, "Plan", "Running", "2026-8-21 0:02") ])
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"stategraph unlock drift";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"#drift")
@@ -478,6 +488,7 @@ let test_apply_queued_behind_both_kinds =
         render_snabela
           Tmpl.apply_queued_behind_work_manifests
           (work_manifests_kv
+             ~unlock_ids:[ "42"; "drift" ]
              [
                ("42", true, "Plan", "Running", "2026-8-21 9:14");
                ("drift", false, "Plan", "Running", "2026-8-21 0:02");
@@ -492,10 +503,61 @@ let test_conflicting_work_manifests_title =
       let body =
         render_snabela
           Tmpl.conflicting_work_manifests
-          (work_manifests_kv [ ("42", true, "Apply", "Queued", "2026-8-21 9:25") ])
+          (work_manifests_kv
+             ~unlock_ids:[ "42" ]
+             [ ("42", true, "Apply", "Queued", "2026-8-21 9:25") ])
       in
       Oth.Assert.str_contains ~haystack:body ~needle:"Apply already queued or running";
       Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"Apply already in progress")
+
+(* The ids arrive pre-deduped from the publisher, so these tests cannot see a publisher that
+   fails to dedupe.  What they pin is that the template iterates [unlock_ids], not
+   [work_manifests]: the same pull request with three stuck runs renders one unlock token, not
+   three, and every drift target shares the one [drift] token. *)
+let test_maybe_stale_work_manifests_unlock_key =
+  Oth.test ~name:"Maybe stale unlock command uses the unlock ids key" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.maybe_stale_work_manifests
+          (work_manifests_kv
+             ~unlock_ids:[ "123"; "drift" ]
+             [
+               ("123", true, "Plan", "Queued", "2026-8-21 9:14");
+               ("123", true, "Plan", "Queued", "2026-8-21 9:20");
+               ("drift", false, "Plan", "Queued", "2026-8-21 0:02");
+               ("drift", false, "Plan", "Queued", "2026-8-21 0:40");
+               ("123", true, "Plan", "Queued", "2026-8-21 9:44");
+             ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"stategraph unlock 123 drift";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"unlock 123 123";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"drift drift";
+      (* The table keeps one row per stuck run even though the command dedupes. *)
+      Oth.Assert.str_contains ~haystack:body ~needle:"| #123 | Plan | Queued | 2026-8-21 9:44 UTC |";
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"| drift | Plan | Queued | 2026-8-21 0:40 UTC |";
+      ())
+
+let test_conflicting_work_manifests_unlock_key =
+  Oth.test ~name:"Conflicting unlock command uses the unlock ids key" (fun _ ->
+      let body =
+        render_snabela
+          Tmpl.conflicting_work_manifests
+          (work_manifests_kv
+             ~unlock_ids:[ "123"; "45" ]
+             [
+               ("123", true, "Apply", "Queued", "2026-8-21 9:11");
+               ("123", true, "Apply", "Queued", "2026-8-21 9:12");
+               ("45", true, "Plan", "Queued", "2026-8-21 8:50");
+             ])
+      in
+      Oth.Assert.str_contains ~haystack:body ~needle:"stategraph unlock 123 45";
+      Oth.Assert.str_doesnt_contain ~haystack:body ~needle:"unlock 123 123";
+      Oth.Assert.str_contains
+        ~haystack:body
+        ~needle:"| #123 | Apply | Queued | 2026-8-21 9:12 UTC |";
+      ())
 
 (* Every [<details>] the apply comment opens must close, and no [</details>] may
    run ahead of its open.  #1975: the per-dirspace [<details>] opened under
@@ -1282,6 +1344,8 @@ let test =
       test_apply_queued_behind_drift;
       test_apply_queued_behind_both_kinds;
       test_conflicting_work_manifests_title;
+      test_maybe_stale_work_manifests_unlock_key;
+      test_conflicting_work_manifests_unlock_key;
       test_apply_complete2_details_many_dirspaces;
       test_apply_complete2_details_few_dirspaces;
       test_apply_complete2_details_few_dirspaces_compact_view;

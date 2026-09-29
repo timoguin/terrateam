@@ -136,6 +136,92 @@ let test_dirspace_summary_of_string =
       Oth.Assert.Eq.option ~eq:Ds.equal ~pp:Ds.pp ~expected:None ~actual:(Ds.of_string "pending");
       ())
 
+(* A work manifest with only what [work_manifest_unlock_ids] reads: its target. *)
+let wm ~target =
+  {
+    Terrat_work_manifest3.account = ();
+    base_ref = "";
+    branch = None;
+    branch_ref = "";
+    changes = [];
+    completed_at = None;
+    created_at = "";
+    denied_dirspaces = [];
+    environment = None;
+    id = Uuidm.nil;
+    initiator = Terrat_work_manifest3.Initiator.System;
+    run_id = None;
+    runs_on = None;
+    state = Terrat_work_manifest3.State.Queued;
+    steps = [];
+    tag_query = Terrat_tag_query.any;
+    target;
+  }
+
+let pr n = Terrat_vcs_provider2.Target.Pr n
+let drift = Terrat_vcs_provider2.Target.Drift { repo = (); branch = "" }
+
+(* Three stuck runs for one pull request render one unlock token, not three.
+   This is the publisher-layer regression the template tests cannot catch. *)
+let test_work_manifest_unlock_ids_dedupes_pull_requests =
+  Oth.test ~name:"work_manifest_unlock_ids dedupes pull request numbers" (fun _ ->
+      Oth.Assert.Eq.string_list
+        ~expected:[ "123" ]
+        ~actual:
+          (Terrat_vcs_provider2.work_manifest_unlock_ids
+             ~pull_request_id:CCFun.id
+             (CCList.map (fun _ -> wm ~target:(pr 123)) [ 1; 2; 3 ]));
+      ())
+
+let test_work_manifest_unlock_ids_collapses_drift =
+  Oth.test ~name:"work_manifest_unlock_ids collapses drift targets" (fun _ ->
+      Oth.Assert.Eq.string_list
+        ~expected:[ "drift" ]
+        ~actual:
+          (Terrat_vcs_provider2.work_manifest_unlock_ids
+             ~pull_request_id:CCFun.id
+             (CCList.map (fun _ -> wm ~target:drift) [ 1; 2 ]));
+      ())
+
+let test_work_manifest_unlock_ids_mixed_list =
+  Oth.test ~name:"work_manifest_unlock_ids mixed list sorts lexicographically" (fun _ ->
+      Oth.Assert.Eq.string_list
+        ~expected:[ "123"; "45"; "drift" ]
+        ~actual:
+          (Terrat_vcs_provider2.work_manifest_unlock_ids
+             ~pull_request_id:CCFun.id
+             [
+               wm ~target:(pr 123);
+               wm ~target:(pr 123);
+               wm ~target:drift;
+               wm ~target:(pr 45);
+               wm ~target:drift;
+             ]);
+      ())
+
+let test_work_manifest_unlock_ids_singletons =
+  Oth.test ~name:"work_manifest_unlock_ids singletons pass through" (fun _ ->
+      Oth.Assert.Eq.string_list
+        ~expected:[ "123" ]
+        ~actual:
+          (Terrat_vcs_provider2.work_manifest_unlock_ids
+             ~pull_request_id:CCFun.id
+             [ wm ~target:(pr 123) ]);
+      Oth.Assert.Eq.string_list
+        ~expected:[ "drift" ]
+        ~actual:
+          (Terrat_vcs_provider2.work_manifest_unlock_ids
+             ~pull_request_id:CCFun.id
+             [ wm ~target:drift ]);
+      ())
+
+let test_work_manifest_unlock_ids_empty =
+  Oth.test ~name:"work_manifest_unlock_ids empty list" (fun _ ->
+      Oth.Assert.Eq.string_list
+        ~expected:[]
+        ~actual:(Terrat_vcs_provider2.work_manifest_unlock_ids ~pull_request_id:CCFun.id []);
+      ())
+
 let test =
   Oth.serial
     [
@@ -148,6 +234,11 @@ let test =
       test_of_steps_ignores_non_plan_steps;
       test_of_steps_all_none_counts_treated_as_absent;
       test_of_steps_empty_summary_absent;
+      test_work_manifest_unlock_ids_dedupes_pull_requests;
+      test_work_manifest_unlock_ids_collapses_drift;
+      test_work_manifest_unlock_ids_mixed_list;
+      test_work_manifest_unlock_ids_singletons;
+      test_work_manifest_unlock_ids_empty;
     ]
 
 let () = Oth.run ~file:__FILE__ ~setup:(fun () -> Ok ()) ~teardown:(fun _ -> ()) (fun _ -> test)
