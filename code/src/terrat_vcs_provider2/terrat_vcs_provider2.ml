@@ -155,7 +155,8 @@ module Resource_summary = struct
     | None -> "-"
 
   (* [description] suffixed with the counts, e.g.
-      "Completed · 2 created, 1 updated, 0 replaced, 0 deleted".  Without a
+      "Completed · 2 create, 1 update, 0 replace, 0 delete".  The count words
+      are present tense, like the comment table headers.  Without a
       summary the description is returned unchanged; clipped defensively at
       {!description_limit}. *)
   let describe ?resource_summary ~description () =
@@ -164,7 +165,7 @@ module Resource_summary = struct
     | Some { created; deleted; replaced; updated } ->
         let text =
           Printf.sprintf
-            "%s · %s created, %s updated, %s replaced, %s deleted"
+            "%s · %s create, %s update, %s replace, %s delete"
             description
             (count_str created)
             (count_str updated)

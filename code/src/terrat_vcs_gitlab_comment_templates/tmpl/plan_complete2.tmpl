@@ -53,7 +53,7 @@
 
 **{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ changed | length }} with changes · {{ nochange | length }} no changes · {{ failed | length }} failed
 
-| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| Directory | Workspace | Result | Create | Update | Replace | Delete |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |
@@ -174,7 +174,7 @@ A gate is satisfied only when all conditions are met. See [documentation](https:
 
 **{{ dirspaces | length }} dirspace{{ 's' if dirspaces | length != 1 else '' }}** · {{ changed | length }} with changes · {{ nochange | length }} no changes · {{ failed | length }} failed
 
-| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| Directory | Workspace | Result | Create | Update | Replace | Delete |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |

@@ -45,7 +45,7 @@ let test_describe_no_summary =
 let test_describe_full_summary =
   Oth.test ~name:"describe_full_summary" (fun _ ->
       Oth.Assert.Eq.string
-        ~expected:"Completed · 1 created, 0 updated, 0 replaced, 0 deleted"
+        ~expected:"Completed · 1 create, 0 update, 0 replace, 0 delete"
         ~actual:
           (Rs.describe
              ~resource_summary:(summary (Some 1) (Some 0) (Some 0) (Some 0))
@@ -56,7 +56,7 @@ let test_describe_full_summary =
 let test_describe_partial_summary_dashes =
   Oth.test ~name:"describe_partial_summary_dashes" (fun _ ->
       Oth.Assert.Eq.string
-        ~expected:"Failed · - created, - updated, 2 replaced, - deleted"
+        ~expected:"Failed · - create, - update, 2 replace, - delete"
         ~actual:
           (Rs.describe ~resource_summary:(summary None None (Some 2) None) ~description:"Failed" ());
       ())

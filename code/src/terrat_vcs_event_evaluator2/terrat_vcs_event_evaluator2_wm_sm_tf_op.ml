@@ -1247,8 +1247,8 @@ struct
                       | `Apply -> Abbs_fc.return_ok Terrat_data.Dirspace_set.empty
                       | `Plan ->
                           Builder.run_db s ~f:(fun db ->
-                              S.Db.query_dirspace_runs_for_context
-                                ~request_id:(Builder.log_id s)
+                              Tasks_base.query_dirspace_runs_for_context
+                                s
                                 db
                                 context
                                 (CCList.map fst work_manifest_result.Wmr.dirspaces_success))

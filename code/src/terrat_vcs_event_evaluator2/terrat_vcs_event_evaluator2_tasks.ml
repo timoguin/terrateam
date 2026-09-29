@@ -3464,22 +3464,58 @@ struct
             schedules
           >>= fun () -> Abbs_fc.return_ok (CCList.length schedules))
 
+    let matched_dirspace_runs =
+      run ~name:"matched_dirspace_runs" (fun s { Bs.Fetcher.fetch } ->
+          let module Dc = Terrat_change_match3.Dirspace_config in
+          let open Irm in
+          fetch Keys.all_matches
+          >>= fun all_matches ->
+          match CCList.map (fun dc -> dc.Dc.dirspace) (CCList.flatten all_matches) with
+          | [] -> Fc.return_ok []
+          | _ :: _ as dirspaces ->
+              fetch Keys.context
+              >>= fun context ->
+              Builder.run_db s ~f:(fun db ->
+                  Tasks_base.query_dirspace_runs_for_context s db context dirspaces))
+
+    let run_plan_changes =
+      run ~name:"run_plan_changes" (fun _s { Bs.Fetcher.fetch } ->
+          let module Ds = Terrat_intra_pr_hash.Dirspace_state in
+          let module P = Terrat_intra_pr_hash.Plan in
+          let open Irm in
+          fetch Keys.matched_dirspace_runs
+          >>= fun runs ->
+          let plan_found_changes run =
+            match run.Terrat_vcs_provider2.Dirspace_runs.state.Ds.last_plan with
+            | Some { P.has_changes; run = _ } -> has_changes
+            | None -> false
+          in
+          Fc.return_ok (if CCList.exists plan_found_changes runs then `Changes else `No_changes))
+
     let maybe_create_completed_apply_check =
       run ~name:"maybe_create_completed_apply_check" (fun s ({ Bs.Fetcher.fetch } as fetcher) ->
           let module R = Terrat_base_repo_config_v1 in
           let open Irm in
           fetch Keys.repo_config
           >>= fun repo_config ->
-          let apply_requirements = R.apply_requirements repo_config in
           let create_completed_apply_check_on_noop =
-            apply_requirements.R.Apply_requirements.create_completed_apply_check_on_noop
+            (R.apply_requirements repo_config)
+              .R.Apply_requirements.create_completed_apply_check_on_noop
           in
           fetch Keys.all_matches
           >>= fun all_matches ->
           fetch Keys.all_unapplied_matches
           >>= fun all_unapplied_matches ->
+          (* No matches at all is gated on the option; matched dirspaces that are all applied are
+             not. *)
           match (all_unapplied_matches, all_matches, create_completed_apply_check_on_noop) with
-          | [], [], true | [], _, _ -> Tasks_base.create_completed_apply_check s fetcher
+          | [], [], true | [], _ :: _, _ ->
+              fetch Keys.run_plan_changes
+              >>= fun plan_changes ->
+              Tasks_base.create_completed_apply_check
+                ~description:(Tasks_base.apply_check_description plan_changes)
+                s
+                fetcher
           | _ -> Abbs_fc.return_ok ())
 
     let finalize_unfinished_terrateam_checks =
@@ -3495,14 +3531,33 @@ struct
                 | { Ch.status = Status.(Completed | Failed | Canceled); _ } -> None
                 | { Ch.status = Status.(Queued | Running); title; _ } as c
                   when CCString.prefix ~pre:"terrateam plan" title
-                       || CCString.prefix ~pre:"terrateam apply" title ->
-                    Some { c with Ch.status = Status.Completed; description = "Completed" }
+                       || CCString.prefix ~pre:"terrateam apply" title -> Some c
                 | _ -> None)
               commit_checks
           in
           match unfinished with
           | [] -> Abbs_fc.return_ok ()
-          | _ ->
+          | _ :: _ ->
+              (* The run's plans are read only when the combined apply check is among the
+                 unfinished checks, because no other check uses them. *)
+              let is_combined_apply { Ch.title; status = _; details_url = _; description = _ } =
+                CCString.equal title "terrateam apply"
+              in
+              (if CCList.exists is_combined_apply unfinished then
+                 fetch Keys.run_plan_changes
+                 >>= fun plan_changes ->
+                 Fc.return_ok (Tasks_base.apply_check_description plan_changes)
+               else Fc.return_ok "Completed")
+              >>= fun combined_description ->
+              let unfinished =
+                CCList.map
+                  (fun c ->
+                    let description =
+                      if is_combined_apply c then combined_description else "Completed"
+                    in
+                    { c with Ch.status = Status.Completed; description })
+                  unfinished
+              in
               fetch Keys.branch_ref
               >>= fun branch_ref ->
               fetch Keys.create_commit_checks
@@ -3829,7 +3884,7 @@ struct
                 (fun (work_manifest, dirspace) ->
                   S.Commit_check.make_dirspace
                     ~config:(Builder.State.config s)
-                    ~description:"Completed"
+                    ~description:(Tasks_base.apply_check_description `No_changes)
                     ~run_type
                     ~dirspace
                     ~status:Terrat_commit_check.Status.Completed
@@ -3925,13 +3980,20 @@ struct
                     |> CCList.append kept_applied
                     |> CCList.sort_uniq ~cmp:Terrat_dirspace.compare
                   in
-                  Builder.run_db s ~f:(fun db ->
-                      S.Db.query_dirspace_runs_for_context
-                        ~request_id:(Builder.log_id s)
-                        db
-                        context
-                        kept)
-                  >>= fun runs ->
+                  (* [kept] is a subset of the matched dirspaces, thus their runs come from the
+                     shared read of all matched dirspaces, filtered to [kept]. *)
+                  fetch Keys.matched_dirspace_runs
+                  >>= fun matched_runs ->
+                  let kept_set = Terrat_data.Dirspace_set.of_list kept in
+                  let runs =
+                    CCList.filter
+                      (fun runs ->
+                        Terrat_data.Dirspace_set.mem
+                          runs.Terrat_vcs_provider2.Dirspace_runs.state
+                            .Terrat_intra_pr_hash.Dirspace_state.dirspace
+                          kept_set)
+                      matched_runs
+                  in
                   let failed_of is_failed =
                     runs
                     |> CCList.filter is_failed
@@ -3945,6 +4007,27 @@ struct
                   in
                   let failed_applies =
                     failed_of (fun runs -> runs.Terrat_vcs_provider2.Dirspace_runs.apply_failed)
+                  in
+                  (* What the newest successful plan of each kept dirspace found.  A dirspace with no
+                     such plan is absent. *)
+                  let plan_changes =
+                    runs
+                    |> CCList.filter_map (fun runs ->
+                        let module Ds = Terrat_intra_pr_hash.Dirspace_state in
+                        let module P = Terrat_intra_pr_hash.Plan in
+                        match runs.Terrat_vcs_provider2.Dirspace_runs.state with
+                        | {
+                         Ds.last_plan = Some { P.has_changes = true; run = _ };
+                         dirspace;
+                         last_apply = _;
+                        } -> Some (dirspace, `Changes)
+                        | {
+                         Ds.last_plan = Some { P.has_changes = false; run = _ };
+                         dirspace;
+                         last_apply = _;
+                        } -> Some (dirspace, `No_changes)
+                        | { Ds.last_plan = None; dirspace = _; last_apply = _ } -> None)
+                    |> Terrat_data.Dirspace_map.of_list
                   in
                   fetch Keys.branch_ref
                   >>= fun branch_ref ->
@@ -3980,7 +4063,7 @@ struct
                   let notifications = Terrat_base_repo_config_v1.notifications repo_config in
                   (* A newest run which failed says more than a run which stands, thus it decides the
                      status of the check. *)
-                  let checks_of ~run ~step ~failed dirspaces =
+                  let checks_of ~run ~step ~failed ~completed dirspaces =
                     let dirspaces =
                       CCList.sort_uniq
                         ~cmp:Terrat_dirspace.compare
@@ -3997,7 +4080,7 @@ struct
                           let status, description =
                             if Terrat_data.Dirspace_set.mem dirspace failed then
                               (Status.Failed, "Failed")
-                            else (Status.Completed, "Completed")
+                            else (Status.Completed, completed dirspace)
                           in
                           S.Commit_check.make_dirspace
                             ~config:(Builder.State.config s)
@@ -4040,11 +4123,20 @@ struct
                   let checks =
                     CCList.filter
                       needed
-                      (checks_of ~run:`Plan ~step:Wm.Step.Plan ~failed:failed_plans kept_planned
+                      (checks_of
+                         ~run:`Plan
+                         ~step:Wm.Step.Plan
+                         ~failed:failed_plans
+                         ~completed:(CCFun.const "Completed")
+                         kept_planned
                       @ checks_of
                           ~run:`Apply
                           ~step:Wm.Step.Apply
                           ~failed:failed_applies
+                          ~completed:(fun dirspace ->
+                            match Terrat_data.Dirspace_map.find_opt dirspace plan_changes with
+                            | Some plan_changes -> Tasks_base.apply_check_description plan_changes
+                            | None -> Tasks_base.apply_check_description `Not_run)
                           kept_applied)
                   in
                   Logs.info (fun m ->
@@ -4085,6 +4177,8 @@ struct
     |> Hmap.add (coerce Keys.all_matches) Tasks.all_matches
     |> Hmap.add (coerce Keys.all_tag_query_matches) Tasks.all_tag_query_matches
     |> Hmap.add (coerce Keys.all_unapplied_matches) Tasks.all_unapplied_matches
+    |> Hmap.add (coerce Keys.matched_dirspace_runs) Tasks.matched_dirspace_runs
+    |> Hmap.add (coerce Keys.run_plan_changes) Tasks.run_plan_changes
     |> Hmap.add (coerce Keys.already_planned_matches) Tasks.already_planned_matches
     |> Hmap.add (coerce Keys.applied_dirspaces) Tasks.applied_dirspaces
     |> Hmap.add (coerce Keys.branch_dirspaces) Tasks.branch_dirspaces

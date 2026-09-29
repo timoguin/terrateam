@@ -834,7 +834,7 @@ let test_plan_complete2_resource_summary =
              ~num_more_layers:0
              ())
       in
-      Oth.Assert.str_contains ~haystack:body ~needle:"Created | Updated | Replaced | Deleted";
+      Oth.Assert.str_contains ~haystack:body ~needle:"Create | Update | Replace | Delete";
       Oth.Assert.str_contains ~haystack:body ~needle:"| 2 | 1 | 0 | 3 |";
       Oth.Assert.str_contains ~haystack:body ~needle:"**Total**";
       Oth.Assert.str_contains ~haystack:body ~needle:"**2** | **1** | **0** | **3**")
@@ -900,7 +900,7 @@ let test_plan_complete2_header_keeps_table_open =
              ~num_more_layers:0
              ())
       in
-      Oth.Assert.str_contains ~haystack:body ~needle:"Created | Updated | Replaced | Deleted";
+      Oth.Assert.str_contains ~haystack:body ~needle:"Create | Update | Replace | Delete";
       (* Header mode keeps the bold counts line and the table unwrapped: no
          summary wrapping the table. *)
       Oth.Assert.str_contains

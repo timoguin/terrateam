@@ -9,6 +9,17 @@
 
 import type { TerraformJsonPlan } from './terraform';
 
+/** The plan step's `resource_summary` payload: four count slots.
+ *  The runner omits an unreported slot or sends it as null, so every field is
+ *  optional and nullable, and the UI renders such a slot as `-` (the backend
+ *  `count_str` convention). */
+export interface ResourceSummary {
+  created?: number | null;
+  updated?: number | null;
+  replaced?: number | null;
+  deleted?: number | null;
+}
+
 export interface StepOutputPayload {
   text?: string;
   plan?: string;
@@ -18,6 +29,9 @@ export interface StepOutputPayload {
   diff?: TerraformJsonPlan | string; // JSON plan data (object or string)
   format?: string | { type?: string; lang?: string };
   has_changes?: boolean;
+  // Plan-step resource counts for the collapsed dirspace header line;
+  // absent on legacy runners and no-change plans.
+  resource_summary?: ResourceSummary;
   ignore_errors?: boolean;
   visible_on?: string;
   summary?: {

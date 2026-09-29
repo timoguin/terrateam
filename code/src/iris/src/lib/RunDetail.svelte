@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { WorkManifest } from './types';
-  import type { OutputItem } from './types/stepOutput';
+  import type { OutputItem, ResourceSummary } from './types/stepOutput';
   // Auth handled by PageLayout
   import { api } from './api';
   import { selectedInstallation, installations, currentVCSProvider, serverConfig } from './stores';
@@ -11,6 +11,7 @@
   import ErrorMessage from './components/ui/ErrorMessage.svelte';
   import Card from './components/ui/Card.svelte';
   import StepOutput from './components/ui/StepOutput.svelte';
+  import DirspaceHeader from './components/ui/DirspaceHeader.svelte';
   import { getWebBaseUrl } from './server-config';
 
   export let params: { id: string; installationId?: string } = { id: '' };
@@ -149,6 +150,13 @@
               // Keep essential payload properties for filtering
               visible_on: out.payload?.visible_on,
               ignore_errors: out.payload?.ignore_errors,
+              // A single boolean per plan step: it is what tells a no-op run
+              // from an applying one in the header status without loading any
+              // output content.
+              has_changes: out.payload?.has_changes,
+              // The plan step's resource counts, kept for the collapsed
+              // dirspace header line.
+              resource_summary: out.payload?.resource_summary,
               // Small enough to keep: it is what tells two `run` steps apart in
               // the header, and dropping it would hide the command until the
               // output is loaded on demand.
@@ -157,7 +165,7 @@
           };
         })
       };
-      
+
       // Store ALL outputs (including hidden ones) for Raw Steps tab
       const allLiteOutputsResponse = {
         outputs: (allStepsResponse.outputs || []).map((output: unknown) => {
@@ -171,6 +179,8 @@
               // Keep essential payload properties for filtering
               visible_on: out.payload?.visible_on,
               ignore_errors: out.payload?.ignore_errors,
+              has_changes: out.payload?.has_changes,
+              resource_summary: out.payload?.resource_summary,
               // Small enough to keep: it is what tells two `run` steps apart in
               // the header, and dropping it would hide the command until the
               // output is loaded on demand.
@@ -399,8 +409,26 @@
     }
   }
 
+  // A completed run whose plan steps all reported no changes applied nothing: the status says
+  // that instead of "Completed".  Runs without plan outputs (applies, older runs) keep the
+  // generic label.  Only a plan step's `has_changes` counts, thus an apply step that carries the
+  // field cannot make an applied run read "No Changes".
+  function runHadNoChanges(items: OutputItem[]): boolean {
+    let sawPlanOutput = false;
+    for (const item of items) {
+      if (!(item?.step?.endsWith('/plan') ?? false)) continue;
+      const hasChanges = item?.payload?.has_changes;
+      if (typeof hasChanges !== 'boolean') continue;
+      sawPlanOutput = true;
+      if (hasChanges) return false;
+    }
+    return sawPlanOutput;
+  }
+
+  $: noChanges = run !== null && run.state === 'completed' && runHadNoChanges(allOutputs);
+
   // Smarter status display that considers dirspace failures
-  function getSmartStatusDisplay(run: WorkManifest): { icon: string, color: string, label: string } {
+  function getSmartStatusDisplay(run: WorkManifest, noChanges: boolean): { icon: string, color: string, label: string } {
     const state = run.state;
     
     // For completed runs, check if any dirspaces failed
@@ -412,6 +440,12 @@
           icon: '⚠️',
           color: 'text-[var(--sg-warning)] bg-[var(--sg-warning-bg)]',
           label: 'Completed with Failures'
+        };
+      } else if (noChanges) {
+        return {
+          icon: '✅',
+          color: 'text-[var(--sg-accent)] bg-[var(--sg-accent-bg)]',
+          label: 'No Changes'
         };
       } else {
         return {
@@ -484,7 +518,19 @@
     return `${dir}:${workspace}`;
   }
 
-  // Terraform summaries removed for memory safety
+  // Collapsed-header resource counts, read from the dirspace's plan step in
+  // the unfiltered `allOutputs` list (the same source `runHadNoChanges`
+  // reads): `shouldShowStep` filters a successful plan step out of `outputs`.
+  // The counts come from the payload field, never from parsing plan text.
+  function resourceSummaryForDirspace(dirspace: { dir: string; workspace: string }): ResourceSummary | null {
+    const plan = allOutputs.find(
+      (output) =>
+        output?.scope?.dir === dirspace.dir &&
+        output?.scope?.workspace === dirspace.workspace &&
+        (output.step?.endsWith('/plan') ?? false)
+    );
+    return plan?.payload?.resource_summary ?? null;
+  }
 
   function getStepIcon(step: string): string {
     switch (step) {
@@ -746,7 +792,7 @@
         </div>
         <div class="flex flex-col items-start lg:items-end space-y-2">
           {#if run}
-            {@const smartStatus = getSmartStatusDisplay(run)}
+            {@const smartStatus = getSmartStatusDisplay(run, noChanges)}
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-medium whitespace-nowrap">Status:</span>
               <span class={`px-3 py-1 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap ${smartStatus.color}`}>
@@ -1153,37 +1199,16 @@
               })}
               
               <div class="border border-[var(--sg-border)] rounded-lg">
-                <button 
-                  on:click={() => toggleDirspaceExpansion(dirspaceKey)}
-                  class="w-full flex items-center justify-between p-4 text-left hover:bg-[var(--sg-bg-2)] focus:outline-none focus:ring-2 focus:ring-[var(--sg-accent)] focus:ring-inset"
-                >
-                  <div class="flex items-center space-x-3 flex-1 min-w-0">
-                    <div class="flex-shrink-0">
-                      {#if dirspace.success === true}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-success)]"></div>
-                      {:else if dirspace.success === false}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-error)]"></div>
-                      {:else}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-bg-2)]"></div>
-                      {/if}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="font-medium text-[var(--sg-text)] truncate">{dirspace.dir}</div>
-                      <div class="text-sm text-[var(--sg-text-dim)] truncate">Workspace: {dirspace.workspace}</div>
-                      
-                      <!-- Terraform summaries removed for memory safety -->
-                    </div>
-                  </div>
-                  <div class="flex items-center space-x-2 flex-shrink-0">
-                    <span class="text-xs sm:text-sm text-[var(--sg-text-dim)]">
-                      <span class="hidden sm:inline">{dirspaceOutputs.length} step{dirspaceOutputs.length !== 1 ? 's' : ''}</span>
-                      <span class="sm:hidden">{dirspaceOutputs.length} {dirspaceOutputs.length === 1 ? 'step' : 'steps'}</span>
-                    </span>
-                    <svg class="w-5 h-5 text-[var(--sg-text-dim)] transform transition-transform {isExpanded ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </button>
+                <DirspaceHeader
+                  dir={dirspace.dir}
+                  workspace={dirspace.workspace}
+                  success={dirspace.success}
+                  stepCount={dirspaceOutputs.length}
+                  suffix=""
+                  resourceSummary={resourceSummaryForDirspace(dirspace)}
+                  expanded={isExpanded}
+                  onToggle={() => toggleDirspaceExpansion(dirspaceKey)}
+                />
                 
                 {#if isExpanded}
                   <div class="border-t border-[var(--sg-border)] bg-[var(--sg-bg-0)]">
@@ -1247,37 +1272,16 @@
               })}
               
               <div class="border border-[var(--sg-border-light)] rounded-lg">
-                <button 
-                  on:click={() => toggleDirspaceExpansion(dirspaceKey)}
-                  class="w-full flex items-center justify-between p-4 text-left hover:bg-[var(--sg-bg-2)] focus:outline-none focus:ring-2 focus:ring-[var(--sg-accent)] focus:ring-inset"
-                >
-                  <div class="flex items-center space-x-3 flex-1 min-w-0">
-                    <div class="flex-shrink-0">
-                      {#if dirspace.success === true}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-success)]"></div>
-                      {:else if dirspace.success === false}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-error)]"></div>
-                      {:else}
-                        <div class="w-3 h-3 rounded-full bg-[var(--sg-bg-2)]"></div>
-                      {/if}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="font-medium text-[var(--sg-text)] truncate">{dirspace.dir}</div>
-                      <div class="text-sm text-[var(--sg-text-dim)] truncate">Workspace: {dirspace.workspace}</div>
-                      
-                      <!-- Terraform summaries removed for memory safety -->
-                    </div>
-                  </div>
-                  <div class="flex items-center space-x-2 flex-shrink-0">
-                    <span class="text-xs sm:text-sm text-[var(--sg-text-dim)]">
-                      <span class="hidden sm:inline">{dirspaceOutputs.length} step{dirspaceOutputs.length !== 1 ? 's' : ''} (unfiltered)</span>
-                      <span class="sm:hidden">{dirspaceOutputs.length} {dirspaceOutputs.length === 1 ? 'step' : 'steps'}</span>
-                    </span>
-                    <svg class="w-5 h-5 text-[var(--sg-text-dim)] transform transition-transform {isExpanded ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </button>
+                <DirspaceHeader
+                  dir={dirspace.dir}
+                  workspace={dirspace.workspace}
+                  success={dirspace.success}
+                  stepCount={dirspaceOutputs.length}
+                  suffix=" (unfiltered)"
+                  resourceSummary={resourceSummaryForDirspace(dirspace)}
+                  expanded={isExpanded}
+                  onToggle={() => toggleDirspaceExpansion(dirspaceKey)}
+                />
                 
                 {#if isExpanded}
                   <div class="border-t border-[var(--sg-border)] bg-[var(--sg-bg-0)]">
