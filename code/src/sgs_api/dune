@@ -1,0 +1,107 @@
+; The sgs_api modules are generated from api_schemas/stategraph/api.json by
+; openapi_cli. This rule replaces the old `make stategraph-api` Makefile
+; target: it generates the modules into a `gen` directory target, formats them
+; with ocamlformat, and promotes the formatted files into this directory (where
+; the library below picks them up as ordinary sources). The flags mirror the
+; old Makefile target. dune does not pre-create directory targets and the
+; generator open_out's without mkdir, so the action creates `gen` first.
+
+(rule
+ (alias generate-api-types)
+ (mode
+  (promote
+   (into .)))
+ (deps
+  ../../.ocamlformat
+  ../../../api_schemas/stategraph/api.json
+  ../../../api_schemas/stategraph/capability-wire.json
+  ../../../api_schemas/stategraph/capability-denied.json
+  ../../../api_schemas/stategraph/actuator-run-result.json
+  ../../../api_schemas/stategraph/tx_log_hints.json)
+ (targets
+  (dir gen))
+ (action
+  (progn
+   (run mkdir -p gen)
+   (run
+    %{exe:../openapi_cli/openapi_cli.exe}
+    convert
+    --non-strict-records
+    --input
+    ../../../api_schemas/stategraph/api.json
+    --name
+    sgs_api
+    --output-dir
+    gen
+    --search-path
+    ../../../api_schemas/stategraph
+    --file-link
+    capability-wire.json=Sg_caps_wire
+    --file-link
+    capability-denied.json=Sgs_capability_denied
+    --file-link
+    actuator-run-result.json=Sgs_actuator_run_result
+    --file-link
+    tx_log_data.json=Sgs_tx_log_data
+    --file-link
+    tx_log_hints.json=Sgs_tx_log_hints)
+   (run bash -c "ocamlformat -i gen/*.ml"))))
+
+; Normalise the input schema in place with `jq -S` and promote it back to
+; api_schemas, so `dune build @code/generate-api-types` keeps the committed
+; JSON canonical. The target is produced in this directory and promoted into
+; the schema's directory; its basename must match the schema file.
+
+(rule
+ (alias generate-api-types)
+ (mode
+  (promote
+   (into ../../../api_schemas/stategraph)))
+ (deps
+  (file ../../../api_schemas/stategraph/api.json))
+ (target api.json)
+ (action
+  (with-stdout-to
+   api.json
+   (run jq -S . ../../../api_schemas/stategraph/api.json))))
+
+; (input schema, destination dir) pair for the codegen manifest; see sgs_api/dune.
+
+(rule
+ (target sgs_api.generate-api-types-pairs)
+ (action
+  (with-stdout-to
+   sgs_api.generate-api-types-pairs
+   (echo "api_schemas/stategraph/api.json code/src/sgs_api\n"))))
+
+(library
+ (name sgs_api)
+ (wrapped false)
+ (libraries
+  containers
+  json_schema
+  openapi
+  ppx_deriving
+  sg_caps_wire
+  sgs_actuator_run_result
+  sgs_capability_denied
+  sgs_tx_log_data
+  sgs_tx_log_hints
+  yojson)
+ (preprocess
+  (pps
+   ppx_deriving.eq
+   ppx_deriving.make
+   ppx_deriving.show
+   ppx_deriving_yojson)))
+
+; Make `dune build code/src/<lib>` regenerate from the schema: the package's
+; @all alias depends on the generate-api-types alias, so the input schema is a
+; build input of the package, not only of @.../generate-api-types. (The library
+; is a sibling of that alias, so the compiled artifact settles on the next
+; build after a schema change; the .ml regenerates immediately.)
+
+(alias
+ (name all)
+ (deps
+  (alias generate-api-types)))

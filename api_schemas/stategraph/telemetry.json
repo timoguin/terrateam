@@ -1,0 +1,53 @@
+{
+  "$ref": "#/definitions/sgc_event",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "sgc_event": {
+      "additionalProperties": false,
+      "properties": {
+        "error_variant": {
+          "description": "Name of the polymorphic-variant constructor for the error, without associated data. \"Ok\" for successful runs. Special values: \"Aborted\" for `Aborted, \"Exn:<exn_name>\" for uncaught exceptions.",
+          "type": "string"
+        },
+        "group_id": {
+          "description": "Group ID read from the stategraph.json in the current working directory.",
+          "type": "string"
+        },
+        "return_code": {
+          "description": "Process exit code that sgc returned to the shell.",
+          "type": "integer"
+        },
+        "sgc_version": {
+          "description": "Version of the sgc binary that produced the event.",
+          "type": "string"
+        },
+        "subcommand": {
+          "description": "Subcommand path that failed, in argv order",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tenant_id": {
+          "description": "UUID of the tenant the subcommand targeted. Absent for subcommands that take no tenant id, or when parsing it from argv failed.",
+          "type": "string"
+        },
+        "user_email": {
+          "description": "Email of the user identified by STATEGRAPH_API_KEY, as returned by /api/v1/whoami. Absent when no API key is set, the API base is unknown, the call fails, or the user has no email on file.",
+          "type": "string"
+        },
+        "user_id": {
+          "description": "UUID of the user identified by STATEGRAPH_API_KEY, as returned by /api/v1/whoami. Absent when no API key is set, the API base is unknown, or the call fails.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "error_variant",
+        "return_code",
+        "sgc_version",
+        "subcommand"
+      ],
+      "type": "object"
+    }
+  }
+}

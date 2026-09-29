@@ -1,0 +1,13 @@
+(library
+ (name sgs_service_license)
+ (wrapped false)
+ (libraries
+  abb
+  abbs
+  brtl
+  containers
+  pgsql_io
+  pgsql_pool
+  sgs_config
+  sgs_service
+  sgs_user))

@@ -1,0 +1,515 @@
+{
+  "$ref": "#/definitions/tx_log_data",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "edge": {
+      "additionalProperties": false,
+      "properties": {
+        "attr_path": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "from_depends_on": {
+          "type": "boolean"
+        },
+        "index_kind": {},
+        "index_val": {},
+        "is_bare": {
+          "type": "boolean"
+        },
+        "resolvable": {
+          "type": "boolean"
+        },
+        "to_addr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "to_addr",
+        "attr_path",
+        "index_kind",
+        "index_val",
+        "is_bare",
+        "resolvable",
+        "from_depends_on"
+      ],
+      "type": "object"
+    },
+    "file_delete": {
+      "additionalProperties": false,
+      "properties": {
+        "filepath": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "filepath"
+      ],
+      "type": "object"
+    },
+    "file_set": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "content_hash": {
+          "type": "string"
+        },
+        "filepath": {
+          "type": "string"
+        },
+        "mode": {
+          "description": "The file's permission bits at collection, masked to 0o777. The actuator chmods each staged file to this so a reified bundle matches the checkout it came from: archive_file hashes every zip member's mode alongside its bytes, so staging at a uniform mode moves the archive's hash away from the one tofu computes over the same tree.",
+          "type": "integer"
+        },
+        "module": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "template_vars": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "node_id",
+        "filepath",
+        "module",
+        "content",
+        "content_hash",
+        "mode",
+        "template_vars"
+      ],
+      "type": "object"
+    },
+    "hcl_delete": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "hcl_set": {
+      "additionalProperties": false,
+      "properties": {
+        "block_type": {},
+        "data": {},
+        "depends_on_addresses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/definitions/edge"
+          },
+          "type": "array"
+        },
+        "file": {
+          "type": "string"
+        },
+        "file_refs": {},
+        "fq_address": {
+          "type": "string"
+        },
+        "hints": {
+          "$ref": "tx_log_hints.json#/definitions/stored_hints"
+        },
+        "module": {
+          "type": "string"
+        },
+        "module_input_refs": {},
+        "module_inputs": {},
+        "module_source": {},
+        "moved_from_fq_address": {
+          "type": "string"
+        },
+        "moved_from_keyed_address": {
+          "description": "A TERRAFORM address, not a Stategraph fq_address: this moved {} block's \"from\" end exactly as written, instance keys included (module.vpc, module.vpc[\"a\"], terraform_data.foo[\"a\"]). The sibling moved_from_fq_address is the same end with the keys dropped, which is what a re-key needs and cannot get from there: an index change reads as from = to once the keys are gone. Sgs_apply_moves pairs the rows by substituting this end for moved_to_keyed_address. Note the block may name a MODULE, so this is not necessarily a resource or instance address. Server-derived at ingestion by Sg_node.meta_target_instance_address; absent on a block whose ends are not addresses, and on rows written before this field existed.",
+          "type": "string"
+        },
+        "moved_to_fq_address": {
+          "type": "string"
+        },
+        "moved_to_keyed_address": {
+          "description": "The \"to\" end of the same block, read the same way. See moved_from_keyed_address: a TERRAFORM address with its instance keys, possibly naming a module rather than a resource.",
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "path_attrs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "remote_state": {},
+        "remote_tf_state_refs": {},
+        "unconditional_seed": {
+          "description": "Whether the walk must seed this block on EVERY plan, whatever the change. The server derives it at ingest and a client never sends it.\n\nA terraform_data with triggers_replace, and a null_resource with triggers, is replaced when the trigger's VALUE moves. Where that value is a function of the configuration the block reads what the trigger reads, the relation holds a reads edge for each of those reads, and the expansion carries a change along it -- the block needs no seed of its own and this is FALSE. Where it is not -- timestamp() is the case that matters -- no edge can carry it, because no line of the configuration moved, and this is TRUE.\n\nPRESENT, TRUE OR FALSE, on exactly the blocks of those two types that carry a trigger attribute; absent on every other block. ABSENT ON ONE OF THOSE TWO means the row predates this field, and the walk then seeds it by the block's shape, which is the rule this replaced -- wider than necessary, and never narrower.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "fq_address",
+        "block_type",
+        "edges",
+        "refs",
+        "depends_on_addresses",
+        "file",
+        "module",
+        "module_source",
+        "data",
+        "remote_state",
+        "remote_tf_state_refs",
+        "module_input_refs",
+        "module_inputs",
+        "file_refs"
+      ],
+      "type": "object"
+    },
+    "refresh": {
+      "additionalProperties": false,
+      "description": "RFD 584. The transaction log entry a plan appends when the configuration has not changed, so a data source whose result moved still opens a transaction. It seeds nothing.",
+      "properties": {
+        "state_id": {
+          "description": "The state whose data sources are to be refreshed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_id"
+      ],
+      "type": "object"
+    },
+    "state_set": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/state_set_state_metadata"
+        },
+        {
+          "$ref": "#/definitions/state_set_output"
+        },
+        {
+          "$ref": "#/definitions/state_set_provider"
+        },
+        {
+          "$ref": "#/definitions/state_set_resource"
+        },
+        {
+          "$ref": "#/definitions/state_set_instance"
+        },
+        {
+          "$ref": "#/definitions/state_set_check_result"
+        },
+        {
+          "$ref": "#/definitions/state_set_check_result_entry"
+        }
+      ]
+    },
+    "state_set_check_result": {
+      "properties": {
+        "config_addr": {
+          "type": "string"
+        },
+        "object_kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "config_addr"
+      ],
+      "type": "object"
+    },
+    "state_set_check_result_entry": {
+      "properties": {
+        "config_addr": {
+          "type": "string"
+        },
+        "object_addr": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "config_addr"
+      ],
+      "type": "object"
+    },
+    "state_set_instance": {
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "fq_address": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "managed",
+            "data"
+          ],
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "moved_from_address": {
+          "description": "A TERRAFORM instance address, not a Stategraph fq_address: the address this object occupied before this transaction relocated it, in the same index-bearing shape as this row's own \"address\" (module.vpc[\"a\"].terraform_data.foo[0]). update_state_apply_moves.sql joins it against instances.address to rewrite the row in place instead of retiring it and inserting a new one, so an fq_address -- which is index-free, and is what makes a re-key invisible -- would match nothing. Server-derived by Sgs_apply_moves from the applied state and stamped onto the stored payload; it has no place on the wire shape a client submits, and is absent when nothing moved.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "resource_address": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_address",
+        "address",
+        "mode",
+        "type",
+        "name",
+        "fq_address"
+      ],
+      "type": "object"
+    },
+    "state_set_output": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "type": {},
+        "value": {}
+      },
+      "required": [
+        "name",
+        "address",
+        "type",
+        "value"
+      ],
+      "type": "object"
+    },
+    "state_set_provider": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "state_set_resource": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "fq_address": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "managed",
+            "data"
+          ],
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "moved_from_address": {
+          "description": "A TERRAFORM resource address, not a Stategraph fq_address: the address this resource occupied before this transaction relocated it, in the same shape as this row's own \"address\" -- no leaf instance key, but module keys included (module.vpc[\"a\"].terraform_data.foo). update_state_apply_moves.sql joins it against resources.address to copy the row to its new address and delete the vacated one. Server-derived by Sgs_apply_moves and stamped onto the stored payload; it has no place on the wire shape a client submits, and is absent when nothing moved. A resource re-key that changes only the instance key (foo -> foo[0]) leaves the resource row where it is, so this is stamped only when the module path changed.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "address",
+        "mode",
+        "type",
+        "name",
+        "fq_address"
+      ],
+      "type": "object"
+    },
+    "state_set_state_metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "lineage": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "integer"
+        },
+        "terraform_version": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "terraform_version",
+        "serial",
+        "lineage"
+      ],
+      "type": "object"
+    },
+    "tfvar_delete": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "tfvar_ephemeral": {
+      "additionalProperties": false,
+      "description": "A tfvar whose value changes every run and changes nothing, such as a per-run authentication token. Carries exactly what tfvar_set carries -- an ephemeral tfvar differs in how it is treated, not in what it holds: it never seeds the subgraph, is never committed to the tfvars table, and has its data masked when read back through MQL. Which tfvars are ephemeral is decided client-side, by glob, and is not recoverable from this entry.",
+      "properties": {
+        "data": {
+          "description": "The tfvar's value as a JSON-encoded HCL expression. This is the field that is masked on the way out through MQL, since it is the secret the ephemeral treatment exists to keep out of reach."
+        },
+        "file": {
+          "description": "The source the value was collected from, as reported by the client -- for example a .tfvars file's path, or \"tfvars\" when it did not come from a file.",
+          "type": "string"
+        },
+        "module": {
+          "description": "Always empty: tfvars are root-scoped. Carried explicitly so downstream SQL can read data->>'module' uniformly across hcl, file and tfvar rows.",
+          "type": "string"
+        },
+        "node_id": {
+          "description": "The tfvar node's id, derived from the variable name. Present for uniformity with the other log entries; unlike tfvar_set this id never becomes a revision node, so nothing in the subgraph refers to it.",
+          "type": "string"
+        },
+        "var_address": {
+          "description": "The variable this value binds, as \"var.<name>\". The name is NOT masked in MQL -- only the value is -- so that a masked row stays distinguishable from an absent one.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "var_address",
+        "file",
+        "data",
+        "module"
+      ],
+      "type": "object"
+    },
+    "tfvar_set": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {},
+        "file": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "var_address": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "var_address",
+        "file",
+        "data",
+        "module"
+      ],
+      "type": "object"
+    },
+    "tx_log_data": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/hcl_set"
+        },
+        {
+          "$ref": "#/definitions/hcl_delete"
+        },
+        {
+          "$ref": "#/definitions/state_set"
+        },
+        {
+          "$ref": "#/definitions/tfvar_set"
+        },
+        {
+          "$ref": "#/definitions/tfvar_delete"
+        },
+        {
+          "$ref": "#/definitions/tfvar_ephemeral"
+        },
+        {
+          "$ref": "#/definitions/file_set"
+        },
+        {
+          "$ref": "#/definitions/file_delete"
+        },
+        {
+          "$ref": "#/definitions/refresh"
+        }
+      ]
+    }
+  }
+}

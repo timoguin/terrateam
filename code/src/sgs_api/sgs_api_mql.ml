@@ -1,0 +1,106 @@
+module Get_schema = struct
+  module Parameters = struct end
+
+  module Responses = struct
+    module OK = struct
+      type t = Sgs_api_components.Mql_schema_response.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Bad_request = struct
+      type t = Sgs_api_components.Bad_request_err.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Unauthorized = struct end
+
+    type t =
+      [ `OK of OK.t
+      | `Bad_request of Bad_request.t
+      | `Unauthorized
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("400", Openapi.of_json_body (fun v -> `Bad_request v) Bad_request.of_yojson);
+        ("401", fun _ -> Ok `Unauthorized);
+      ]
+  end
+
+  let url = "/api/v1/mql/schema"
+
+  let make () =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:[]
+      ~query_params:[]
+      ~url
+      ~responses:Responses.t
+      `Get
+end
+
+module Get = struct
+  module Parameters = struct
+    module Page = struct
+      type t = string list [@@deriving show, eq]
+    end
+
+    type t = {
+      page : Page.t option; [@default None]
+      q : string;
+      tz : string option; [@default None]
+    }
+    [@@deriving make, show, eq]
+  end
+
+  module Responses = struct
+    module OK = struct
+      module Items = struct
+        type t = Yojson.Safe.t [@@deriving yojson { strict = false; meta = false }, show, eq]
+      end
+
+      type t = Items.t list [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Bad_request = struct
+      type t = Sgs_api_components.Bad_request_err.t
+      [@@deriving yojson { strict = false; meta = false }, show, eq]
+    end
+
+    module Unauthorized = struct end
+
+    type t =
+      [ `OK of OK.t
+      | `Bad_request of Bad_request.t
+      | `Unauthorized
+      ]
+    [@@deriving show, eq]
+
+    let t =
+      [
+        ("200", Openapi.of_json_body (fun v -> `OK v) OK.of_yojson);
+        ("400", Openapi.of_json_body (fun v -> `Bad_request v) Bad_request.of_yojson);
+        ("401", fun _ -> Ok `Unauthorized);
+      ]
+  end
+
+  let url = "/api/v1/mql"
+
+  let make params =
+    Openapi.Request.make
+      ~headers:[]
+      ~url_params:[]
+      ~query_params:
+        (let open Openapi.Request.Var in
+         let open Parameters in
+         [
+           ("page", Var (params.page, Option (Array String)));
+           ("tz", Var (params.tz, Option String));
+           ("q", Var (params.q, String));
+         ])
+      ~url
+      ~responses:Responses.t
+      `Get
+end

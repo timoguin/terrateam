@@ -1,0 +1,3 @@
+(library
+ (name sgs_service)
+ (libraries abb brtl containers logs sgs_config sgs_storage))

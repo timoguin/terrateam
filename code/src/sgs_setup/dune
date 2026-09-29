@@ -1,0 +1,26 @@
+(library
+ (name sgs_setup)
+ (wrapped false)
+ (libraries
+  abb
+  abbs
+  brtl
+  brtl_ep
+  containers
+  logs
+  pgsql_io
+  pgsql_pool
+  sg_caps_json
+  sgs_api
+  sgs_config
+  sgs_eplib
+  sgs_service_license
+  sgs_storage
+  sgs_tenant
+  sgs_user
+  uuidm
+  yojson)
+ (preprocessor_deps
+  (glob_files_rec sql/*))
+ (preprocess
+  (pps ppx_blob)))

@@ -1,0 +1,43 @@
+module Reason_bad_request = Sgs_actuator_run_result_reason_bad_request
+module Reason_capability_denied = Sgs_actuator_run_result_reason_capability_denied
+module Reason_client_create = Sgs_actuator_run_result_reason_client_create
+module Reason_failed_apply = Sgs_actuator_run_result_reason_failed_apply
+module Reason_failed_transport_call = Sgs_actuator_run_result_reason_failed_transport_call
+module Reason_hcl_parse = Sgs_actuator_run_result_reason_hcl_parse
+module Reason_init = Sgs_actuator_run_result_reason_init
+module Reason_next_task_failed = Sgs_actuator_run_result_reason_next_task_failed
+module Reason_next_timeout = Sgs_actuator_run_result_reason_next_timeout
+module Reason_params_fetch = Sgs_actuator_run_result_reason_params_fetch
+module Reason_plan = Sgs_actuator_run_result_reason_plan
+module Reason_preview_decode = Sgs_actuator_run_result_reason_preview_decode
+module Reason_preview_fetch = Sgs_actuator_run_result_reason_preview_fetch
+module Reason_read = Sgs_actuator_run_result_reason_read
+module Reason_results_task_failed = Sgs_actuator_run_result_reason_results_task_failed
+module Reason_show_json = Sgs_actuator_run_result_reason_show_json
+module Reason_state_schema_behind = Sgs_actuator_run_result_reason_state_schema_behind
+module Reason_temp_dir = Sgs_actuator_run_result_reason_temp_dir
+module Reason_tf_binary_not_found = Sgs_actuator_run_result_reason_tf_binary_not_found
+module Reason_tx_conflict = Sgs_actuator_run_result_reason_tx_conflict
+module Reason_tx_invalid_state = Sgs_actuator_run_result_reason_tx_invalid_state
+module Reason_unauthorized = Sgs_actuator_run_result_reason_unauthorized
+module Reason_write = Sgs_actuator_run_result_reason_write
+module Run_failure = Sgs_actuator_run_result_run_failure
+module Run_failure_reason = Sgs_actuator_run_result_run_failure_reason
+module Run_result = Sgs_actuator_run_result_run_result
+module Run_success_commit = Sgs_actuator_run_result_run_success_commit
+module Run_success_noop = Sgs_actuator_run_result_run_success_noop
+module Run_success_preview = Sgs_actuator_run_result_run_success_preview
+module State_schema_behind_state = Sgs_actuator_run_result_state_schema_behind_state
+module Task_state = Sgs_actuator_run_result_task_state
+
+module Event = struct
+  type t = Run_result of Sgs_actuator_run_result_run_result.t [@@deriving show, eq]
+
+  let of_yojson =
+    Json_schema.one_of
+      (let open CCResult in
+       [ (fun v -> map (fun v -> Run_result v) (Sgs_actuator_run_result_run_result.of_yojson v)) ])
+
+  let to_yojson = function
+    | Run_result v -> Sgs_actuator_run_result_run_result.to_yojson v
+end
