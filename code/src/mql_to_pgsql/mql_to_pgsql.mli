@@ -45,6 +45,7 @@ module Schema : sig
     type t
 
     val make : ?table_expr:bool -> name:string -> Column.t list -> t
+    val name : t -> string
   end
 
   type t [@@deriving to_yojson]
@@ -83,11 +84,28 @@ type t [@@deriving show, eq]
 
 val query : t -> Mql.Ast.t
 val texts : t -> string CCVector.vector
+
+(** The timestamptz literals of the query. The caller binds them as the [timestamptz[]] parameter
+    [$timestamptzs].
+
+    #2469: A cast from text to [timestamptz] is not immutable. PostgreSQL does not make it a
+    constant, and postgres_fdw does not send it to the remote server. Then a filter on a foreign
+    table stays local. A typed parameter prevents this. This is necessary only because the foreign
+    data wrapper abstraction is leaky. *)
+val timestamptzs : t -> string CCVector.vector
+
 val json : t -> string CCVector.vector
 val smallints : t -> int CCVector.vector
 val integers : t -> Int32.t CCVector.vector
 val bigints : t -> Int64.t CCVector.vector
 val floats : t -> float CCVector.vector
+
+(** The schema tables that the query reads, without duplicates. CTEs and unnests are not included.
+
+    #2469: The caller uses this list to find a query that reads foreign tables. Such a query needs
+    other planner settings. This is necessary only because the foreign data wrapper abstraction is
+    leaky. *)
+val tables : t -> string list
 
 (** Given an AST, a defined schema, and some other constraints, turn the AST into a valid query that
     can be safely executed via pgsql. *)

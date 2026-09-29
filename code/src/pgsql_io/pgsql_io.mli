@@ -101,11 +101,13 @@ module Typed_sql : sig
     val ud : 'b t -> ('a -> 'b) -> 'a t
     val option : 'a t -> 'a option t
 
-    (** Type for any array that is NOT a string. Strings require a special representation that this
-        does not account for. *)
+    (** Array of any element type. The element type selects the wire format: binary for a type that
+        is sent in binary, and the text array format for a type that is sent as text ([date],
+        [time], [timetz], [timestamp], [timestamptz], [jsonpath], [tsquery]). The binary array
+        format cannot hold an element of the second kind. *)
     val array : 'a t -> 'a list t
 
-    (** Any kind of string array. *)
+    (** Same as [array]. *)
     val str_array : 'a t -> 'a list t
   end
 
@@ -250,7 +252,11 @@ type create_err =
 [@@deriving show]
 
 (** Create a connection. [buf_size_threshold] is a threshold for how large the protocol debugging
-    buffer can get before decoding is pushed to another thread. *)
+    buffer can get before decoding is pushed to another thread.
+
+    The session uses the UTF8 client encoding. Text parameters and results are UTF8, whatever the
+    default encoding of the server is. [Var.array] needs this: its text array format is safe only in
+    an encoding where no multibyte character has a byte that is a backslash or a double quote. *)
 val create :
   ?tls_config:[ `Require of Otls.Tls_config.t | `Prefer of Otls.Tls_config.t ] ->
   ?passwd:string ->

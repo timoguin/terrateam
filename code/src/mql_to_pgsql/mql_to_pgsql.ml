@@ -170,6 +170,8 @@ module Schema = struct
           String_map.of_list @@ CCList.map (fun ({ Column.name; _ } as c) -> (name, c)) columns;
         table_expr;
       }
+
+    let name t = t.name
   end
 
   type t = { tables : Table.t String_map.t }
@@ -200,11 +202,13 @@ end
 module Rw = struct
   type t = {
     texts : string CCVector.vector;
+    timestamptzs : string CCVector.vector;
     json : string CCVector.vector;
     smallints : int CCVector.vector;
     integers : Int32.t CCVector.vector;
     bigints : Int64.t CCVector.vector;
     floats : float CCVector.vector;
+    tables : string CCVector.vector;
     func_white_list : string list;
     cast_white_list : string list;
     schema : Schema.t;
@@ -250,11 +254,13 @@ type t = {
 
 let query t = t.query
 let texts t = t.rw.Rw.texts
+let timestamptzs t = t.rw.Rw.timestamptzs
 let json t = t.rw.Rw.json
 let smallints t = t.rw.Rw.smallints
 let integers t = t.rw.Rw.integers
 let bigints t = t.rw.Rw.bigints
 let floats t = t.rw.Rw.floats
+let tables t = Sln_list.String.sort_uniq @@ CCVector.to_list t.rw.Rw.tables
 
 (* Identifier charset guard (defense in depth).
 
@@ -491,9 +497,9 @@ let rw_lit_timestamptz ~rw =
   let open Mql_ast in
   function
   | String s ->
-      CCVector.push rw.Rw.texts s;
-      let idx = CCVector.size rw.Rw.texts in
-      Cast (Index (Identifier "$texts", Int idx), "timestamptz")
+      CCVector.push rw.Rw.timestamptzs s;
+      let idx = CCVector.size rw.Rw.timestamptzs in
+      Index (Identifier "$timestamptzs", Int idx)
   | (Null | True | False) as e -> e
   | v -> raise (Rw_exn (`Type_mismatch_err (Schema.Column.Type_.Timestamptz, v)))
 
@@ -763,6 +769,19 @@ and rw_select_core ~rw select =
                 | None -> raise (Rw_exn (`Table_access_err name)))
               joins)
   in
+  (* #2469: Only schema tables are recorded, not CTEs or unnests. Every name
+     was validated above. *)
+  CCList.iter
+    (fun name ->
+      match String_map.find_opt name schema.Schema.tables with
+      | Some { Schema.Table.table_expr = false; _ } -> CCVector.push rw.Rw.tables name
+      | Some _ | None -> ())
+    (CCList.filter_map
+       (function
+         | Table_ref { name; _ } -> Some name
+         | Unnest _ -> None)
+       from
+    @ CCList.map (fun { table = { name; _ }; _ } -> name) joins);
   let expr_to_col_alias = expr_to_col_alias select_list in
   let col_name_to_columns =
     let all_cols =
@@ -844,11 +863,13 @@ and rw_select_core ~rw select =
 let mk_rw ~func_white_list ~cast_white_list schema =
   {
     Rw.texts = CCVector.create ();
+    timestamptzs = CCVector.create ();
     json = CCVector.create ();
     smallints = CCVector.create ();
     integers = CCVector.create ();
     bigints = CCVector.create ();
     floats = CCVector.create ();
+    tables = CCVector.create ();
     func_white_list;
     cast_white_list;
     schema;
