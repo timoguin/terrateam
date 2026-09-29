@@ -58,7 +58,7 @@
 
 **{{ counts }}**
 {% endif %}
-| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| Directory | Workspace | Result | Create | Update | Replace | Delete |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |
@@ -188,7 +188,7 @@ A gate is satisfied only when all conditions are met. See [documentation](https:
 
 **{{ counts }}**
 {% endif %}
-| Directory | Workspace | Result | Created | Updated | Replaced | Deleted |
+| Directory | Workspace | Result | Create | Update | Replace | Delete |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
     {%- for d in dirspaces %}
 | `{{ d.dir }}` | `{{ d.workspace }}` | {% if d.applied is defined and d.applied %}Applied :white_check_mark:{% elif d.success %}:white_check_mark:{% else %}:x:{% endif %} | {{ d.created }} | {{ d.updated }} | {{ d.replaced }} | {{ d.deleted }} |

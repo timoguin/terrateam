@@ -108,9 +108,38 @@ module Make
       A pull request that reached a noop still has to be mergeable, thus an operator who needs that
       check green to merge gets it even though no work was done. The caller decides that no work is
       left; this reads no matches of its own, so a caller that must not start a setup job can use
-      it. *)
+      it.
+
+      [description] is the wording of the check. It is required, thus each caller states why the run
+      closed; {!apply_check_description} computes it. *)
   val create_completed_apply_check :
-    Builder.Bs.state -> Builder.Bs.Fetcher.t -> (unit, Builder.err) result Abb.Future.t
+    description:string ->
+    Builder.Bs.state ->
+    Builder.Bs.Fetcher.t ->
+    (unit, Builder.err) result Abb.Future.t
+
+  (** The wording of a completed apply check, from why the run closed. [`Changes]: a plan found
+      changes and an apply applied them. [`No_changes]: every plan came back clean, thus nothing was
+      applied, and the check says so rather than "Completed". [`Not_run]: no plan of the run is
+      known, for instance because a precheck stopped the run; that is not a run without changes,
+      thus it reads "Completed". Every writer of an apply check takes its wording from here, so they
+      all agree.
+
+      A check belongs to one head commit, thus the wording describes that head only. When an earlier
+      head of the pull request was applied and a later push leaves every plan without changes, the
+      check on the new head reads "No Changes"; the check on the earlier head keeps "Completed". A
+      pull request that only deletes a directory plans and applies nothing, thus it reads "No
+      Changes" too. *)
+  val apply_check_description : [< `Changes | `No_changes | `Not_run ] -> string
+
+  (** The most recent successful plan and the most recent successful apply of each given dirspace of
+      the context, timed and logged. *)
+  val query_dirspace_runs_for_context :
+    Builder.State.t ->
+    S.Stacks.db ->
+    (S.Api.Pull_request.Id.t, S.Api.Ref.t) Terrat_job_context.Context.t ->
+    Terrat_change.Dirspace.t list ->
+    (Terrat_vcs_provider2.Dirspace_runs.t list, [> `Error ]) result Abb.Future.t
 
   (** The comment, if any, to publish for an evaluation error. [None] means publish nothing: either
       nothing went wrong or the user has already been told. *)

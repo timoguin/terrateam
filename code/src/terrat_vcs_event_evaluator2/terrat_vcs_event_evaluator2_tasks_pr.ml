@@ -149,20 +149,6 @@ struct
       (fun () ->
         S.Db.query_dirspace_outputs ~request_id:(Builder.log_id s) db pull_request dirspaces)
 
-  let query_dirspace_runs_for_context s db context dirspaces =
-    time_it
-      s
-      (fun m log_id time ->
-        m
-          "%s : QUERY_DIRSPACE_RUNS_FOR_CONTEXT : context = %a : dirspaces = %d : time=%f"
-          log_id
-          Uuidm.pp
-          context.Terrat_job_context.Context.id
-          (CCList.length dirspaces)
-          time)
-      (fun () ->
-        S.Db.query_dirspace_runs_for_context ~request_id:(Builder.log_id s) db context dirspaces)
-
   let lock_repository s account repo db =
     time_it
       s
@@ -583,7 +569,8 @@ struct
                   dirspace
                   dependencies
             in
-            Builder.run_db s ~f:(fun db -> query_dirspace_runs_for_context s db context dirspaces)
+            Builder.run_db s ~f:(fun db ->
+                Tasks_base.query_dirspace_runs_for_context s db context dirspaces)
             >>= fun runs ->
             let states = CCList.map (fun runs -> runs.P2.Dirspace_runs.state) runs in
             (* Two things the file test cannot see, because no file of this branch moves for
@@ -1110,7 +1097,10 @@ struct
                                 V1.apply_requirements repo_config
                               in
                               (if create_completed_apply_check_on_noop then
-                                 Tasks_base.create_completed_apply_check s fetcher
+                                 Tasks_base.create_completed_apply_check
+                                   ~description:(Tasks_base.apply_check_description `Not_run)
+                                   s
+                                   fetcher
                                else Abbs_fc.return_ok ())
                               >>= fun () -> Abbs_fc.return_err `Noop))))
           | Tjc.Job.Type_.Apply _

@@ -267,9 +267,27 @@ struct
         ]
     | [] | _ :: _ -> []
 
+  let apply_check_description = function
+    | `Changes | `Not_run -> "Completed"
+    | `No_changes -> "No Changes"
+
+  let query_dirspace_runs_for_context s db context dirspaces =
+    time_it
+      s
+      (fun m log_id time ->
+        m
+          "%s : QUERY_DIRSPACE_RUNS_FOR_CONTEXT : context = %a : dirspaces = %d : time=%f"
+          log_id
+          Uuidm.pp
+          context.Terrat_job_context.Context.id
+          (CCList.length dirspaces)
+          time)
+      (fun () ->
+        S.Db.query_dirspace_runs_for_context ~request_id:(Builder.log_id s) db context dirspaces)
+
   (* A precheck answers before the tree, the config and the index exist, and a
      read of the matches would build all three. *)
-  let create_completed_apply_check s { Builder.Bs.Fetcher.fetch } =
+  let create_completed_apply_check ~description s { Builder.Bs.Fetcher.fetch } =
     let open Abbs_fc.Infix_result_monad in
     fetch Keys.account
     >>= fun account ->
@@ -279,7 +297,7 @@ struct
       [
         S.Commit_check.make_str
           ~config:(Builder.State.config s)
-          ~description:"Completed"
+          ~description
           ~status:Terrat_commit_check.Status.Completed
           ~repo
           ~account

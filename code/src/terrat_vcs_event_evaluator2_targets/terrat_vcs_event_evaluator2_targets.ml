@@ -217,6 +217,14 @@ module Make (S : Terrat_vcs_provider2.S) = struct
   let all_unapplied_matches : Terrat_change_match3.Dirspace_config.t list list Key.t =
     Hmap.Key.create "all_unapplied_matches"
 
+  (* Whether a successful plan of the run's matched dirspaces found changes. *)
+  (* The newest successful plan and apply of each matched dirspace.  Read once per build and shared
+     by every task that needs the runs of the matched dirspaces. *)
+  let matched_dirspace_runs : Terrat_vcs_provider2.Dirspace_runs.t list Key.t =
+    Hmap.Key.create "matched_dirspace_runs"
+
+  let run_plan_changes : [ `Changes | `No_changes ] Key.t = Hmap.Key.create "run_plan_changes"
+
   let all_tag_query_matches : Terrat_change_match3.Dirspace_config.t list list Key.t =
     Hmap.Key.create "all_tag_query_matches"
 
